@@ -13,6 +13,13 @@ export const isSupabaseConfigured = Boolean(
     import.meta.env.VITE_SUPABASE_ANON_KEY?.trim(),
 )
 
+/** 배포 시 키가 잘리면 Invalid API key가 납니다. JWT anon 키는 보통 eyJ로 시작하고 길이가 깁니다. */
+export function isSupabaseAnonKeyPlausible(): boolean {
+  const raw = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim()
+  if (!raw) return false
+  return raw.startsWith('eyJ') && raw.length >= 120
+}
+
 export const supabase = createClient(url, anonKey)
 
 /** PostgREST 베이스 (`…/rest/v1` 앞까지, 끝 슬래시 없음) */
@@ -29,3 +36,10 @@ export const supabaseProjectHost = (() => {
     return '(invalid-url)'
   }
 })()
+
+console.info('[tag-note][supabase] 클라이언트 요약 (키 전체는 출력 안 함)', {
+  환경변수로설정됨: isSupabaseConfigured,
+  API호스트: supabaseProjectHost,
+  anon키글자수: anonKey.length,
+  더미URL사용중: url === PLACEHOLDER_URL,
+})

@@ -194,8 +194,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         password,
       })
       if (error) {
+        console.warn('[tag-note][auth] signInWithPassword 실패', {
+          message: error.message,
+          status: (error as { status?: number }).status,
+          hint:
+            error.message.includes('API key') || error.message.includes('JWT')
+              ? 'Vercel·.env의 VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY가 같은 Supabase 프로젝트 쌍인지 확인하세요. 비밀번호 오류와 무관합니다.'
+              : undefined,
+        })
         return { error: new Error(error.message) }
       }
+
 
       if (!isSupabaseConfigured) {
         setSubscription(null)

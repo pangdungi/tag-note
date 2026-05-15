@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { isSupabaseConfigured } from '../lib/supabase'
+import { isSupabaseConfigured, isSupabaseAnonKeyPlausible } from '../lib/supabase'
 import { AUTH_NOTICE_KEY } from '../lib/subscription'
 import { useAuth } from '../contexts/useAuth'
 
@@ -33,11 +33,23 @@ export function LoginPage() {
     try {
       if (mode === 'login') {
         const { error: err } = await signIn(email.trim(), password)
-        if (err) setError(err.message)
+        if (err) {
+          let msg = err.message
+          if (/invalid api key|jwt|apikey/i.test(msg)) {
+            msg =
+              'Supabase API 키가 맞지 않습니다. Vercel에서 VITE_SUPABASE_ANON_KEY 전체를 다시 넣고 Redeploy 하세요.'
+          }
+          setError(msg)
+        }
       } else {
         const { error: err } = await signUp(email.trim(), password)
         if (err) {
-          setError(err.message)
+          let msg = err.message
+          if (/invalid api key|jwt|apikey/i.test(msg)) {
+            msg =
+              'Supabase API 키가 맞지 않습니다. Vercel에서 VITE_SUPABASE_ANON_KEY 전체를 다시 넣고 Redeploy 하세요.'
+          }
+          setError(msg)
         } else {
           setMessage(
             '가입 확인 메일을 보냈을 수 있습니다. 메일함을 확인하거나 바로 로그인해 보세요. 로그인 후 7일 무료 체험이 이어집니다.',
@@ -75,6 +87,17 @@ export function LoginPage() {
               <code className="inline-code">VITE_SUPABASE_URL</code>,{' '}
               <code className="inline-code">VITE_SUPABASE_ANON_KEY</code>를
               설정한 뒤 개발 서버를 다시 실행하세요.
+            </p>
+          ) : null}
+
+          {isSupabaseConfigured && !isSupabaseAnonKeyPlausible() ? (
+            <p className="feedback feedback-warn" role="status">
+              <strong>배포 사이트</strong>의{' '}
+              <code className="inline-code">VITE_SUPABASE_ANON_KEY</code>가
+              짧거나 잘린 것 같습니다. Supabase 대시보드 → Settings → API의{' '}
+              <strong>anon public</strong> 키를 <strong>끝까지</strong> 복사해
+              Vercel 환경 변수에 넣은 뒤 <strong>Redeploy</strong>하세요. (보통{' '}
+              <code className="inline-code">eyJ</code>로 시작하고 한참 깁니다.)
             </p>
           ) : null}
 
