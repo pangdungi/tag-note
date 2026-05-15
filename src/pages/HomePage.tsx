@@ -69,6 +69,74 @@ function NoteBoardCard({ note }: { note: NoteWithTags }) {
   )
 }
 
+type HomeQuickActionButtonsProps = {
+  canUseCompose: boolean
+  composeOpen: boolean
+  user: ReturnType<typeof useAuth>['user']
+  onOpenTagManage: () => void
+  onToggleCompose: () => void
+  onOpenAccount: () => void
+}
+
+function HomeQuickActionButtons({
+  canUseCompose,
+  composeOpen,
+  user,
+  onOpenTagManage,
+  onToggleCompose,
+  onOpenAccount,
+}: HomeQuickActionButtonsProps) {
+  return (
+    <>
+      <button
+        type="button"
+        className="btn btn--icon"
+        aria-label="태그 관리 열기"
+        title="태그 관리"
+        disabled={!canUseCompose}
+        onClick={onOpenTagManage}
+      >
+        <img
+          src={tagIconUrl}
+          alt=""
+          className="btn--icon-img"
+          width={20}
+          height={20}
+          decoding="async"
+        />
+      </button>
+      <button
+        type="button"
+        className={`btn btn--icon${composeOpen ? ' btn--active' : ''}`}
+        disabled={!canUseCompose}
+        aria-expanded={composeOpen}
+        aria-label={composeOpen ? '메모 입력 닫기' : '메모 입력 열기'}
+        title={composeOpen ? '입력 영역 닫기' : '태그·메모 입력'}
+        onClick={onToggleCompose}
+      >
+        +
+      </button>
+      <button
+        type="button"
+        className="btn btn--icon"
+        aria-label="내 계정"
+        title="내 계정"
+        disabled={!user}
+        onClick={onOpenAccount}
+      >
+        <img
+          src={userCircleIconUrl}
+          alt=""
+          className="btn--icon-img"
+          width={20}
+          height={20}
+          decoding="async"
+        />
+      </button>
+    </>
+  )
+}
+
 export function HomePage() {
   const { user, signOut } = useAuth()
   const [tagSearch, setTagSearch] = useState('')
@@ -265,9 +333,16 @@ export function HomePage() {
 
       <>
         {!showBootstrap ? (
-            <header className="home-top-tag-search" role="search">
-              <div className="home-top-tag-search-inner">
-                <div className="home-tag-search-row">
+          <>
+            <header
+            className={
+              selectedTagId
+                ? 'home-top-tag-search home-top-tag-search--with-note-board'
+                : 'home-top-tag-search'
+            }
+          >
+            <div className="home-top-tag-search-inner">
+              <div className="home-tag-search-row" role="search">
                   <div className="home-search-wrap">
                     <span className="sr-only">태그 검색</span>
                     <svg
@@ -299,58 +374,72 @@ export function HomePage() {
                       spellCheck={false}
                     />
                   </div>
-                  <button
-                    type="button"
-                    className="btn btn--icon"
-                    aria-label="태그 관리 열기"
-                    title="태그 관리"
-                    disabled={!canUseCompose}
-                    onClick={() => setTagManageOpen(true)}
-                  >
-                    <img
-                      src={tagIconUrl}
-                      alt=""
-                      className="btn--icon-img"
-                      width={20}
-                      height={20}
-                      decoding="async"
+                  <div className="home-desktop-quick-actions">
+                    <HomeQuickActionButtons
+                      canUseCompose={canUseCompose}
+                      composeOpen={composeOpen}
+                      user={user}
+                      onOpenTagManage={() => setTagManageOpen(true)}
+                      onToggleCompose={() => toggleCompose()}
+                      onOpenAccount={() => setAccountModalOpen(true)}
                     />
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn btn--icon${composeOpen ? ' btn--active' : ''}`}
-                    disabled={!canUseCompose}
-                    aria-expanded={composeOpen}
-                    aria-label={composeOpen ? '메모 입력 닫기' : '메모 입력 열기'}
-                    title={composeOpen ? '입력 영역 닫기' : '태그·메모 입력'}
-                    onClick={() => toggleCompose()}
-                  >
-                    +
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn--icon"
-                    aria-label="내 계정"
-                    title="내 계정"
-                    disabled={!user}
-                    onClick={() => setAccountModalOpen(true)}
-                  >
-                    <img
-                      src={userCircleIconUrl}
-                      alt=""
-                      className="btn--icon-img"
-                      width={20}
-                      height={20}
-                      decoding="async"
-                    />
-                  </button>
+                  </div>
                 </div>
+              <section className="tag-grid-section" aria-label="내 태그">
+                {loading ? (
+                  <p className="notes-hint">불러오는 중…</p>
+                ) : visibleTags.length === 0 ? (
+                  <p className="notes-hint">
+                    {normalizeTagInput(tagSearch)
+                      ? '검색과 비슷한 태그가 없습니다.'
+                      : '태그가 없습니다.'}
+                  </p>
+                ) : (
+                  <ul
+                    className={
+                      selectedTagId || composeOpen
+                        ? 'tag-grid tag-grid--single-row'
+                        : 'tag-grid'
+                    }
+                  >
+                    {visibleTags.map((t) => (
+                      <li key={t.id}>
+                        <button
+                          type="button"
+                          className={`tag-grid-pill tag-tone-${t.color_index % 8}${
+                            selectedTagId === t.id ? ' tag-grid-pill--selected' : ''
+                          }`}
+                          aria-pressed={selectedTagId === t.id}
+                          onClick={() => toggleTagSelect(t.id)}
+                        >
+                          {displayTagName(t.name)}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
               </div>
             </header>
+
+            <nav
+              className="home-mobile-quick-actions"
+              aria-label="빠른 작업"
+            >
+              <HomeQuickActionButtons
+                canUseCompose={canUseCompose}
+                composeOpen={composeOpen}
+                user={user}
+                onOpenTagManage={() => setTagManageOpen(true)}
+                onToggleCompose={() => toggleCompose()}
+                onOpenAccount={() => setAccountModalOpen(true)}
+              />
+            </nav>
+          </>
         ) : null}
 
         <main
-          className={`home-main home-main--tags${showBootstrap ? ' home-main--bootstrap' : ''}`}
+          className={`home-main home-main--tags${showBootstrap ? ' home-main--bootstrap' : ''}${!showBootstrap && composeOpen ? ' home-main--compose-open' : ''}`}
         >
           {showBootstrap ? (
             <section className="bootstrap-card" aria-label="첫 태그·메모 만들기">
@@ -405,43 +494,6 @@ export function HomePage() {
               >
                 저장
               </button>
-            </section>
-          ) : null}
-
-          {!showBootstrap ? (
-            <section className="tag-grid-section" aria-label="내 태그">
-              {loading ? (
-                <p className="notes-hint">불러오는 중…</p>
-              ) : visibleTags.length === 0 ? (
-                <p className="notes-hint">
-                  {normalizeTagInput(tagSearch)
-                    ? '검색과 비슷한 태그가 없습니다.'
-                    : '태그가 없습니다.'}
-                </p>
-              ) : (
-                <ul
-                  className={
-                    selectedTagId
-                      ? 'tag-grid tag-grid--single-row'
-                      : 'tag-grid'
-                  }
-                >
-                  {visibleTags.map((t) => (
-                    <li key={t.id}>
-                      <button
-                        type="button"
-                        className={`tag-grid-pill tag-tone-${t.color_index % 8}${
-                          selectedTagId === t.id ? ' tag-grid-pill--selected' : ''
-                        }`}
-                        aria-pressed={selectedTagId === t.id}
-                        onClick={() => toggleTagSelect(t.id)}
-                      >
-                        {displayTagName(t.name)}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </section>
           ) : null}
 

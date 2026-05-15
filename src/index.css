@@ -484,7 +484,7 @@ body {
   appearance: none;
 }
 
-.home-tag-search-row > .btn--icon {
+.home-tag-search-row .btn--icon {
   flex-shrink: 0;
 }
 
@@ -512,6 +512,10 @@ body {
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+}
+
+/* 메모 목록이 열릴 때만 헤더·태그 아래 구분선 표시 */
+.home-top-tag-search--with-note-board {
   border-bottom: 1px solid var(--border);
 }
 
@@ -529,6 +533,57 @@ body {
 .home-tag-search-row .home-search-wrap {
   flex: 1;
   min-width: 0;
+}
+
+.home-desktop-quick-actions {
+  display: contents;
+}
+
+.home-mobile-quick-actions {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .home-desktop-quick-actions {
+    display: none;
+  }
+
+  .home-mobile-quick-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    align-items: center;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    padding: 0.5rem 1rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border);
+    box-sizing: border-box;
+  }
+
+  .home-mobile-quick-actions .btn--icon:nth-child(1) {
+    justify-self: start;
+  }
+
+  .home-mobile-quick-actions .btn--icon:nth-child(2) {
+    justify-self: center;
+  }
+
+  .home-mobile-quick-actions .btn--icon:nth-child(3) {
+    justify-self: end;
+  }
+
+  .home-main--tags {
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .home-main--tags.home-main--compose-open {
+    padding-top: 0.45rem;
+  }
 }
 
 .home-inline-compose {
@@ -584,8 +639,101 @@ body {
   margin: 0;
 }
 
+/* 모바일: + 작성 시 태그 — 라벨+입력 한 줄, 칩은 한 줄 가로 스크롤(데스크톱과 동일한 사용감) */
+@media (max-width: 640px) {
+  .home-inline-compose {
+    margin-top: 0.45rem;
+    padding-top: 0.5rem;
+  }
+
+  .home-inline-compose-inner {
+    padding: 0.72rem 0.9rem 1rem;
+  }
+
+  .home-inline-compose .composer-stack {
+    gap: 1rem;
+  }
+
+  .home-inline-compose .composer-tags {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 0.45rem;
+    row-gap: 0.4rem;
+  }
+
+  .home-inline-compose .composer-tags .composer-label {
+    flex: 0 0 auto;
+    margin: 0;
+  }
+
+  .home-inline-compose .composer-tags .tag-input-shell {
+    flex: 1 1 9rem;
+    min-width: 0;
+  }
+
+  .home-inline-compose .composer-tags .tag-chips {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    gap: 0.35rem;
+  }
+
+  .home-inline-compose .composer-tags .tag-chips::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  .home-inline-compose .composer-tags .tag-chips > * {
+    flex-shrink: 0;
+  }
+
+  /* 상단 태그 한 줄로 줄어든 만큼 메모 입력 최소 높이 확보 */
+  .home-main--compose-open .home-inline-compose-note {
+    min-height: 5rem;
+  }
+
+  /* 뷰포트 안에 카드+닫기/저장이 들어가게: 본문은 스크롤, 액션은 카드 하단 고정 */
+  .home-main--compose-open .home-inline-compose-inner {
+    max-height: calc(100vh - 11.5rem - 4.25rem);
+    max-height: calc(100svh - 11.5rem - 4.25rem);
+    max-height: calc(100dvh - 11.5rem - 4.25rem);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+    padding-bottom: 0.75rem;
+  }
+
+  .home-main--compose-open .home-inline-compose-inner > .composer-stack {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .home-main--compose-open .home-inline-compose-inner > .composer-error {
+    flex-shrink: 0;
+  }
+
+  .home-main--compose-open .home-inline-compose-actions {
+    flex-shrink: 0;
+    margin-top: 0.55rem;
+    padding-top: 0.55rem;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+}
+
 .tag-grid-section {
-  margin-top: 0.25rem;
+  /* 검색 행과의 간격 = .home-top-tag-search 하단 패딩(0.75rem)과 동일 */
+  margin-top: 0.75rem;
 }
 
 .tag-grid {
@@ -648,7 +796,6 @@ body {
 .note-board-section {
   margin-top: 0.625rem;
   padding-top: 1.25rem;
-  border-top: 1px solid var(--border);
 }
 
 .note-board-empty {
