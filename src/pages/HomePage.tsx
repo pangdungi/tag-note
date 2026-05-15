@@ -186,16 +186,7 @@ function HomeQuickActionButtons({
 }
 
 export function HomePage() {
-  const { user, signOut, subscription, refreshSubscription, loading: authLoading } = useAuth()
-
-  useEffect(() => {
-    console.log('[태그노트/home]', '📌 HomePage 스냅샷', {
-      t: new Date().toISOString(),
-      authLoading,
-      userIdPrefix: user?.id?.slice(0, 8) ?? null,
-      구독있음: Boolean(subscription),
-    })
-  }, [authLoading, user?.id, subscription])
+  const { user, signOut, subscription, refreshSubscription } = useAuth()
 
   const refreshAccountSubscription = useCallback(() => {
     void refreshSubscription()
@@ -220,20 +211,11 @@ export function HomePage() {
   const [noteMobileExpandedId, setNoteMobileExpandedId] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
-    const tLoad0 =
-      typeof performance !== 'undefined' ? performance.now() : Date.now()
     const uid = user?.id ?? null
     if (!uid) {
-      console.warn(
-        '[태그노트/home]',
-        'loadData: user.id 없음 — 페치 생략, 홈 loading=false',
-      )
       setLoading(false)
       return
     }
-    console.log('[태그노트/home]', 'loadData 시작', {
-      userIdPrefix: `${uid.slice(0, 8)}…`,
-    })
     setLoading(true)
     try {
       const [tags, noteRows] = await Promise.all([
@@ -244,22 +226,12 @@ export function HomePage() {
       setNotes(noteRows)
       setSaveError(null)
       setLoadError(null)
-      const loadMs =
-        (typeof performance !== 'undefined' ? performance.now() : Date.now()) -
-        tLoad0
-      console.log('[태그노트/home]', 'loadData 성공', {
-        tags: tags.length,
-        notes: noteRows.length,
-        소요ms: Math.round(loadMs),
-      })
     } catch (e) {
-      console.error('[태그노트/home]', 'loadData 실패', e)
       setLoadError(
         e instanceof Error ? e.message : '알 수 없는 오류로 불러오지 못했습니다.',
       )
     } finally {
       setLoading(false)
-      console.log('[태그노트/home]', 'loadData 종료 (loading=false)')
     }
   }, [user?.id])
 

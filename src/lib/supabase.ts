@@ -13,12 +13,6 @@ export const isSupabaseConfigured = Boolean(
     import.meta.env.VITE_SUPABASE_ANON_KEY?.trim(),
 )
 
-if (!isSupabaseConfigured) {
-  console.warn(
-    '[태그노트] .env에 VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY를 넣으면 인증이 동작합니다.',
-  )
-}
-
 export const supabase = createClient(url, anonKey)
 
 /** PostgREST 베이스 (`…/rest/v1` 앞까지, 끝 슬래시 없음) */
