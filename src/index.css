@@ -1,3 +1,35 @@
+@font-face {
+  font-family: 'TagNote LeeSeoyun';
+  src: url('./assets/fonts/LeeSeoyun.otf') format('opentype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'TagNote OngeulipRyuttung';
+  src: url('./assets/fonts/OngeulipRyuttungche.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'TagNote Adultkid';
+  src: url('./assets/fonts/Adultkid.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'TagNote PakYongJun';
+  src: url('./assets/fonts/Pak_Yong_jun.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg: #ffffff;
   --surface: #ffffff;
@@ -23,14 +55,10 @@
   --btn-primary-border: #e5e7eb;
   --btn-hover-bg: #d6e8f4;
 
-  font-family:
-    'Pretendard Variable',
-    Pretendard,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  --app-font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+    'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+
+  font-family: var(--app-font-family);
   line-height: 1.5;
   font-weight: 400;
   color: var(--text);
@@ -746,8 +774,13 @@ body {
     margin: 0;
   }
 
-  .home-inline-compose .composer-tags .tag-input-shell {
+  .home-inline-compose .composer-tags .tag-input-row {
     flex: 1 1 9rem;
+    min-width: 0;
+  }
+
+  .home-inline-compose .composer-tags .tag-input-shell {
+    flex: 1 1 auto;
     min-width: 0;
   }
 
@@ -1148,6 +1181,42 @@ body {
 
 .tag-input-shell {
   position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tag-input-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.tag-input-add-btn {
+  flex-shrink: 0;
+  align-self: stretch;
+  padding: 0 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border-radius: 12px;
+}
+
+.tag-input-add-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tag-input-hint {
+  margin: -0.15rem 0 0;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.tag-input-hint strong {
+  color: var(--text-strong);
+  font-weight: 700;
 }
 
 .tag-input {
@@ -1778,7 +1847,7 @@ body {
 }
 
 .tag-manage-dialog--account {
-  max-height: min(88vh, 520px);
+  max-height: min(90vh, 640px);
 }
 
 .tag-manage-account-body {
@@ -1868,6 +1937,72 @@ body {
   opacity: 0.55;
   cursor: not-allowed;
   text-decoration: none;
+}
+
+.tag-manage-account-font-hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.tag-manage-account-font-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.tag-manage-account-font-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.5rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--surface);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.tag-manage-account-font-option:has(input:focus-visible) {
+  border-color: var(--border-focus);
+  outline: 2px solid #93c5fd;
+  outline-offset: 1px;
+}
+
+.tag-manage-account-font-option:has(input:checked) {
+  border-color: #7eb8e0;
+  background: #f3f9fc;
+}
+
+.tag-manage-account-font-option input {
+  margin: 0.2rem 0 0;
+  flex-shrink: 0;
+}
+
+.tag-manage-account-font-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.tag-manage-account-font-option-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.tag-manage-account-font-preview {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text);
+  word-break: break-word;
 }
 
 .tag-manage-account-foot {

@@ -4,6 +4,13 @@ import {
   accountSubscriptionLabel,
   type UserSubscriptionRow,
 } from '../lib/subscription'
+import {
+  APP_FONT_OPTIONS,
+  applyAppFontToDocument,
+  getStoredAppFontId,
+  setStoredAppFontId,
+  type AppFontChoiceId,
+} from '../lib/appFont'
 
 type Props = {
   open: boolean
@@ -48,6 +55,9 @@ export function AccountModal({
 }: Props) {
   const titleId = useId()
   const [signingOut, setSigningOut] = useState(false)
+  const [appFontId, setAppFontId] = useState<AppFontChoiceId>(() =>
+    getStoredAppFontId(),
+  )
 
   const profileName = displayNameFromUser(user)
   const joinedAt = formatKoDateTime(user.created_at)
@@ -122,6 +132,44 @@ export function AccountModal({
                 </div>
               ) : null}
             </dl>
+          </section>
+
+          <section className="tag-manage-account-section" aria-label="글꼴">
+            <h3 className="tag-manage-account-section-title">글꼴</h3>
+            <p className="tag-manage-account-font-hint">
+              선택한 글꼴이 앱 화면 전체의 기본 글꼴로 적용됩니다. 이 기기 브라우저에만
+              저장됩니다.
+            </p>
+            <ul className="tag-manage-account-font-list" role="list">
+              {APP_FONT_OPTIONS.map((opt) => (
+                <li key={opt.id}>
+                  <label className="tag-manage-account-font-option">
+                    <input
+                      type="radio"
+                      name="tag-note-app-font"
+                      value={opt.id}
+                      checked={appFontId === opt.id}
+                      onChange={() => {
+                        setAppFontId(opt.id)
+                        setStoredAppFontId(opt.id)
+                        applyAppFontToDocument(opt.id)
+                      }}
+                    />
+                    <span className="tag-manage-account-font-option-text">
+                      <span className="tag-manage-account-font-option-label">
+                        {opt.label}
+                      </span>
+                      <span
+                        className="tag-manage-account-font-preview"
+                        style={{ fontFamily: opt.cssStack }}
+                      >
+                        다람쥐 헌 쳇바퀴에 타고파 The quick brown fox
+                      </span>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
           </section>
 
           <section className="tag-manage-account-section" aria-label="구독">

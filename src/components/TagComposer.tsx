@@ -84,105 +84,133 @@ export function TagComposer({ allTags, selected, onChange }: Props) {
     onChange(selected.filter((_, idx) => idx !== i))
   }
 
+  function commitDraftFromInput() {
+    const picked =
+      open &&
+      activeIndex >= 0 &&
+      activeIndex < suggestions.length
+        ? suggestions[activeIndex]
+        : undefined
+    if (picked) {
+      addTag(picked.name, picked)
+    } else {
+      addTag(draft)
+    }
+  }
+
+  const draftNormalized = normalizeTagInput(draft)
+  const canCommitDraft =
+    draftNormalized.length > 0 ||
+    (open && activeIndex >= 0 && activeIndex < suggestions.length)
+
   return (
     <div className="composer-tags">
       <label className="composer-label" htmlFor={listId + '-tag'}>
         태그
       </label>
-      <div className="tag-input-shell">
-        <input
-          ref={inputRef}
-          id={listId + '-tag'}
-          type="text"
-          className="tag-input"
-          value={draft}
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="태그 입력후 엔터를 누르세요"
-          aria-autocomplete="list"
-          aria-expanded={open && suggestions.length > 0}
-          aria-controls={listId + '-suggest'}
-          onChange={(e) => {
-            const v = e.target.value
-            setDraft(v)
-            setActiveIndex(-1)
-            setOpen(true)
-          }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => {
-            window.setTimeout(() => setOpen(false), 150)
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              if (isImeHandling(e)) return
-              // 조합 확정과 Enter가 연달아 들어오며 태그가 두 번 추가되는 경우 방지
-              const now = Date.now()
-              if (now - lastEnterAt.current < 120) return
-              lastEnterAt.current = now
-              e.preventDefault()
-              const picked =
-                open &&
-                activeIndex >= 0 &&
-                activeIndex < suggestions.length
-                  ? suggestions[activeIndex]
-                  : undefined
-              if (picked) {
-                addTag(picked.name, picked)
-              } else {
-                addTag(draft)
-              }
-              return
-            }
-            if (e.key === 'ArrowDown') {
-              if (isImeHandling(e)) return
-              e.preventDefault()
-              setOpen(true)
-              setActiveIndex((i) => {
-                if (!suggestions.length) return -1
-                if (i < 0) return 0
-                return (i + 1) % suggestions.length
-              })
-            }
-            if (e.key === 'ArrowUp') {
-              if (isImeHandling(e)) return
-              e.preventDefault()
-              setOpen(true)
-              setActiveIndex((i) => {
-                if (!suggestions.length) return -1
-                if (i < 0) return suggestions.length - 1
-                return (i - 1 + suggestions.length) % suggestions.length
-              })
-            }
-            if (e.key === 'Escape') {
-              setOpen(false)
+      <div className="tag-input-row">
+        <div className="tag-input-shell">
+          <input
+            ref={inputRef}
+            id={listId + '-tag'}
+            type="text"
+            className="tag-input"
+            value={draft}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="태그 입력 후 엔터 또는 + 추가"
+            aria-autocomplete="list"
+            aria-expanded={open && suggestions.length > 0}
+            aria-controls={listId + '-suggest'}
+            onChange={(e) => {
+              const v = e.target.value
+              setDraft(v)
               setActiveIndex(-1)
-            }
-          }}
-        />
-        {open && draft.trim() && suggestions.length > 0 ? (
-          <ul id={listId + '-suggest'} className="tag-suggest" role="listbox">
-            {suggestions.map((t, idx) => (
-              <li key={t.id} role="presentation">
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={activeIndex >= 0 && idx === activeIndex}
-                  className={
-                    activeIndex >= 0 && idx === activeIndex
-                      ? 'tag-suggest-item active'
-                      : 'tag-suggest-item'
-                  }
-                  onMouseDown={(ev) => ev.preventDefault()}
-                  onClick={() => addTag(t.name, t)}
-                >
-                  <span className={`tag-dot tag-tone-${t.color_index % TAG_COLOR_COUNT}`} />
-                  {displayTagName(t.name)}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
+              setOpen(true)
+            }}
+            onFocus={() => setOpen(true)}
+            onBlur={() => {
+              window.setTimeout(() => setOpen(false), 150)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                if (isImeHandling(e)) return
+                // 조합 확정과 Enter가 연달아 들어오며 태그가 두 번 추가되는 경우 방지
+                const now = Date.now()
+                if (now - lastEnterAt.current < 120) return
+                lastEnterAt.current = now
+                e.preventDefault()
+                commitDraftFromInput()
+                return
+              }
+              if (e.key === 'ArrowDown') {
+                if (isImeHandling(e)) return
+                e.preventDefault()
+                setOpen(true)
+                setActiveIndex((i) => {
+                  if (!suggestions.length) return -1
+                  if (i < 0) return 0
+                  return (i + 1) % suggestions.length
+                })
+              }
+              if (e.key === 'ArrowUp') {
+                if (isImeHandling(e)) return
+                e.preventDefault()
+                setOpen(true)
+                setActiveIndex((i) => {
+                  if (!suggestions.length) return -1
+                  if (i < 0) return suggestions.length - 1
+                  return (i - 1 + suggestions.length) % suggestions.length
+                })
+              }
+              if (e.key === 'Escape') {
+                setOpen(false)
+                setActiveIndex(-1)
+              }
+            }}
+          />
+          {open && draft.trim() && suggestions.length > 0 ? (
+            <ul id={listId + '-suggest'} className="tag-suggest" role="listbox">
+              {suggestions.map((t, idx) => (
+                <li key={t.id} role="presentation">
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={activeIndex >= 0 && idx === activeIndex}
+                    className={
+                      activeIndex >= 0 && idx === activeIndex
+                        ? 'tag-suggest-item active'
+                        : 'tag-suggest-item'
+                    }
+                    onMouseDown={(ev) => ev.preventDefault()}
+                    onClick={() => addTag(t.name, t)}
+                  >
+                    <span className={`tag-dot tag-tone-${t.color_index % TAG_COLOR_COUNT}`} />
+                    {displayTagName(t.name)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="btn tag-input-add-btn"
+          disabled={!canCommitDraft}
+          aria-label="입력한 태그 추가"
+          title="엔터와 같이, 입력한 글자를 태그로 넣습니다"
+          onMouseDown={(ev) => ev.preventDefault()}
+          onClick={() => commitDraftFromInput()}
+        >
+          + 추가
+        </button>
       </div>
+      {draftNormalized.length > 0 && selected.length === 0 ? (
+        <p className="tag-input-hint" role="status">
+          아래에 태그 칩이 생기면 저장돼요. <strong>엔터</strong>를 누르거나{' '}
+          <strong>+ 추가</strong>를 눌러 주세요.
+        </p>
+      ) : null}
       <div className="tag-chips" role="list">
         {selected.map((t, i) => (
           <span
