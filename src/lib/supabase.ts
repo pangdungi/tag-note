@@ -20,3 +20,18 @@ if (!isSupabaseConfigured) {
 }
 
 export const supabase = createClient(url, anonKey)
+
+/** PostgREST 베이스 (`…/rest/v1` 앞까지, 끝 슬래시 없음) */
+export const supabaseUrlForRest = url.replace(/\/$/, '')
+
+/** anon 키 — 브라우저에서 직접 `fetch`할 때만 사용 (클라이언트 번들에 포함됨) */
+export const supabaseAnonKey = anonKey
+
+/** 디버그용(키 노출 없음). REST 요청이 어느 호스트로 가는지 확인. */
+export const supabaseProjectHost = (() => {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return '(invalid-url)'
+  }
+})()
