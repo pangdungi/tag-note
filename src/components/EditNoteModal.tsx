@@ -26,7 +26,8 @@ type Props = {
   note: NoteWithTags | null
   allTags: TagRow[]
   userId: string
-  onSaved: () => void | Promise<void>
+  onNoteUpdated: (note: NoteWithTags) => void | Promise<void>
+  onNoteDeleted: (noteId: string) => void | Promise<void>
 }
 
 export function EditNoteModal({
@@ -35,7 +36,8 @@ export function EditNoteModal({
   note,
   allTags,
   userId,
-  onSaved,
+  onNoteUpdated,
+  onNoteDeleted,
 }: Props) {
   const titleId = useId()
   const [tags, setTags] = useState<SelectedTag[]>([])
@@ -152,7 +154,7 @@ export function EditNoteModal({
                   setSaving(true)
                   setError(null)
                   try {
-                    await updateNoteWithTags(
+                    const updated = await updateNoteWithTags(
                       note.id,
                       body,
                       tags.map((t) => t.name),
@@ -160,7 +162,7 @@ export function EditNoteModal({
                       [...allTags],
                       source,
                     )
-                    await onSaved()
+                    await onNoteUpdated(updated)
                     onClose()
                   } catch (e) {
                     setError(
@@ -196,7 +198,7 @@ export function EditNoteModal({
           try {
             await deleteNote(note.id)
             setDeleteConfirmOpen(false)
-            await onSaved()
+            await onNoteDeleted(note.id)
             onClose()
           } catch (e) {
             setDeleteConfirmOpen(false)

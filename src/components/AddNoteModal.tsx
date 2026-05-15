@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, startTransition } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
-import { createNoteWithTags, type TagRow } from '../lib/notesApi'
+import { createNoteWithTags, type NoteWithTags, type TagRow } from '../lib/notesApi'
 
 type Props = {
   open: boolean
@@ -9,7 +9,7 @@ type Props = {
   initialTags: SelectedTag[]
   allTags: TagRow[]
   userId: string
-  onSaved: () => void | Promise<void>
+  onSaved: (note: NoteWithTags) => void | Promise<void>
 }
 
 export function AddNoteModal({
@@ -122,14 +122,14 @@ export function AddNoteModal({
                   setSaving(true)
                   setError(null)
                   try {
-                    await createNoteWithTags(
+                    const note = await createNoteWithTags(
                       body,
                       tags.map((t) => t.name),
                       userId,
                       [...allTags],
                       source,
                     )
-                    await onSaved()
+                    await onSaved(note)
                     onClose()
                   } catch (e) {
                     setError(

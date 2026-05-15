@@ -28,11 +28,7 @@ export async function fetchTags(): Promise<TagRow[]> {
   return (data ?? []) as TagRow[]
 }
 
-export async function fetchNotesWithTags(): Promise<NoteWithTags[]> {
-  const { data, error } = await supabase
-    .from('notes')
-    .select(
-      `
+const NOTE_WITH_TAGS_SELECT = `
       id,
       body,
       source,
@@ -41,11 +37,28 @@ export async function fetchNotesWithTags(): Promise<NoteWithTags[]> {
         tag_id,
         tags ( id, name, color_index )
       )
-    `,
-    )
+    `
+
+export async function fetchNotesWithTags(): Promise<NoteWithTags[]> {
+  const { data, error } = await supabase
+    .from('notes')
+    .select(NOTE_WITH_TAGS_SELECT)
     .order('created_at', { ascending: false })
   if (error) throw error
   return (data ?? []) as unknown as NoteWithTags[]
+}
+
+/** 서버에 반영된 한 건만 조회(전체 목록 갈아끼우기 대신 국소 갱신용). */
+export async function fetchNoteWithTagsById(
+  noteId: string,
+): Promise<NoteWithTags> {
+  const { data, error } = await supabase
+    .from('notes')
+    .select(NOTE_WITH_TAGS_SELECT)
+    .eq('id', noteId)
+    .single()
+  if (error) throw error
+  return data as unknown as NoteWithTags
 }
 
 async function ensureTagId(
@@ -114,7 +127,7 @@ export async function createNoteWithTags(
   userId: string,
   tagCache: TagRow[],
   source?: string,
-): Promise<void> {
+): Promise<NoteWithTags> {
   const trimmed = body.trim()
   const sourceTrim = (source ?? '').trim()
   const labels = tagNames.map((t) => normalizeTagInput(t)).filter(Boolean)
@@ -138,6 +151,7 @@ export async function createNoteWithTags(
   const rows = tagIds.map((tag_id) => ({ note_id: noteId, tag_id }))
   const { error: jErr } = await supabase.from('note_tags').insert(rows)
   if (jErr) throw jErr
+  return fetchNoteWithTagsById(noteId)
 }
 
 export async function updateNoteWithTags(
@@ -147,7 +161,7 @@ export async function updateNoteWithTags(
   userId: string,
   tagCache: TagRow[],
   source?: string,
-): Promise<void> {
+): Promise<NoteWithTags> {
   const trimmed = body.trim()
   const sourceTrim = (source ?? '').trim()
   const labels = tagNames.map((t) => normalizeTagInput(t)).filter(Boolean)
@@ -174,6 +188,7 @@ export async function updateNoteWithTags(
     const { error: jErr } = await supabase.from('note_tags').insert(linkRows)
     if (jErr) throw jErr
   }
+  return fetchNoteWithTagsById(noteId)
 }
 
 export async function deleteNote(noteId: string): Promise<void> {
@@ -182,26 +197,36 @@ export async function deleteNote(noteId: string): Promise<void> {
 }
 
 /** 태그 이름 수정 (본인 소유 행만 RLS) */
-export async function updateTag(tagId: string, rawName: string): Promise<void> {
+export async function updateTag(tagId: string, rawName: string): Promise<TagRow> {
   const label = normalizeTagInput(rawName)
   if (!label) throw new Error('태그 이름이 비었습니다.')
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('tags')
     .update({ name: label })
     .eq('id', tagId)
+    .select('id, name, color_index, created_at')
+    .single()
   if (error) {
     if (error.code === '23505') {
       throw new Error('같은 이름의 태그가 이미 있습니다.')
     }
     throw error
   }
+  return data as TagRow
 }
 
 /**
  * 태그 삭제 전: 이 태그가 붙은 모든 메모를 먼저 삭제한 뒤 태그 삭제.
  * (메모에 다른 태그가 있어도 해당 메모 행 전체가 삭제됩니다.)
  */
-export async function deleteTagAndLinkedNotes(tagId: string): Promise<void> {
+export type TagDeleteResult = {
+  deletedTagId: string
+  deletedNoteIds: string[]
+}
+
+export async function deleteTagAndLinkedNotes(
+  tagId: string,
+): Promise<TagDeleteResult> {
   const { data: links, error: qErr } = await supabase
     .from('note_tags')
     .select('note_id')
@@ -219,6 +244,46 @@ export async function deleteTagAndLinkedNotes(tagId: string): Promise<void> {
 
   const { error: tErr } = await supabase.from('tags').delete().eq('id', tagId)
   if (tErr) throw tErr
+  return { deletedTagId: tagId, deletedNoteIds: noteIds }
+}
+
+/** note에 붙은 태그 메타를 allTags 맵에 반영(추가·이름 갱신). */
+export function mergeTagsFromNoteIntoAllTags(
+  prev: TagRow[],
+  note: NoteWithTags,
+): TagRow[] {
+  const byId = new Map(prev.map((t) => [t.id, { ...t }]))
+  for (const nt of note.note_tags) {
+    const tg = nt.tags
+    if (!tg) continue
+    const cur = byId.get(tg.id)
+    byId.set(tg.id, {
+      id: tg.id,
+      name: tg.name,
+      color_index: tg.color_index,
+      created_at: cur?.created_at,
+    })
+  }
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+}
+
+/** 태그 이름 변경 시 모든 메모 카드에 반영 */
+export function mapNotesWithRenamedTag(
+  notes: NoteWithTags[],
+  tagId: string,
+  name: string,
+  color_index: number,
+): NoteWithTags[] {
+  return notes.map((n) => ({
+    ...n,
+    note_tags: n.note_tags.map((nt) => {
+      if (nt.tag_id !== tagId && nt.tags?.id !== tagId) return nt
+      return {
+        tag_id: tagId,
+        tags: { id: tagId, name, color_index },
+      }
+    }),
+  }))
 }
 
 export function filterTagsByQuery(all: TagRow[], q: string, excludeIds: string[]): TagRow[] {

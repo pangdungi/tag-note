@@ -11,8 +11,8 @@ type Props = {
   open: boolean
   onClose: () => void
   tags: TagRow[]
-  onReload: () => Promise<void>
-  onDeletedTagId: (tagId: string) => void
+  onTagUpdated: (row: TagRow) => void
+  onTagDeleted: (payload: { tagId: string; deletedNoteIds: string[] }) => void
 }
 
 function subscribeFinePointerHover(mq: MediaQueryList, cb: () => void) {
@@ -39,8 +39,8 @@ export function TagManageModal({
   open,
   onClose,
   tags,
-  onReload,
-  onDeletedTagId,
+  onTagUpdated,
+  onTagDeleted,
 }: Props) {
   const titleId = useId()
   const [q, setQ] = useState('')
@@ -110,11 +110,11 @@ export function TagManageModal({
     setError(null)
     setBusy(true)
     try {
-      await updateTag(tagId, editDraft)
+      const row = await updateTag(tagId, editDraft)
       setEditingId(null)
       setEditDraft('')
       setTapRevealedRowId(null)
-      await onReload()
+      onTagUpdated(row)
     } catch (e) {
       setError(e instanceof Error ? e.message : '저장하지 못했습니다.')
     } finally {
@@ -128,10 +128,12 @@ export function TagManageModal({
     setBusy(true)
     try {
       const id = deleteTarget.id
-      await deleteTagAndLinkedNotes(id)
-      onDeletedTagId(id)
+      const result = await deleteTagAndLinkedNotes(id)
+      onTagDeleted({
+        tagId: result.deletedTagId,
+        deletedNoteIds: result.deletedNoteIds,
+      })
       setDeleteTarget(null)
-      await onReload()
     } catch (e) {
       setError(e instanceof Error ? e.message : '삭제하지 못했습니다.')
     } finally {

@@ -11,6 +11,8 @@ import {
   fetchTags,
   filterNotesByMainSearch,
   filterTagsByMainSearch,
+  mapNotesWithRenamedTag,
+  mergeTagsFromNoteIntoAllTags,
   type NoteWithTags,
   type TagRow,
 } from '../lib/notesApi'
@@ -235,6 +237,43 @@ export function HomePage() {
     }
   }, [user?.id])
 
+  const applyNoteCreated = useCallback((note: NoteWithTags) => {
+    setNotes((prev) => [note, ...prev.filter((n) => n.id !== note.id)])
+    setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
+    setTagSearch('')
+  }, [])
+
+  const applyNoteUpdated = useCallback((note: NoteWithTags) => {
+    setNotes((prev) => prev.map((n) => (n.id === note.id ? note : n)))
+    setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
+  }, [])
+
+  const applyNoteDeleted = useCallback((noteId: string) => {
+    setNotes((prev) => prev.filter((n) => n.id !== noteId))
+    setEditingNote((cur) => (cur?.id === noteId ? null : cur))
+  }, [])
+
+  const applyTagUpdated = useCallback((row: TagRow) => {
+    setAllTags((prev) => {
+      const next = prev.map((t) => (t.id === row.id ? row : t))
+      return [...next].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+    })
+    setNotes((prev) => mapNotesWithRenamedTag(prev, row.id, row.name, row.color_index))
+  }, [])
+
+  const applyTagDeleted = useCallback(
+    (payload: { tagId: string; deletedNoteIds: string[] }) => {
+      const { tagId, deletedNoteIds } = payload
+      setSelectedTagId((s) => (s === tagId ? null : s))
+      setAllTags((prev) => prev.filter((t) => t.id !== tagId))
+      setNotes((prev) => prev.filter((n) => !deletedNoteIds.includes(n.id)))
+      setEditingNote((cur) =>
+        cur && deletedNoteIds.includes(cur.id) ? null : cur,
+      )
+    },
+    [],
+  )
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 초기/세션 전환 시 Supabase 페치
     void loadData()
@@ -296,7 +335,7 @@ export function HomePage() {
     if (!user?.id) return
     setSaveError(null)
     try {
-      await createNoteWithTags(
+      const note = await createNoteWithTags(
         bootstrapBody,
         bootstrapTags.map((t) => t.name),
         user.id,
@@ -306,7 +345,7 @@ export function HomePage() {
       setBootstrapBody('')
       setBootstrapSource('')
       setBootstrapTags([])
-      await loadData()
+      applyNoteCreated(note)
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : '저장에 실패했습니다.')
     }
@@ -610,10 +649,7 @@ export function HomePage() {
           initialTags={addNoteSeedTags}
           allTags={allTags}
           userId={user.id}
-          onSaved={async () => {
-            setTagSearch('')
-            await loadData()
-          }}
+          onSaved={applyNoteCreated}
         />
       ) : null}
 
@@ -621,10 +657,8 @@ export function HomePage() {
         open={tagManageOpen}
         onClose={() => setTagManageOpen(false)}
         tags={allTags}
-        onReload={loadData}
-        onDeletedTagId={(id) => {
-          setSelectedTagId((s) => (s === id ? null : s))
-        }}
+        onTagUpdated={applyTagUpdated}
+        onTagDeleted={applyTagDeleted}
       />
 
       {user ? (
@@ -646,7 +680,8 @@ export function HomePage() {
           note={editingNote}
           allTags={allTags}
           userId={user.id}
-          onSaved={loadData}
+          onNoteUpdated={applyNoteUpdated}
+          onNoteDeleted={applyNoteDeleted}
         />
       ) : null}
     </div>
