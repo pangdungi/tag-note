@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../contexts/useAuth'
 
 type Mode = 'login' | 'signup'
@@ -54,6 +55,15 @@ export function LoginPage() {
             ? '이메일과 비밀번호로 계속합니다.'
             : '새 계정을 만듭니다. 무료입니다.'}
         </p>
+
+        {!isSupabaseConfigured ? (
+          <p className="feedback feedback-warn" role="status">
+            프로젝트 루트에 <code className="inline-code">.env</code>를 만들고{' '}
+            <code className="inline-code">VITE_SUPABASE_URL</code>,{' '}
+            <code className="inline-code">VITE_SUPABASE_ANON_KEY</code>를
+            설정한 뒤 개발 서버를 다시 실행하세요.
+          </p>
+        ) : null}
 
         <div className="auth-tabs" role="tablist">
           <button
@@ -120,7 +130,7 @@ export function LoginPage() {
 
           <button
             type="submit"
-            className="btn-primary"
+            className="btn btn--emphasis btn--block"
             disabled={submitting}
           >
             {submitting

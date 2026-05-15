@@ -13,7 +13,7 @@ export default defineConfig({
         name: '태그노트',
         short_name: '태그노트',
         description: '태그로 정리하는 메모',
-        theme_color: '#fafafa',
+        theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'any',
