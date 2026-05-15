@@ -171,14 +171,14 @@ export function HomePage() {
 
   const showBootstrap = allTags.length === 0 && !loading
 
-  const canUseCompose = !showBootstrap && !loading && !loadError
-
   const showAddTagFromSearch =
     !showBootstrap &&
     !loading &&
     !loadError &&
     searchNormalized.length > 0 &&
     !hasExactTagMatch
+
+  const canUseCompose = !showBootstrap && !loading && !loadError
 
   function openCompose() {
     if (!canUseCompose) return
