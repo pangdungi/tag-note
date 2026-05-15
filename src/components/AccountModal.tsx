@@ -11,6 +11,11 @@ import {
   setStoredAppFontId,
   type AppFontChoiceId,
 } from '../lib/appFont'
+import { isSupabaseConfigured } from '../lib/supabase'
+import {
+  ensureUserAppFontRow,
+  upsertUserAppFontId,
+} from '../lib/userPreferencesApi'
 
 type Props = {
   open: boolean
@@ -71,6 +76,25 @@ export function AccountModal({
     if (!open) return
     void onAfterOpen()
   }, [open, onAfterOpen])
+
+  useEffect(() => {
+    if (!open || !isSupabaseConfigured) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const id = await ensureUserAppFontRow(user.id)
+        if (cancelled) return
+        setAppFontId(id)
+        setStoredAppFontId(id)
+        applyAppFontToDocument(id)
+      } catch {
+        /* 마이그레이션 미적용·오프라인 등 */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open, user.id])
 
   useEffect(() => {
     if (!open) return
@@ -137,8 +161,8 @@ export function AccountModal({
           <section className="tag-manage-account-section" aria-label="글꼴">
             <h3 className="tag-manage-account-section-title">글꼴</h3>
             <p className="tag-manage-account-font-hint">
-              선택한 글꼴이 앱 화면 전체의 기본 글꼴로 적용됩니다. 이 기기 브라우저에만
-              저장됩니다.
+              선택한 글꼴은 <strong>계정에 저장</strong>되어 로그인하는 기기에서 같이
+              쓰이고, 이 브라우저에는 빠른 적용을 위해 로컬에도 맞춰 둡니다.
             </p>
             <ul className="tag-manage-account-font-list" role="list">
               {APP_FONT_OPTIONS.map((opt) => (
@@ -153,6 +177,11 @@ export function AccountModal({
                         setAppFontId(opt.id)
                         setStoredAppFontId(opt.id)
                         applyAppFontToDocument(opt.id)
+                        if (isSupabaseConfigured) {
+                          void upsertUserAppFontId(user.id, opt.id).catch(
+                            () => {},
+                          )
+                        }
                       }}
                     />
                     <span className="tag-manage-account-font-option-text">

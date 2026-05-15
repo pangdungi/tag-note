@@ -27,19 +27,3 @@ export const supabaseUrlForRest = url.replace(/\/$/, '')
 
 /** anon 키 — 브라우저에서 직접 `fetch`할 때만 사용 (클라이언트 번들에 포함됨) */
 export const supabaseAnonKey = anonKey
-
-/** 디버그용(키 노출 없음). REST 요청이 어느 호스트로 가는지 확인. */
-export const supabaseProjectHost = (() => {
-  try {
-    return new URL(url).hostname
-  } catch {
-    return '(invalid-url)'
-  }
-})()
-
-console.info('[tag-note][supabase] 클라이언트 요약 (키 전체는 출력 안 함)', {
-  환경변수로설정됨: isSupabaseConfigured,
-  API호스트: supabaseProjectHost,
-  anon키글자수: anonKey.length,
-  더미URL사용중: url === PLACEHOLDER_URL,
-})

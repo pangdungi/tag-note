@@ -18,6 +18,8 @@ import {
   fetchUserSubscription,
   SubscriptionFetchTimeoutError,
 } from '../lib/subscriptionsApi'
+import { loadAndApplyUserAppFontSafe } from '../lib/userPreferencesApi'
+import { resetAppFontForSignedOut } from '../lib/appFont'
 import { AuthContext } from './auth-context'
 
 function setExpiryNoticeAndSignOut(): void {
@@ -50,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!next?.user) {
         setSubscription(null)
         setSession(null)
+        resetAppFontForSignedOut()
         return
       }
 
@@ -66,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (e instanceof SubscriptionFetchTimeoutError) {
           setSubscription(null)
           setSession(next)
+          void loadAndApplyUserAppFontSafe(next.user.id)
           return
         }
         throw e
@@ -80,11 +84,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         setSubscription(null)
         setSession(null)
+        resetAppFontForSignedOut()
         return
       }
 
       setSubscription(sub)
       setSession(next)
+      void loadAndApplyUserAppFontSafe(next.user.id)
     } finally {
       processInFlightRef.current = Math.max(0, processInFlightRef.current - 1)
     }
@@ -164,6 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setExpiryNoticeAndSignOut()
         setSubscription(null)
         setSession(null)
+        resetAppFontForSignedOut()
       } else {
         setSubscription(sub)
       }
@@ -222,6 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (e instanceof SubscriptionFetchTimeoutError) {
           setSubscription(null)
           setSession(data.session)
+          void loadAndApplyUserAppFontSafe(data.user.id)
           return { error: null }
         }
         throw e
@@ -230,6 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await supabase.auth.signOut()
         setSubscription(null)
         setSession(null)
+        resetAppFontForSignedOut()
         if (!sub) {
           setMissingSubscriptionNotice()
           return {
@@ -248,6 +257,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setSubscription(sub)
       setSession(data.session)
+      void loadAndApplyUserAppFontSafe(data.user.id)
       return { error: null }
     },
     [],
@@ -262,6 +272,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
     setSubscription(null)
     setSession(null)
+    resetAppFontForSignedOut()
   }, [])
 
   const refreshSubscription = useCallback(async () => {
@@ -283,6 +294,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       else setExpiryNoticeAndSignOut()
       setSubscription(null)
       setSession(null)
+      resetAppFontForSignedOut()
     }
   }, [session])
 

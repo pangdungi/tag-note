@@ -83,3 +83,13 @@ export function applyAppFontToDocument(id: AppFontChoiceId): void {
     getAppFontCssStack(id),
   )
 }
+
+/** 로그아웃 후 로그인 화면 등: 로컬 캐시를 시스템 글꼴로 맞춤 */
+export function resetAppFontForSignedOut(): void {
+  try {
+    localStorage.setItem(APP_FONT_STORAGE_KEY, DEFAULT_ID)
+  } catch {
+    /* ignore */
+  }
+  applyAppFontToDocument(DEFAULT_ID)
+}
