@@ -1,10 +1,17 @@
 import { useEffect, useId, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
+import {
+  accountSubscriptionLabel,
+  type UserSubscriptionRow,
+} from '../lib/subscription'
 
 type Props = {
   open: boolean
   onClose: () => void
   user: User
+  subscription: UserSubscriptionRow | null
+  subscriptionEnabled: boolean
+  onAfterOpen: () => void | Promise<void>
   onSignOut: () => void | Promise<void>
 }
 
@@ -30,7 +37,15 @@ function displayNameFromUser(user: User): string | null {
   return v || null
 }
 
-export function AccountModal({ open, onClose, user, onSignOut }: Props) {
+export function AccountModal({
+  open,
+  onClose,
+  user,
+  subscription,
+  subscriptionEnabled,
+  onAfterOpen,
+  onSignOut,
+}: Props) {
   const titleId = useId()
   const [signingOut, setSigningOut] = useState(false)
 
@@ -40,6 +55,11 @@ export function AccountModal({ open, onClose, user, onSignOut }: Props) {
   useEffect(() => {
     if (!open) setSigningOut(false)
   }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    void onAfterOpen()
+  }, [open, onAfterOpen])
 
   useEffect(() => {
     if (!open) return
@@ -104,11 +124,40 @@ export function AccountModal({ open, onClose, user, onSignOut }: Props) {
           </section>
 
           <section className="tag-manage-account-section" aria-label="구독">
-            <h3 className="tag-manage-account-section-title">구독</h3>
-            <p className="tag-manage-account-subscription">
-              유료 구독·결제 연동은 아직 없습니다. 지금은 무료로 이용 중입니다.
-              이후 플랜이 생기면 여기에 표시됩니다.
-            </p>
+            <h3 className="tag-manage-account-section-title">구독·체험</h3>
+            {subscriptionEnabled ? (
+              subscription ? (
+                <>
+                  <dl className="tag-manage-account-dl">
+                    <div className="tag-manage-account-field">
+                      <dt>이용 상태</dt>
+                      <dd className="tag-manage-account-status-line">
+                        {accountSubscriptionLabel(subscription)}
+                      </dd>
+                    </div>
+                    <div className="tag-manage-account-field">
+                      <dt>이용 기간</dt>
+                      <dd>
+                        {formatKoDateTime(subscription.period_start) ?? '—'} ~{' '}
+                        {formatKoDateTime(subscription.period_end) ?? '—'}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="tag-manage-account-subscription tag-manage-account-subscription--note">
+                    가입 시 7일 무료 체험이 적용됩니다. 결제 연동 후에는 유료
+                    구독으로 기간이 갱신됩니다.
+                  </p>
+                </>
+              ) : (
+                <p className="tag-manage-account-subscription" role="status">
+                  구독 정보를 불러오지 못했습니다. 잠시 후 다시 열어 보세요.
+                </p>
+              )
+            ) : (
+              <p className="tag-manage-account-subscription">
+                Supabase에 연결하면 체험·이용 기간이 표시됩니다.
+              </p>
+            )}
             <button
               type="button"
               className="tag-manage-account-withdraw-link"

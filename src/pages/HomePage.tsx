@@ -15,6 +15,7 @@ import {
   type TagRow,
 } from '../lib/notesApi'
 import { displayTagName, normalizeTagInput, pickColorIndex, TAG_COLOR_COUNT } from '../lib/tagUtils'
+import { isSupabaseConfigured } from '../lib/supabase'
 import tagIconUrl from '../assets/tag-icon.png'
 import userCircleIconUrl from '../assets/user-circle-icon.png'
 import editPencilUrl from '../assets/edit-pencil.png'
@@ -179,7 +180,11 @@ function HomeQuickActionButtons({
 }
 
 export function HomePage() {
-  const { user, signOut } = useAuth()
+  const { user, signOut, subscription, refreshSubscription } = useAuth()
+
+  const refreshAccountSubscription = useCallback(() => {
+    void refreshSubscription()
+  }, [refreshSubscription])
   const [tagSearch, setTagSearch] = useState('')
   const [bootstrapTags, setBootstrapTags] = useState<SelectedTag[]>([])
   const [bootstrapBody, setBootstrapBody] = useState('')
@@ -618,6 +623,9 @@ export function HomePage() {
           open={accountModalOpen}
           onClose={() => setAccountModalOpen(false)}
           user={user}
+          subscription={subscription}
+          subscriptionEnabled={isSupabaseConfigured}
+          onAfterOpen={refreshAccountSubscription}
           onSignOut={signOut}
         />
       ) : null}

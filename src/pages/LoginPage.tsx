@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { AUTH_NOTICE_KEY } from '../lib/subscription'
 import { useAuth } from '../contexts/useAuth'
 
 type Mode = 'login' | 'signup'
@@ -12,6 +13,14 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const msg = sessionStorage.getItem(AUTH_NOTICE_KEY)
+    if (msg) {
+      setError(msg)
+      sessionStorage.removeItem(AUTH_NOTICE_KEY)
+    }
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -28,7 +37,7 @@ export function LoginPage() {
           setError(err.message)
         } else {
           setMessage(
-            '가입 확인 메일을 보냈을 수 있습니다. 메일함을 확인하거나 바로 로그인해 보세요.',
+            '가입 확인 메일을 보냈을 수 있습니다. 메일함을 확인하거나 바로 로그인해 보세요. 로그인 후 7일 무료 체험이 이어집니다.',
           )
         }
       }
@@ -41,7 +50,7 @@ export function LoginPage() {
     <div className="auth-shell">
       <div className="auth-decor" aria-hidden>
         <span className="tag tag-a">#아이디어</span>
-        <span className="tag tag-b">#할일</span>
+        <span className="tag tag-b">#사랑이란</span>
         <span className="tag tag-c">#읽을거리</span>
       </div>
 
@@ -51,11 +60,11 @@ export function LoginPage() {
           <h1 className="auth-title">
             {mode === 'login' ? '로그인' : '회원가입'}
           </h1>
-          <p className="auth-sub">
-            {mode === 'login'
-              ? '이메일과 비밀번호로 계속합니다.'
-              : '새 계정을 만듭니다. 무료입니다.'}
-          </p>
+          {mode === 'signup' ? (
+            <p className="auth-sub">
+              새 계정을 만듭니다. 가입과 동시에 7일 무료 체험이 시작됩니다.
+            </p>
+          ) : null}
 
           {!isSupabaseConfigured ? (
             <p className="feedback feedback-warn" role="status">
@@ -105,7 +114,6 @@ export function LoginPage() {
                 value={email}
                 onChange={(ev) => setEmail(ev.target.value)}
                 required
-                placeholder="you@example.com"
               />
             </label>
             <label className="field">
@@ -120,7 +128,6 @@ export function LoginPage() {
                 onChange={(ev) => setPassword(ev.target.value)}
                 required
                 minLength={6}
-                placeholder="6자 이상"
               />
             </label>
 
