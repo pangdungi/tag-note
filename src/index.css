@@ -802,39 +802,36 @@ body {
   margin: 0;
 }
 
-.note-board-grid {
+.note-board-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 0.75rem;
-  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
 }
 
-.note-board-grid > li {
-  display: flex;
-  min-height: 0;
+.note-board-list > li {
+  margin: 0;
 }
 
 .note-board-card {
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 0.85rem 0.9rem 0.8rem;
+  padding: 0.75rem 0.95rem 0.72rem;
   display: flex;
   flex-direction: column;
-  flex: 1;
   width: 100%;
-  min-height: 11.5rem;
   min-width: 0;
+  box-sizing: border-box;
 }
 
 .note-board-card-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
-  margin-bottom: 0.55rem;
+  margin-bottom: 0.45rem;
   flex-shrink: 0;
 }
 
@@ -850,15 +847,11 @@ body {
 .note-board-card-preview {
   margin: 0;
   font-size: 0.88rem;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--text-strong);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: pre-wrap;
   word-break: break-word;
-  flex: 1 1 auto;
-  min-height: calc(1.5em * 3);
+  overflow-wrap: anywhere;
 }
 
 .note-board-card-preview--empty {
@@ -867,12 +860,12 @@ body {
 }
 
 .note-board-card-meta {
-  margin-top: auto;
+  margin-top: 0.5rem;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  padding-top: 0.35rem;
+  padding-top: 0.4rem;
   border-top: 1px solid var(--border);
   font-size: 0.72rem;
   line-height: 1.35;

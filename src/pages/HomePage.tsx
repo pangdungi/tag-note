@@ -511,7 +511,7 @@ export function HomePage() {
                   이 태그가 달린 메모가 아직 없습니다.
                 </p>
               ) : (
-                <ul className="note-board-grid">
+                <ul className="note-board-list">
                   {notesForSelectedTag.map((note) => (
                     <li key={note.id}>
                       <NoteBoardCard note={note} />
