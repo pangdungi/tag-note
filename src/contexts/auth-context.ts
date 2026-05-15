@@ -9,6 +9,7 @@ export type AuthContextValue = {
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signUp: (email: string, password: string) => Promise<{ error: Error | null }>
+  requestPasswordReset: (email: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
   refreshSubscription: () => Promise<void>
 }

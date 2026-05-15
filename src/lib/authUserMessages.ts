@@ -1,6 +1,6 @@
 /** Supabase Auth 등에서 오는 영문 메시지를 화면용 한글로 바꿉니다. */
 
-type AuthFormMode = 'login' | 'signup'
+type AuthFormMode = 'login' | 'signup' | 'forgot'
 
 export function userFacingAuthMessage(raw: string, mode: AuthFormMode): string {
   const t = raw.trim()
@@ -43,6 +43,15 @@ export function userFacingAuthMessage(raw: string, mode: AuthFormMode): string {
     }
     if (low.includes('signup_disabled') || low.includes('signup is disabled')) {
       return '현재 새 계정 가입을 받지 않습니다.'
+    }
+  }
+
+  if (mode === 'forgot') {
+    if (
+      low.includes('email not confirmed') ||
+      low.includes('email_not_confirmed')
+    ) {
+      return '이메일 인증을 먼저 완료해 주세요.'
     }
   }
 

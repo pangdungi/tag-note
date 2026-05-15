@@ -4,6 +4,7 @@ import { useAuth } from './contexts/useAuth'
 import { useLoadingUiMountLog } from './lib/loadingUiMountLog'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
+import { RecoveryPage } from './pages/RecoveryPage'
 
 function AppFullScreenLoading({ where }: { where: string }) {
   useLoadingUiMountLog(where)
@@ -51,6 +52,7 @@ export default function App() {
               </PublicOnly>
             }
           />
+          <Route path="/auth/recovery" element={<RecoveryPage />} />
           <Route
             path="/"
             element={

@@ -1,5 +1,8 @@
 export const AUTH_NOTICE_KEY = 'tag_note_auth_notice'
 
+/** 로그인 화면에 한 번 표시할 안내(성공 등). */
+export const AUTH_SUCCESS_NOTICE_KEY = 'tag_note_auth_success_notice'
+
 export type SubscriptionStatus = 'active' | 'inactive'
 
 export type UserSubscriptionRow = {

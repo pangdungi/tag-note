@@ -56,6 +56,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
+      const recoveryPath =
+        typeof window !== 'undefined' &&
+        window.location.pathname.startsWith('/auth/recovery')
+
+      if (recoveryPath) {
+        setSubscription(null)
+        setSession(next)
+        return
+      }
+
       if (!isSupabaseConfigured) {
         setSubscription(null)
         setSession(next)
@@ -268,6 +278,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error ? new Error(error.message) : null }
   }, [])
 
+  const requestPasswordReset = useCallback(async (email: string) => {
+    if (!isSupabaseConfigured) {
+      return { error: new Error('Supabase가 설정되지 않았습니다.') }
+    }
+    const redirectTo = `${window.location.origin}/auth/recovery`
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo,
+    })
+    return { error: error ? new Error(error.message) : null }
+  }, [])
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut()
     setSubscription(null)
@@ -306,10 +327,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       signIn,
       signUp,
+      requestPasswordReset,
       signOut,
       refreshSubscription,
     }),
-    [session, subscription, loading, signIn, signUp, signOut, refreshSubscription],
+    [
+      session,
+      subscription,
+      loading,
+      signIn,
+      signUp,
+      requestPasswordReset,
+      signOut,
+      refreshSubscription,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

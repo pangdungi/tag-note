@@ -16,6 +16,7 @@ import {
   ensureUserAppFontRow,
   upsertUserAppFontId,
 } from '../lib/userPreferencesApi'
+import { deleteOwnAccount } from '../lib/accountApi'
 
 type Props = {
   open: boolean
@@ -63,17 +64,26 @@ export function AccountModal({
   const [appFontId, setAppFontId] = useState<AppFontChoiceId>(() =>
     getStoredAppFontId(),
   )
+  const [withdrawPhase, setWithdrawPhase] = useState<'idle' | 'confirm'>('idle')
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const profileName = displayNameFromUser(user)
   const joinedAt = formatKoDateTime(user.created_at)
 
   const handleClose = useCallback(() => {
     setSigningOut(false)
+    setWithdrawPhase('idle')
+    setDeleteError(null)
+    setDeleteBusy(false)
     onClose()
   }, [onClose])
 
   useEffect(() => {
     if (!open) return
+    setWithdrawPhase('idle')
+    setDeleteError(null)
+    setDeleteBusy(false)
     void onAfterOpen()
   }, [open, onAfterOpen])
 
@@ -236,15 +246,78 @@ export function AccountModal({
                 Supabase에 연결하면 체험·이용 기간이 표시됩니다.
               </p>
             )}
-            <button
-              type="button"
-              className="tag-manage-account-withdraw-link"
-              disabled
-              aria-disabled="true"
-              title="곧 제공 예정입니다"
-            >
-              회원 탈퇴
-            </button>
+            {isSupabaseConfigured ? (
+              <div className="tag-manage-account-delete">
+                {withdrawPhase === 'idle' ? (
+                  <button
+                    type="button"
+                    className="tag-manage-account-withdraw-link"
+                    onClick={() => {
+                      setWithdrawPhase('confirm')
+                      setDeleteError(null)
+                    }}
+                  >
+                    회원 탈퇴
+                  </button>
+                ) : (
+                  <div
+                    className="tag-manage-account-delete-confirm"
+                    role="group"
+                    aria-label="회원 탈퇴 확인"
+                  >
+                    <p className="tag-manage-account-delete-warn">
+                      모든 메모·태그·구독·글꼴 설정이 삭제되며{' '}
+                      <strong>복구할 수 없습니다</strong>. 로그인 계정(이메일)도
+                      함께 제거됩니다.
+                    </p>
+                    {deleteError ? (
+                      <p className="tag-manage-account-delete-err" role="alert">
+                        {deleteError}
+                      </p>
+                    ) : null}
+                    <div className="tag-manage-account-delete-actions">
+                      <button
+                        type="button"
+                        className="btn btn--quiet"
+                        disabled={deleteBusy}
+                        onClick={() => {
+                          setWithdrawPhase('idle')
+                          setDeleteError(null)
+                        }}
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        className="btn tag-manage-account-delete-confirm-btn"
+                        disabled={deleteBusy}
+                        onClick={() => {
+                          void (async () => {
+                            setDeleteBusy(true)
+                            setDeleteError(null)
+                            const { error } = await deleteOwnAccount()
+                            setDeleteBusy(false)
+                            if (error) {
+                              setDeleteError(
+                                '탈퇴 처리에 실패했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.',
+                              )
+                              return
+                            }
+                            try {
+                              await onSignOut()
+                            } finally {
+                              handleClose()
+                            }
+                          })()
+                        }}
+                      >
+                        {deleteBusy ? '처리 중…' : '탈퇴하기'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
           </section>
 
           <div className="tag-manage-account-foot">
