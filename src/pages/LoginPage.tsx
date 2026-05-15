@@ -42,14 +42,24 @@ export function LoginPage() {
     setError(null)
     setMessage(null)
     setSubmitting(true)
+    console.info('[tag-note][auth] LoginPage submit 시작', { mode })
     try {
       if (mode === 'login') {
         const { error: err } = await signIn(email.trim(), password)
+        console.info('[tag-note][auth] LoginPage signIn 끝', {
+          error: err?.message ?? null,
+        })
         if (err) {
           setError(userFacingAuthMessage(err.message, 'login'))
         }
       } else if (mode === 'forgot') {
+        console.info('[tag-note][auth] LoginPage requestPasswordReset 호출 직전', {
+          emailLen: email.trim().length,
+        })
         const { error: err } = await requestPasswordReset(email.trim())
+        console.info('[tag-note][auth] LoginPage requestPasswordReset 끝', {
+          error: err?.message ?? null,
+        })
         if (err) {
           setError(userFacingAuthMessage(err.message, 'forgot'))
         } else {
@@ -59,6 +69,9 @@ export function LoginPage() {
         }
       } else {
         const { error: err } = await signUp(email.trim(), password)
+        console.info('[tag-note][auth] LoginPage signUp 끝', {
+          error: err?.message ?? null,
+        })
         if (err) {
           setError(userFacingAuthMessage(err.message, 'signup'))
         } else {
@@ -67,7 +80,11 @@ export function LoginPage() {
           )
         }
       }
+    } catch (x) {
+      console.error('[tag-note][auth] LoginPage submit 예외', x)
+      setError('요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.')
     } finally {
+      console.info('[tag-note][auth] LoginPage submit finally, submitting 해제')
       setSubmitting(false)
     }
   }

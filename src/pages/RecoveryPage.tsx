@@ -21,8 +21,12 @@ export function RecoveryPage() {
       return
     }
     setSubmitting(true)
+    console.info('[tag-note][auth] RecoveryPage updateUser 시작')
     try {
       const { error: err } = await supabase.auth.updateUser({ password })
+      console.info('[tag-note][auth] RecoveryPage updateUser 끝', {
+        error: err?.message ?? null,
+      })
       if (err) {
         setError(userFacingAuthMessage(err.message, 'signup'))
         return
@@ -36,7 +40,11 @@ export function RecoveryPage() {
         /* ignore */
       }
       await signOut()
+      console.info('[tag-note][auth] RecoveryPage → /login 이동')
       navigate('/login', { replace: true })
+    } catch (x) {
+      console.error('[tag-note][auth] RecoveryPage submit 예외', x)
+      setError('비밀번호 변경에 실패했습니다. 잠시 후 다시 시도해 주세요.')
     } finally {
       setSubmitting(false)
     }
