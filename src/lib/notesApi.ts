@@ -48,24 +48,6 @@ export async function fetchNotesWithTags(): Promise<NoteWithTags[]> {
   return (data ?? []) as unknown as NoteWithTags[]
 }
 
-export async function updateTagName(tagId: string, rawName: string): Promise<void> {
-  const name = normalizeTagInput(rawName)
-  if (!name) throw new Error('태그 이름이 비었습니다.')
-
-  const { error } = await supabase.from('tags').update({ name }).eq('id', tagId)
-  if (error) {
-    if (error.code === '23505') {
-      throw new Error('같은 이름의 태그가 이미 있습니다.')
-    }
-    throw error
-  }
-}
-
-export async function deleteTag(tagId: string): Promise<void> {
-  const { error } = await supabase.from('tags').delete().eq('id', tagId)
-  if (error) throw error
-}
-
 async function ensureTagId(
   name: string,
   userId: string,

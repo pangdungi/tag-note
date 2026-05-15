@@ -3,11 +3,9 @@ import { TagComposer, type SelectedTag } from '../components/TagComposer'
 import { useAuth } from '../contexts/useAuth'
 import {
   createNoteWithTags,
-  deleteTag,
   fetchNotesWithTags,
   fetchTags,
   filterTagsByMainSearch,
-  updateTagName,
   type NoteWithTags,
   type TagRow,
 } from '../lib/notesApi'
@@ -85,12 +83,6 @@ export function HomePage() {
   const [composeBody, setComposeBody] = useState('')
   const [composeSource, setComposeSource] = useState('')
   const [composeError, setComposeError] = useState<string | null>(null)
-
-  const [tagEditMode, setTagEditMode] = useState(false)
-  const [editModalTag, setEditModalTag] = useState<TagRow | null>(null)
-  const [editModalName, setEditModalName] = useState('')
-  const [editModalError, setEditModalError] = useState<string | null>(null)
-  const [editModalBusy, setEditModalBusy] = useState(false)
 
   const loadData = useCallback(async () => {
     if (!user?.id) return
@@ -179,88 +171,12 @@ export function HomePage() {
 
   const showBootstrap = allTags.length === 0 && !loading
 
-  const canUseCompose =
-    !showBootstrap && !loading && !loadError && !tagEditMode
-
-  function exitTagEditMode() {
-    setTagEditMode(false)
-    setEditModalTag(null)
-    setEditModalName('')
-    setEditModalError(null)
-  }
-
-  function enterTagEditMode() {
-    if (!showBootstrap && !loading && !loadError) {
-      closeCompose()
-      setSelectedTagId(null)
-      setEditModalTag(null)
-      setEditModalName('')
-      setEditModalError(null)
-      setTagEditMode(true)
-    }
-  }
-
-  function openTagEditModal(t: TagRow) {
-    setEditModalTag(t)
-    setEditModalName(t.name)
-    setEditModalError(null)
-  }
-
-  function closeTagEditModal() {
-    setEditModalTag(null)
-    setEditModalName('')
-    setEditModalError(null)
-    setEditModalBusy(false)
-  }
-
-  async function handleEditModalSave() {
-    if (!editModalTag) return
-    setEditModalError(null)
-    setEditModalBusy(true)
-    try {
-      await updateTagName(editModalTag.id, editModalName)
-      await loadData()
-      closeTagEditModal()
-    } catch (e) {
-      setEditModalError(
-        e instanceof Error ? e.message : '저장하지 못했습니다.',
-      )
-    } finally {
-      setEditModalBusy(false)
-    }
-  }
-
-  async function handleEditModalDelete() {
-    if (!editModalTag) return
-    if (
-      !window.confirm(
-        '이 태그를 삭제할까요? 메모는 남고, 이 태그와의 연결만 끊깁니다.',
-      )
-    ) {
-      return
-    }
-    setEditModalError(null)
-    setEditModalBusy(true)
-    const id = editModalTag.id
-    try {
-      await deleteTag(id)
-      setSelectedTagId((cur) => (cur === id ? null : cur))
-      await loadData()
-      closeTagEditModal()
-    } catch (e) {
-      setEditModalError(
-        e instanceof Error ? e.message : '삭제하지 못했습니다.',
-      )
-    } finally {
-      setEditModalBusy(false)
-    }
-  }
+  const canUseCompose = !showBootstrap && !loading && !loadError
 
   const showAddTagFromSearch =
     !showBootstrap &&
     !loading &&
     !loadError &&
-    !tagEditMode &&
     searchNormalized.length > 0 &&
     !hasExactTagMatch
 
@@ -317,19 +233,6 @@ export function HomePage() {
     }
   }
 
-  useEffect(() => {
-    if (!editModalTag) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !editModalBusy) {
-        setEditModalTag(null)
-        setEditModalName('')
-        setEditModalError(null)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [editModalTag, editModalBusy])
-
   return (
     <div className="home-layout">
       {loadError ? (
@@ -354,7 +257,7 @@ export function HomePage() {
       ) : null}
 
       <>
-        {!showBootstrap && !tagEditMode ? (
+        {!showBootstrap ? (
             <header className="home-top-tag-search" role="search">
               <div className="home-top-tag-search-inner">
                 <div className="home-tag-search-row">
@@ -403,56 +306,6 @@ export function HomePage() {
                 </div>
               </div>
             </header>
-        ) : null}
-        {!showBootstrap && tagEditMode ? (
-          <header className="tag-edit-top" role="banner">
-            <div className="tag-edit-top-inner">
-              <div className="tag-edit-toolbar-row">
-                <button
-                  type="button"
-                  className="btn btn--quiet tag-edit-done"
-                  onClick={exitTagEditMode}
-                >
-                  완료
-                </button>
-                <p className="tag-edit-headline">태그 편집</p>
-                <span className="tag-edit-toolbar-spacer" aria-hidden />
-              </div>
-              <div className="tag-edit-search-row" role="search">
-                <div className="home-search-wrap">
-                  <span className="sr-only">태그 검색</span>
-                  <svg
-                    className="home-search-icon"
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <path d="m21 21-4.3-4.3" />
-                  </svg>
-                  <input
-                    id="home-tag-search-edit-input"
-                    type="search"
-                    className="home-search-input"
-                    value={tagSearch}
-                    onChange={(e) => {
-                      setTagSearch(e.target.value)
-                    }}
-                    placeholder="태그 검색 (이름, 비슷한 단어)"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                </div>
-              </div>
-            </div>
-          </header>
         ) : null}
 
         <main
@@ -515,22 +368,7 @@ export function HomePage() {
           ) : null}
 
           {!showBootstrap ? (
-            <>
-              {!tagEditMode && !loading && allTags.length > 0 ? (
-                <div className="tag-section-toolbar">
-                  <button
-                    type="button"
-                    className="btn btn--quiet tag-edit-enter-btn"
-                    onClick={enterTagEditMode}
-                  >
-                    편집
-                  </button>
-                </div>
-              ) : null}
-              <section
-                className={`tag-grid-section${tagEditMode ? ' tag-grid-section--editing' : ''}`}
-                aria-label="내 태그"
-              >
+            <section className="tag-grid-section" aria-label="내 태그">
               {loading ? (
                 <p className="notes-hint">불러오는 중…</p>
               ) : visibleTags.length === 0 ? (
@@ -546,16 +384,10 @@ export function HomePage() {
                       <button
                         type="button"
                         className={`tag-grid-pill tag-tone-${t.color_index % 8}${
-                          !tagEditMode && selectedTagId === t.id
-                            ? ' tag-grid-pill--selected'
-                            : ''
-                        }${tagEditMode ? ' tag-grid-pill--edit-mode' : ''}`}
-                        aria-pressed={
-                          !tagEditMode ? selectedTagId === t.id : undefined
-                        }
-                        onClick={() =>
-                          tagEditMode ? openTagEditModal(t) : toggleTagSelect(t.id)
-                        }
+                          selectedTagId === t.id ? ' tag-grid-pill--selected' : ''
+                        }`}
+                        aria-pressed={selectedTagId === t.id}
+                        onClick={() => toggleTagSelect(t.id)}
                       >
                         {displayTagName(t.name)}
                       </button>
@@ -563,11 +395,10 @@ export function HomePage() {
                   ))}
                 </ul>
               )}
-              </section>
-            </>
+            </section>
           ) : null}
 
-          {!showBootstrap && !tagEditMode && selectedTagId ? (
+          {!showBootstrap && selectedTagId ? (
             <section
               className="note-board-section"
               aria-label={
@@ -592,7 +423,7 @@ export function HomePage() {
             </section>
           ) : null}
 
-          {!showBootstrap && !tagEditMode && composeOpen ? (
+          {!showBootstrap && composeOpen ? (
             <section
               className="home-inline-compose"
               aria-label="새 메모 작성"
@@ -657,71 +488,6 @@ export function HomePage() {
           ) : null}
         </main>
       </>
-
-      {editModalTag ? (
-        <div
-          className="tag-edit-modal-backdrop"
-          role="presentation"
-          onClick={() => {
-            if (!editModalBusy) closeTagEditModal()
-          }}
-        >
-          <div
-            className="tag-edit-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="tag-edit-modal-title"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 id="tag-edit-modal-title" className="tag-edit-modal-title">
-              태그 편집
-            </h2>
-            <label className="composer-label" htmlFor="tag-edit-modal-name">
-              이름
-            </label>
-            <input
-              id="tag-edit-modal-name"
-              type="text"
-              className="composer-source"
-              value={editModalName}
-              onChange={(e) => setEditModalName(e.target.value)}
-              autoComplete="off"
-              disabled={editModalBusy}
-            />
-            {editModalError ? (
-              <p className="composer-error tag-edit-modal-error">{editModalError}</p>
-            ) : null}
-            <div className="tag-edit-modal-actions">
-              <button
-                type="button"
-                className="btn btn--quiet tag-edit-modal-delete"
-                disabled={editModalBusy}
-                onClick={() => void handleEditModalDelete()}
-              >
-                삭제
-              </button>
-              <div className="tag-edit-modal-actions-right">
-                <button
-                  type="button"
-                  className="btn btn--quiet"
-                  disabled={editModalBusy}
-                  onClick={closeTagEditModal}
-                >
-                  취소
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--emphasis"
-                  disabled={editModalBusy}
-                  onClick={() => void handleEditModalSave()}
-                >
-                  저장
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       <button
         type="button"
