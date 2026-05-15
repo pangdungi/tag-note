@@ -382,6 +382,19 @@ body {
   color: var(--text-strong);
 }
 
+.btn--danger {
+  font-weight: 600;
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #ffffff;
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
 .btn--icon {
   width: 2.5rem;
   min-width: 2.5rem;
@@ -798,6 +811,13 @@ body {
   padding-top: 1.25rem;
 }
 
+.note-memo-search-title {
+  margin: 0 0 0.55rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
 .note-board-empty {
   margin: 0;
 }
@@ -827,12 +847,74 @@ body {
   box-sizing: border-box;
 }
 
+.note-board-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.note-board-card-edit {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #e8e9ec;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 96%);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease;
+  box-shadow: none;
+}
+
+.note-board-card-edit:hover {
+  background: #f7f8fa;
+  border-color: #dcdfe5;
+}
+
+.note-board-card-edit-img {
+  display: block;
+  width: 12px;
+  height: 12px;
+  opacity: 0.75;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .note-board-card:hover .note-board-card-edit {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.note-board-card:focus-within .note-board-card-edit {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.note-board-card--mobile-expand .note-board-card-edit {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .note-board-card-tags {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
-  margin-bottom: 0.45rem;
-  flex-shrink: 0;
+  align-items: center;
 }
 
 .note-board-tag-pill {
@@ -1242,6 +1324,53 @@ body {
   padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 }
 
+/* 앱 스타일 확인창 (브라우저 confirm 대체) */
+.confirm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+}
+
+.confirm-modal-dialog {
+  max-width: min(100%, 360px);
+  max-height: none;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 6%),
+    0 28px 56px rgb(15 23 42 / 16%);
+}
+
+.confirm-modal-body {
+  padding: 1.15rem 1.1rem 1.05rem;
+}
+
+.confirm-modal-title {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-strong);
+  line-height: 1.35;
+}
+
+.confirm-modal-message {
+  margin: 0 0 1.1rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.confirm-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 .tag-manage-backdrop {
   position: absolute;
   inset: 0;
@@ -1269,6 +1398,40 @@ body {
   overflow: hidden;
 }
 
+.tag-manage-dialog--edit-note {
+  max-width: min(100%, 440px);
+}
+
+.edit-note-modal-body {
+  padding: 0 1rem 1rem;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.edit-note-modal-note {
+  min-height: 8rem;
+}
+
+.edit-note-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem 1.75rem;
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.edit-note-modal-submit {
+  margin-left: auto;
+}
+
+.edit-note-modal-actions--add-only {
+  justify-content: flex-end;
+}
+
 .tag-manage-head {
   display: flex;
   align-items: center;
@@ -1277,6 +1440,11 @@ body {
   padding: 0.85rem 1rem;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+/* 헤더 구분선과 본문 첫 블록(태그/검색/폼) 사이 — 모든 tag-manage-head 모달 공통 */
+.tag-manage-dialog > .tag-manage-head + * {
+  margin-top: 0.65rem;
 }
 
 .tag-manage-title {
@@ -1311,7 +1479,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  margin: 0.75rem 1rem 0;
+  margin: 0 1rem 0;
   padding: 0 0.85rem;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1569,7 +1737,7 @@ body {
 }
 
 .tag-manage-account-body {
-  padding: 0.25rem 1rem 1rem;
+  padding: 0 1rem 1rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;

@@ -2,11 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { TagComposer, type SelectedTag } from '../components/TagComposer'
 import { TagManageModal } from '../components/TagManageModal'
 import { AccountModal } from '../components/AccountModal'
+import { EditNoteModal } from '../components/EditNoteModal'
+import { AddNoteModal } from '../components/AddNoteModal'
 import { useAuth } from '../contexts/useAuth'
 import {
   createNoteWithTags,
   fetchNotesWithTags,
   fetchTags,
+  filterNotesByMainSearch,
   filterTagsByMainSearch,
   type NoteWithTags,
   type TagRow,
@@ -14,6 +17,7 @@ import {
 import { displayTagName, normalizeTagInput, pickColorIndex } from '../lib/tagUtils'
 import tagIconUrl from '../assets/tag-icon.png'
 import userCircleIconUrl from '../assets/user-circle-icon.png'
+import editPencilUrl from '../assets/edit-pencil.png'
 
 function formatNoteWhen(iso: string) {
   try {
@@ -26,7 +30,17 @@ function formatNoteWhen(iso: string) {
   }
 }
 
-function NoteBoardCard({ note }: { note: NoteWithTags }) {
+function NoteBoardCard({
+  note,
+  mobileExpanded,
+  onTouchToggleExpand,
+  onEdit,
+}: {
+  note: NoteWithTags
+  mobileExpanded: boolean
+  onTouchToggleExpand: () => void
+  onEdit: (n: NoteWithTags) => void
+}) {
   const tagLinks = note.note_tags
     .map((nt) => nt.tags)
     .filter(Boolean) as { id: string; name: string; color_index: number }[]
@@ -39,16 +53,43 @@ function NoteBoardCard({ note }: { note: NoteWithTags }) {
   const body = note.body?.trim() ?? ''
 
   return (
-    <article className="note-board-card">
-      <div className="note-board-card-tags">
-        {sorted.map((tg) => (
-          <span
-            key={tg.id}
-            className={`note-board-tag-pill tag-tone-${tg.color_index % 8}`}
-          >
-            {displayTagName(tg.name)}
-          </span>
-        ))}
+    <article
+      className={`note-board-card${mobileExpanded ? ' note-board-card--mobile-expand' : ''}`}
+      onClick={() => {
+        if (typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches) {
+          onTouchToggleExpand()
+        }
+      }}
+    >
+      <div className="note-board-card-head">
+        <div className="note-board-card-tags">
+          {sorted.map((tg) => (
+            <span
+              key={tg.id}
+              className={`note-board-tag-pill tag-tone-${tg.color_index % 8}`}
+            >
+              {displayTagName(tg.name)}
+            </span>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="note-board-card-edit"
+          aria-label="메모 수정"
+          onClick={(e) => {
+            e.stopPropagation()
+            onEdit(note)
+          }}
+        >
+          <img
+            src={editPencilUrl}
+            alt=""
+            width={12}
+            height={12}
+            decoding="async"
+            className="note-board-card-edit-img"
+          />
+        </button>
       </div>
       <p
         className={`note-board-card-preview${
@@ -71,19 +112,19 @@ function NoteBoardCard({ note }: { note: NoteWithTags }) {
 
 type HomeQuickActionButtonsProps = {
   canUseCompose: boolean
-  composeOpen: boolean
+  addNoteOpen: boolean
   user: ReturnType<typeof useAuth>['user']
   onOpenTagManage: () => void
-  onToggleCompose: () => void
+  onToggleAddNote: () => void
   onOpenAccount: () => void
 }
 
 function HomeQuickActionButtons({
   canUseCompose,
-  composeOpen,
+  addNoteOpen,
   user,
   onOpenTagManage,
-  onToggleCompose,
+  onToggleAddNote,
   onOpenAccount,
 }: HomeQuickActionButtonsProps) {
   return (
@@ -107,12 +148,12 @@ function HomeQuickActionButtons({
       </button>
       <button
         type="button"
-        className={`btn btn--icon${composeOpen ? ' btn--active' : ''}`}
+        className={`btn btn--icon${addNoteOpen ? ' btn--active' : ''}`}
         disabled={!canUseCompose}
-        aria-expanded={composeOpen}
-        aria-label={composeOpen ? '메모 입력 닫기' : '메모 입력 열기'}
-        title={composeOpen ? '입력 영역 닫기' : '태그·메모 입력'}
-        onClick={onToggleCompose}
+        aria-expanded={addNoteOpen}
+        aria-label={addNoteOpen ? '메모 추가 닫기' : '메모 추가 열기'}
+        title={addNoteOpen ? '메모 추가 닫기' : '새 메모'}
+        onClick={onToggleAddNote}
       >
         +
       </button>
@@ -150,14 +191,13 @@ export function HomePage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const [composeOpen, setComposeOpen] = useState(false)
-  const [composeTags, setComposeTags] = useState<SelectedTag[]>([])
-  const [composeBody, setComposeBody] = useState('')
-  const [composeSource, setComposeSource] = useState('')
-  const [composeError, setComposeError] = useState<string | null>(null)
+  const [addNoteOpen, setAddNoteOpen] = useState(false)
+  const [addNoteSeedTags, setAddNoteSeedTags] = useState<SelectedTag[]>([])
 
   const [tagManageOpen, setTagManageOpen] = useState(false)
   const [accountModalOpen, setAccountModalOpen] = useState(false)
+  const [editingNote, setEditingNote] = useState<NoteWithTags | null>(null)
+  const [noteMobileExpandedId, setNoteMobileExpandedId] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     if (!user?.id) return
@@ -191,6 +231,11 @@ export function HomePage() {
     [allTags, tagSearch],
   )
 
+  const notesMatchingSearch = useMemo(
+    () => filterNotesByMainSearch(notes, tagSearch),
+    [notes, tagSearch],
+  )
+
   const notesForSelectedTag = useMemo(() => {
     if (!selectedTagId) return []
     return notes.filter((n) =>
@@ -202,6 +247,15 @@ export function HomePage() {
 
   function toggleTagSelect(tagId: string) {
     setSelectedTagId((cur) => (cur === tagId ? null : tagId))
+  }
+
+  function toggleNoteMobileExpand(noteId: string) {
+    setNoteMobileExpandedId((cur) => (cur === noteId ? null : noteId))
+  }
+
+  function openEditNote(note: NoteWithTags) {
+    setEditingNote(note)
+    setNoteMobileExpandedId(null)
   }
 
   const selectedTagLabel = useMemo(() => {
@@ -255,9 +309,8 @@ export function HomePage() {
 
   const canUseCompose = !showBootstrap && !loading && !loadError
 
-  function openCompose() {
+  function openAddNote() {
     if (!canUseCompose) return
-    setComposeError(null)
     const seed: SelectedTag[] = []
     if (showAddTagFromSearch) {
       const label = normalizeTagInput(tagSearch)
@@ -272,40 +325,18 @@ export function HomePage() {
         })
       }
     }
-    setComposeTags(seed)
-    setComposeOpen(true)
+    setAddNoteSeedTags(seed)
+    setAddNoteOpen(true)
   }
 
-  function closeCompose() {
-    setComposeOpen(false)
-    setComposeTags([])
-    setComposeBody('')
-    setComposeSource('')
-    setComposeError(null)
+  function closeAddNote() {
+    setAddNoteOpen(false)
+    setAddNoteSeedTags([])
   }
 
-  function toggleCompose() {
-    if (composeOpen) closeCompose()
-    else openCompose()
-  }
-
-  async function handleComposeSave() {
-    if (!user?.id || !composeOpen) return
-    setComposeError(null)
-    try {
-      await createNoteWithTags(
-        composeBody,
-        composeTags.map((t) => t.name),
-        user.id,
-        [...allTags],
-        composeSource,
-      )
-      closeCompose()
-      setTagSearch('')
-      await loadData()
-    } catch (e) {
-      setComposeError(e instanceof Error ? e.message : '저장에 실패했습니다.')
-    }
+  function toggleAddNote() {
+    if (addNoteOpen) closeAddNote()
+    else openAddNote()
   }
 
   return (
@@ -336,7 +367,7 @@ export function HomePage() {
           <>
             <header
             className={
-              selectedTagId
+              selectedTagId || searchNormalized.length > 0
                 ? 'home-top-tag-search home-top-tag-search--with-note-board'
                 : 'home-top-tag-search'
             }
@@ -344,7 +375,7 @@ export function HomePage() {
             <div className="home-top-tag-search-inner">
               <div className="home-tag-search-row" role="search">
                   <div className="home-search-wrap">
-                    <span className="sr-only">태그 검색</span>
+                    <span className="sr-only">태그·메모 검색</span>
                     <svg
                       className="home-search-icon"
                       xmlns="http://www.w3.org/2000/svg"
@@ -369,7 +400,7 @@ export function HomePage() {
                       onChange={(e) => {
                         setTagSearch(e.target.value)
                       }}
-                      placeholder="태그 검색 (이름, 비슷한 단어)"
+                      placeholder="태그·메모 검색 (이름, 본문, 출처)"
                       autoComplete="off"
                       spellCheck={false}
                     />
@@ -377,10 +408,10 @@ export function HomePage() {
                   <div className="home-desktop-quick-actions">
                     <HomeQuickActionButtons
                       canUseCompose={canUseCompose}
-                      composeOpen={composeOpen}
+                      addNoteOpen={addNoteOpen}
                       user={user}
                       onOpenTagManage={() => setTagManageOpen(true)}
-                      onToggleCompose={() => toggleCompose()}
+                      onToggleAddNote={() => toggleAddNote()}
                       onOpenAccount={() => setAccountModalOpen(true)}
                     />
                   </div>
@@ -391,13 +422,15 @@ export function HomePage() {
                 ) : visibleTags.length === 0 ? (
                   <p className="notes-hint">
                     {normalizeTagInput(tagSearch)
-                      ? '검색과 비슷한 태그가 없습니다.'
+                      ? notesMatchingSearch.length > 0
+                        ? '이 검색과 맞는 태그는 없습니다. 아래 메모 결과를 확인해 보세요.'
+                        : '검색과 비슷한 태그가 없습니다.'
                       : '태그가 없습니다.'}
                   </p>
                 ) : (
                   <ul
                     className={
-                      selectedTagId || composeOpen
+                      selectedTagId || addNoteOpen
                         ? 'tag-grid tag-grid--single-row'
                         : 'tag-grid'
                     }
@@ -428,10 +461,10 @@ export function HomePage() {
             >
               <HomeQuickActionButtons
                 canUseCompose={canUseCompose}
-                composeOpen={composeOpen}
+                addNoteOpen={addNoteOpen}
                 user={user}
                 onOpenTagManage={() => setTagManageOpen(true)}
-                onToggleCompose={() => toggleCompose()}
+                onToggleAddNote={() => toggleAddNote()}
                 onOpenAccount={() => setAccountModalOpen(true)}
               />
             </nav>
@@ -439,7 +472,7 @@ export function HomePage() {
         ) : null}
 
         <main
-          className={`home-main home-main--tags${showBootstrap ? ' home-main--bootstrap' : ''}${!showBootstrap && composeOpen ? ' home-main--compose-open' : ''}`}
+          className={`home-main home-main--tags${showBootstrap ? ' home-main--bootstrap' : ''}`}
         >
           {showBootstrap ? (
             <section className="bootstrap-card" aria-label="첫 태그·메모 만들기">
@@ -497,6 +530,33 @@ export function HomePage() {
             </section>
           ) : null}
 
+          {!showBootstrap && searchNormalized.length > 0 ? (
+            <section
+              className="note-board-section note-memo-search-section"
+              aria-label="메모·출처 검색 결과"
+            >
+              <h2 className="note-memo-search-title">메모·출처 검색</h2>
+              {notesMatchingSearch.length === 0 ? (
+                <p className="notes-hint note-board-empty">
+                  본문·출처에 이 검색어가 포함된 메모가 없습니다.
+                </p>
+              ) : (
+                <ul className="note-board-list">
+                  {notesMatchingSearch.map((note) => (
+                    <li key={note.id}>
+                      <NoteBoardCard
+                        note={note}
+                        mobileExpanded={noteMobileExpandedId === note.id}
+                        onTouchToggleExpand={() => toggleNoteMobileExpand(note.id)}
+                        onEdit={openEditNote}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
+
           {!showBootstrap && selectedTagId ? (
             <section
               className="note-board-section"
@@ -514,79 +574,34 @@ export function HomePage() {
                 <ul className="note-board-list">
                   {notesForSelectedTag.map((note) => (
                     <li key={note.id}>
-                      <NoteBoardCard note={note} />
+                      <NoteBoardCard
+                        note={note}
+                        mobileExpanded={noteMobileExpandedId === note.id}
+                        onTouchToggleExpand={() => toggleNoteMobileExpand(note.id)}
+                        onEdit={openEditNote}
+                      />
                     </li>
                   ))}
                 </ul>
               )}
             </section>
           ) : null}
-
-          {!showBootstrap && composeOpen ? (
-            <section
-              className="home-inline-compose"
-              aria-label="새 메모 작성"
-            >
-              <div className="home-inline-compose-inner">
-                <div className="composer-stack">
-                  <TagComposer
-                    allTags={allTags}
-                    selected={composeTags}
-                    onChange={setComposeTags}
-                  />
-                  <div className="composer-field">
-                    <label className="composer-label" htmlFor="home-compose-note">
-                      메모
-                    </label>
-                    <textarea
-                      id="home-compose-note"
-                      className="composer-note home-inline-compose-note"
-                      value={composeBody}
-                      onChange={(e) => setComposeBody(e.target.value)}
-                      placeholder="내용을 입력하세요"
-                      rows={5}
-                    />
-                  </div>
-                  <div className="composer-field">
-                    <label className="composer-label" htmlFor="home-compose-source">
-                      출처
-                    </label>
-                    <input
-                      id="home-compose-source"
-                      type="text"
-                      className="composer-source"
-                      value={composeSource}
-                      onChange={(e) => setComposeSource(e.target.value)}
-                      placeholder="책, 링크, 기사 등 (선택)"
-                      autoComplete="off"
-                    />
-                  </div>
-                </div>
-                {composeError ? (
-                  <p className="composer-error">{composeError}</p>
-                ) : null}
-                <div className="home-inline-compose-actions">
-                  <button
-                    type="button"
-                    className="btn btn--quiet"
-                    onClick={() => closeCompose()}
-                  >
-                    닫기
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn--emphasis"
-                    disabled={composeTags.length === 0 || loading}
-                    onClick={() => void handleComposeSave()}
-                  >
-                    저장
-                  </button>
-                </div>
-              </div>
-            </section>
-          ) : null}
         </main>
       </>
+
+      {user ? (
+        <AddNoteModal
+          open={addNoteOpen}
+          onClose={() => closeAddNote()}
+          initialTags={addNoteSeedTags}
+          allTags={allTags}
+          userId={user.id}
+          onSaved={async () => {
+            setTagSearch('')
+            await loadData()
+          }}
+        />
+      ) : null}
 
       <TagManageModal
         open={tagManageOpen}
@@ -604,6 +619,17 @@ export function HomePage() {
           onClose={() => setAccountModalOpen(false)}
           user={user}
           onSignOut={signOut}
+        />
+      ) : null}
+
+      {user ? (
+        <EditNoteModal
+          open={editingNote !== null}
+          onClose={() => setEditingNote(null)}
+          note={editingNote}
+          allTags={allTags}
+          userId={user.id}
+          onSaved={loadData}
         />
       ) : null}
     </div>

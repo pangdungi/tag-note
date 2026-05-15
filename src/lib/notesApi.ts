@@ -140,6 +140,47 @@ export async function createNoteWithTags(
   if (jErr) throw jErr
 }
 
+export async function updateNoteWithTags(
+  noteId: string,
+  body: string,
+  tagNames: string[],
+  userId: string,
+  tagCache: TagRow[],
+  source?: string,
+): Promise<void> {
+  const trimmed = body.trim()
+  const sourceTrim = (source ?? '').trim()
+  const labels = tagNames.map((t) => normalizeTagInput(t)).filter(Boolean)
+  if (labels.length === 0) throw new Error('태그를 하나 이상 유지하세요.')
+
+  const { error: uErr } = await supabase
+    .from('notes')
+    .update({ body: trimmed, source: sourceTrim })
+    .eq('id', noteId)
+  if (uErr) throw uErr
+
+  const { error: dErr } = await supabase.from('note_tags').delete().eq('note_id', noteId)
+  if (dErr) throw dErr
+
+  const uniqueNames = [...new Set(labels)]
+  const tagIds: string[] = []
+  for (const nm of uniqueNames) {
+    const { id } = await ensureTagId(nm, userId, tagCache)
+    tagIds.push(id)
+  }
+
+  const linkRows = tagIds.map((tag_id) => ({ note_id: noteId, tag_id }))
+  if (linkRows.length > 0) {
+    const { error: jErr } = await supabase.from('note_tags').insert(linkRows)
+    if (jErr) throw jErr
+  }
+}
+
+export async function deleteNote(noteId: string): Promise<void> {
+  const { error } = await supabase.from('notes').delete().eq('id', noteId)
+  if (error) throw error
+}
+
 /** 태그 이름 수정 (본인 소유 행만 RLS) */
 export async function updateTag(tagId: string, rawName: string): Promise<void> {
   const label = normalizeTagInput(rawName)
@@ -206,4 +247,19 @@ export function filterTagsByMainSearch(all: TagRow[], q: string): TagRow[] {
       return false
     })
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+}
+
+/** 메인 검색: 메모 본문·출처에 검색어가 포함된 노트 (최신순 유지) */
+export function filterNotesByMainSearch(
+  notes: NoteWithTags[],
+  q: string,
+): NoteWithTags[] {
+  const raw = normalizeTagInput(q)
+  if (!raw) return []
+  const needle = raw.toLowerCase()
+  return notes.filter((n) => {
+    const body = (n.body ?? '').toLowerCase()
+    const src = (n.source ?? '').toLowerCase()
+    return body.includes(needle) || src.includes(needle)
+  })
 }
