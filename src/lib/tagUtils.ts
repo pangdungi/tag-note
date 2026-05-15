@@ -52,29 +52,12 @@ export function tagsAreSimilar(a: string, b: string): boolean {
   return false
 }
 
-function hashString(s: string): number {
-  let h = 5381
-  for (let i = 0; i < s.length; i++) h = (h * 33) ^ s.charCodeAt(i)!
-  return Math.abs(h)
-}
+export const TAG_COLOR_COUNT = 5
 
-export const TAG_COLOR_COUNT = 8
-
-/** 기존 태그와 유사하면 그 색 인덱스, 아니면 비사용 중인 톤 우선 할당 */
+/** 새 태그에만 사용. 0..TAG_COLOR_COUNT-1 톤 중 무작위 배정(이름·유사도와 무관). */
 export function pickColorIndex(
-  newName: string,
-  existing: { name: string; color_index: number }[],
+  _newName: string,
+  _existing: { name: string; color_index: number }[],
 ): number {
-  const n = normalizeTagInput(newName)
-  for (const t of existing) {
-    if (tagsAreSimilar(n, t.name)) return t.color_index
-  }
-  const used = new Set(existing.map((e) => e.color_index))
-  let h = hashString(n.toLowerCase()) % TAG_COLOR_COUNT
-  let tries = 0
-  while (used.has(h) && tries < TAG_COLOR_COUNT) {
-    h = (h + 1) % TAG_COLOR_COUNT
-    tries++
-  }
-  return h
+  return Math.floor(Math.random() * TAG_COLOR_COUNT)
 }

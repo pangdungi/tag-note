@@ -14,7 +14,7 @@ import {
   type NoteWithTags,
   type TagRow,
 } from '../lib/notesApi'
-import { displayTagName, normalizeTagInput, pickColorIndex } from '../lib/tagUtils'
+import { displayTagName, normalizeTagInput, pickColorIndex, TAG_COLOR_COUNT } from '../lib/tagUtils'
 import tagIconUrl from '../assets/tag-icon.png'
 import userCircleIconUrl from '../assets/user-circle-icon.png'
 import editPencilUrl from '../assets/edit-pencil.png'
@@ -66,7 +66,7 @@ function NoteBoardCard({
           {sorted.map((tg) => (
             <span
               key={tg.id}
-              className={`note-board-tag-pill tag-tone-${tg.color_index % 8}`}
+              className={`note-board-tag-pill tag-tone-${tg.color_index % TAG_COLOR_COUNT}`}
             >
               {displayTagName(tg.name)}
             </span>
@@ -439,7 +439,7 @@ export function HomePage() {
                       <li key={t.id}>
                         <button
                           type="button"
-                          className={`tag-grid-pill tag-tone-${t.color_index % 8}${
+                          className={`tag-grid-pill tag-tone-${t.color_index % TAG_COLOR_COUNT}${
                             selectedTagId === t.id ? ' tag-grid-pill--selected' : ''
                           }`}
                           aria-pressed={selectedTagId === t.id}

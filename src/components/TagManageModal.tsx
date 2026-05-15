@@ -5,7 +5,7 @@ import {
   updateTag,
   type TagRow,
 } from '../lib/notesApi'
-import { displayTagName, normalizeTagInput } from '../lib/tagUtils'
+import { displayTagName, normalizeTagInput, TAG_COLOR_COUNT } from '../lib/tagUtils'
 
 type Props = {
   open: boolean
@@ -320,7 +320,7 @@ export function TagManageModal({
                       }}
                     >
                       <span
-                        className={`tag-manage-pill tag-tone-${t.color_index % 8}`}
+                        className={`tag-manage-pill tag-tone-${t.color_index % TAG_COLOR_COUNT}`}
                         title={displayTagName(t.name)}
                       >
                         {displayTagName(t.name)}

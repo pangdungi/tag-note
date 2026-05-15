@@ -9,14 +9,14 @@
   --border-focus: #d1d5db;
   --muted: #9ca3af;
 
-  --tag-a-bg: #ffe4ec;
-  --tag-a-fg: #9d174d;
-  --tag-b-bg: #e0f2fe;
-  --tag-b-fg: #0369a1;
-  --tag-c-bg: #ede9fe;
-  --tag-c-fg: #5b21b6;
-  --tag-d-bg: #dcfce7;
-  --tag-d-fg: #166534;
+  --tag-a-bg: #f0f4fa;
+  --tag-a-fg: #3a6ea8;
+  --tag-b-bg: #a0c4e2;
+  --tag-b-fg: #1e4d7b;
+  --tag-c-bg: #c8dcef;
+  --tag-c-fg: #1e4d7b;
+  --tag-d-bg: #2e7cc4;
+  --tag-d-fg: #f0f4fa;
 
   --btn-primary-bg: #f3f4f6;
   --btn-primary-fg: #374151;
@@ -1169,68 +1169,45 @@ body {
   flex-shrink: 0;
 }
 
+/* 태그 pill/dots: Cloud White ~ Deep Navy (5톤) */
 .tag-tone-0 {
-  background: #ffe4ec;
-  color: #9d174d;
+  background: #f0f4fa;
+  color: #3a6ea8;
 }
 .tag-tone-0.tag-dot {
-  background: #f472b6;
+  background: #3a6ea8;
 }
 
 .tag-tone-1 {
-  background: #e0f2fe;
-  color: #0369a1;
+  background: #c8dcef;
+  color: #1e4d7b;
 }
 .tag-tone-1.tag-dot {
-  background: #38bdf8;
+  background: #1e4d7b;
 }
 
 .tag-tone-2 {
-  background: #ede9fe;
-  color: #5b21b6;
+  background: #a0c4e2;
+  color: #1e4d7b;
 }
 .tag-tone-2.tag-dot {
-  background: #a78bfa;
+  background: #1e4d7b;
 }
 
 .tag-tone-3 {
-  background: #dcfce7;
-  color: #166534;
+  background: #2e7cc4;
+  color: #f0f4fa;
 }
 .tag-tone-3.tag-dot {
-  background: #4ade80;
+  background: #f0f4fa;
 }
 
 .tag-tone-4 {
-  background: #ffedd5;
-  color: #9a3412;
+  background: #1e4d7b;
+  color: #c8dcef;
 }
 .tag-tone-4.tag-dot {
-  background: #fb923c;
-}
-
-.tag-tone-5 {
-  background: #fae8ff;
-  color: #86198f;
-}
-.tag-tone-5.tag-dot {
-  background: #e879f9;
-}
-
-.tag-tone-6 {
-  background: #e0f7fa;
-  color: #0e7490;
-}
-.tag-tone-6.tag-dot {
-  background: #22d3ee;
-}
-
-.tag-tone-7 {
-  background: #f1f5f9;
-  color: #475569;
-}
-.tag-tone-7.tag-dot {
-  background: #94a3b8;
+  background: #c8dcef;
 }
 
 .composer-source {
