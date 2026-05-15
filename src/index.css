@@ -21,6 +21,7 @@
   --btn-primary-bg: #f3f4f6;
   --btn-primary-fg: #374151;
   --btn-primary-border: #e5e7eb;
+  --btn-hover-bg: #d6e8f4;
 
   font-family:
     'Pretendard Variable',
@@ -207,6 +208,10 @@ body {
   cursor: pointer;
 }
 
+.tab:hover:not(.tab-active) {
+  background: var(--btn-hover-bg);
+}
+
 .tab-active {
   background: var(--surface);
   color: var(--text-strong);
@@ -335,7 +340,7 @@ body {
 }
 
 .setup-retry:hover:not(:disabled) {
-  background: #fff7ed;
+  background: var(--btn-hover-bg);
 }
 
 .setup-retry:disabled {
@@ -390,8 +395,8 @@ body {
 }
 
 .btn--emphasis:hover:not(:disabled) {
-  background: #e5e7eb;
-  border-color: #d1d5db;
+  background: var(--btn-hover-bg);
+  border-color: #b8d4ea;
 }
 
 .btn--quiet {
@@ -402,7 +407,7 @@ body {
 }
 
 .btn--quiet:hover:not(:disabled) {
-  background: #f9fafb;
+  background: var(--btn-hover-bg);
   color: var(--text-strong);
 }
 
@@ -414,8 +419,8 @@ body {
 }
 
 .btn--danger:hover:not(:disabled) {
-  background: #fef2f2;
-  border-color: #fca5a5;
+  background: var(--btn-hover-bg);
+  border-color: #b8d4ea;
   color: #991b1b;
 }
 
@@ -434,7 +439,7 @@ body {
 }
 
 .btn--icon:hover:not(:disabled):not(.btn--active) {
-  background: #f9fafb;
+  background: var(--btn-hover-bg);
 }
 
 .btn--icon-img {
@@ -904,8 +909,8 @@ body {
 }
 
 .note-board-card-edit:hover {
-  background: #f7f8fa;
-  border-color: #dcdfe5;
+  background: var(--btn-hover-bg);
+  border-color: #b8d4ea;
 }
 
 .note-board-card-edit-img {
@@ -1096,6 +1101,8 @@ body {
 
 .tag-chip-remove:hover {
   opacity: 1;
+  background: var(--btn-hover-bg);
+  border-radius: 4px;
 }
 
 .tag-static {
@@ -1159,7 +1166,7 @@ body {
 
 .tag-suggest-item:hover,
 .tag-suggest-item.active {
-  background: #f3f4f6;
+  background: var(--btn-hover-bg);
 }
 
 .tag-dot {
@@ -1472,7 +1479,7 @@ body {
 }
 
 .tag-manage-close:hover {
-  background: #f3f4f6;
+  background: var(--btn-hover-bg);
   color: var(--text-strong);
 }
 
@@ -1530,7 +1537,7 @@ body {
 }
 
 .tag-manage-item:hover {
-  background: #fafafa;
+  background: var(--btn-hover-bg);
 }
 
 .tag-manage-item:last-child {
@@ -1648,7 +1655,7 @@ body {
 
 .tag-manage-text-action:hover:not(:disabled) {
   color: var(--text-strong);
-  background: rgb(0 0 0 / 4%);
+  background: var(--btn-hover-bg);
 }
 
 .tag-manage-text-action--danger {
@@ -1657,7 +1664,7 @@ body {
 
 .tag-manage-text-action--danger:hover:not(:disabled) {
   color: #b91c1c;
-  background: #fef2f2;
+  background: var(--btn-hover-bg);
 }
 
 .tag-manage-edit-row {
@@ -1729,8 +1736,8 @@ body {
 }
 
 .tag-manage-delete-confirm:hover:not(:disabled) {
-  background: #fee2e2;
-  border-color: #ef4444;
+  background: var(--btn-hover-bg);
+  border-color: #b8d4ea;
 }
 
 .tag-manage-dialog--account {
@@ -1806,6 +1813,8 @@ body {
 
 .tag-manage-account-withdraw-link:hover:not(:disabled) {
   color: #b91c1c;
+  background: var(--btn-hover-bg);
+  border-radius: 4px;
 }
 
 .tag-manage-account-withdraw-link:disabled {
