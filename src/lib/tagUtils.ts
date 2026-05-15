@@ -59,5 +59,7 @@ export function pickColorIndex(
   _newName: string,
   _existing: { name: string; color_index: number }[],
 ): number {
+  void _newName
+  void _existing
   return Math.floor(Math.random() * TAG_COLOR_COUNT)
 }

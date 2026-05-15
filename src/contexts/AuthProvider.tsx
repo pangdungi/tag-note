@@ -65,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       supabaseHost: supabaseProjectHost,
       supabase설정됨: isSupabaseConfigured,
     })
-  }, [loading, session?.user?.id, subscription, subscription?.period_end])
+  }, [loading, session, subscription, subscription?.period_end])
 
   const processSession = useCallback(async (next: Session | null) => {
     const trace = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`

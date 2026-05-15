@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState, useSyncExternalStore, startTransition } from 'react'
 import {
   deleteTagAndLinkedNotes,
   filterTagsByMainSearch,
@@ -64,16 +64,17 @@ export function TagManageModal({
     setTapRevealedRowId(null)
   }, [])
 
-  useEffect(() => {
-    if (!open) {
-      setQ('')
-      resetTransient()
-      setBusy(false)
-    }
-  }, [open, resetTransient])
+  const closeModal = useCallback(() => {
+    setQ('')
+    resetTransient()
+    setBusy(false)
+    onClose()
+  }, [onClose, resetTransient])
 
   useEffect(() => {
-    setTapRevealedRowId(null)
+    startTransition(() => {
+      setTapRevealedRowId(null)
+    })
   }, [q])
 
   useEffect(() => {
@@ -98,12 +99,12 @@ export function TagManageModal({
       if (tapRevealedRowId) {
         setTapRevealedRowId(null)
       } else {
-        onClose()
+        closeModal()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose, tapRevealedRowId])
+  }, [open, closeModal, tapRevealedRowId])
 
   async function handleSaveEdit(tagId: string) {
     setError(null)
@@ -146,7 +147,7 @@ export function TagManageModal({
         type="button"
         className="tag-manage-backdrop"
         aria-label="닫기"
-        onClick={() => onClose()}
+        onClick={() => closeModal()}
       />
       <div
         className={
@@ -166,7 +167,7 @@ export function TagManageModal({
             type="button"
             className="tag-manage-close"
             aria-label="태그 관리 닫기"
-            onClick={() => onClose()}
+            onClick={() => closeModal()}
           >
             ×
           </button>

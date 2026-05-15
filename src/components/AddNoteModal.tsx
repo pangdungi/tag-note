@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useState, startTransition } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
 import { createNoteWithTags, type TagRow } from '../lib/notesApi'
 
@@ -33,11 +33,13 @@ export function AddNoteModal({
 
   useEffect(() => {
     if (!open) return
-    setTags(initialTags.map((t) => ({ ...t })))
-    setBody('')
-    setSource('')
-    setError(null)
-    setSaving(false)
+    startTransition(() => {
+      setTags(initialTags.map((t) => ({ ...t })))
+      setBody('')
+      setSource('')
+      setError(null)
+      setSaving(false)
+    })
   }, [open, initialTags])
 
   useEffect(() => {

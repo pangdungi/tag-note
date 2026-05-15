@@ -195,7 +195,7 @@ export function HomePage() {
       userIdPrefix: user?.id?.slice(0, 8) ?? null,
       구독있음: Boolean(subscription),
     })
-  }, [authLoading, user?.id, subscription?.user_id])
+  }, [authLoading, user?.id, subscription])
 
   const refreshAccountSubscription = useCallback(() => {
     void refreshSubscription()

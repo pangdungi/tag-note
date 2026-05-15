@@ -27,7 +27,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
       userIdPrefix: session?.user?.id?.slice(0, 8) ?? null,
       t: new Date().toISOString(),
     })
-  }, [loading, session?.user?.id])
+  }, [loading, session])
 
   if (loading) {
     return (
@@ -47,7 +47,7 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
       세션있음: Boolean(session?.user),
       t: new Date().toISOString(),
     })
-  }, [loading, session?.user?.id])
+  }, [loading, session])
 
   if (loading) {
     return (

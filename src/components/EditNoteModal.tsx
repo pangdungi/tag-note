@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useState, startTransition } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
 import { ConfirmModal } from './ConfirmModal'
 import {
@@ -50,13 +50,15 @@ export function EditNoteModal({
 
   useEffect(() => {
     if (!open || !note) return
-    setTags(noteToSelectedTags(note))
-    setBody(note.body ?? '')
-    setSource(note.source ?? '')
-    setError(null)
-    setSaving(false)
-    setDeleting(false)
-    setDeleteConfirmOpen(false)
+    startTransition(() => {
+      setTags(noteToSelectedTags(note))
+      setBody(note.body ?? '')
+      setSource(note.source ?? '')
+      setError(null)
+      setSaving(false)
+      setDeleting(false)
+      setDeleteConfirmOpen(false)
+    })
   }, [open, note])
 
   useEffect(() => {

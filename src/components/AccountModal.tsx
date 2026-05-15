@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import {
   accountSubscriptionLabel,
@@ -52,9 +52,10 @@ export function AccountModal({
   const profileName = displayNameFromUser(user)
   const joinedAt = formatKoDateTime(user.created_at)
 
-  useEffect(() => {
-    if (!open) setSigningOut(false)
-  }, [open])
+  const handleClose = useCallback(() => {
+    setSigningOut(false)
+    onClose()
+  }, [onClose])
 
   useEffect(() => {
     if (!open) return
@@ -64,11 +65,11 @@ export function AccountModal({
   useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') handleClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, handleClose])
 
   if (!open) return null
 
@@ -78,7 +79,7 @@ export function AccountModal({
         type="button"
         className="tag-manage-backdrop"
         aria-label="닫기"
-        onClick={() => onClose()}
+        onClick={() => handleClose()}
       />
       <div
         className="tag-manage-dialog tag-manage-dialog--account"
@@ -94,7 +95,7 @@ export function AccountModal({
             type="button"
             className="tag-manage-close"
             aria-label="내 계정 닫기"
-            onClick={() => onClose()}
+            onClick={() => handleClose()}
           >
             ×
           </button>
@@ -179,7 +180,7 @@ export function AccountModal({
                   setSigningOut(true)
                   try {
                     await onSignOut()
-                    onClose()
+                    handleClose()
                   } finally {
                     setSigningOut(false)
                   }

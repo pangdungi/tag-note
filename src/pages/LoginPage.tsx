@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { AUTH_NOTICE_KEY } from '../lib/subscription'
 import { useAuth } from '../contexts/useAuth'
@@ -12,15 +12,18 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const msg = sessionStorage.getItem(AUTH_NOTICE_KEY)
-    if (msg) {
-      setError(msg)
-      sessionStorage.removeItem(AUTH_NOTICE_KEY)
+  const [error, setError] = useState<string | null>(() => {
+    try {
+      const msg = sessionStorage.getItem(AUTH_NOTICE_KEY)
+      if (msg) {
+        sessionStorage.removeItem(AUTH_NOTICE_KEY)
+        return msg
+      }
+    } catch {
+      /* SSR·비브라우저 */
     }
-  }, [])
+    return null
+  })
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
