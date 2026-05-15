@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { TagComposer, type SelectedTag } from '../components/TagComposer'
+import { TagManageModal } from '../components/TagManageModal'
+import { AccountModal } from '../components/AccountModal'
 import { useAuth } from '../contexts/useAuth'
 import {
   createNoteWithTags,
@@ -10,6 +12,8 @@ import {
   type TagRow,
 } from '../lib/notesApi'
 import { displayTagName, normalizeTagInput, pickColorIndex } from '../lib/tagUtils'
+import tagIconUrl from '../assets/tag-icon.png'
+import userCircleIconUrl from '../assets/user-circle-icon.png'
 
 function formatNoteWhen(iso: string) {
   try {
@@ -66,7 +70,7 @@ function NoteBoardCard({ note }: { note: NoteWithTags }) {
 }
 
 export function HomePage() {
-  const { signOut, user } = useAuth()
+  const { user, signOut } = useAuth()
   const [tagSearch, setTagSearch] = useState('')
   const [bootstrapTags, setBootstrapTags] = useState<SelectedTag[]>([])
   const [bootstrapBody, setBootstrapBody] = useState('')
@@ -83,6 +87,9 @@ export function HomePage() {
   const [composeBody, setComposeBody] = useState('')
   const [composeSource, setComposeSource] = useState('')
   const [composeError, setComposeError] = useState<string | null>(null)
+
+  const [tagManageOpen, setTagManageOpen] = useState(false)
+  const [accountModalOpen, setAccountModalOpen] = useState(false)
 
   const loadData = useCallback(async () => {
     if (!user?.id) return
@@ -294,6 +301,23 @@ export function HomePage() {
                   </div>
                   <button
                     type="button"
+                    className="btn btn--icon"
+                    aria-label="태그 관리 열기"
+                    title="태그 관리"
+                    disabled={!canUseCompose}
+                    onClick={() => setTagManageOpen(true)}
+                  >
+                    <img
+                      src={tagIconUrl}
+                      alt=""
+                      className="btn--icon-img"
+                      width={20}
+                      height={20}
+                      decoding="async"
+                    />
+                  </button>
+                  <button
+                    type="button"
                     className={`btn btn--icon${composeOpen ? ' btn--active' : ''}`}
                     disabled={!canUseCompose}
                     aria-expanded={composeOpen}
@@ -302,6 +326,23 @@ export function HomePage() {
                     onClick={() => toggleCompose()}
                   >
                     +
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--icon"
+                    aria-label="내 계정"
+                    title="내 계정"
+                    disabled={!user}
+                    onClick={() => setAccountModalOpen(true)}
+                  >
+                    <img
+                      src={userCircleIconUrl}
+                      alt=""
+                      className="btn--icon-img"
+                      width={20}
+                      height={20}
+                      decoding="async"
+                    />
                   </button>
                 </div>
               </div>
@@ -378,7 +419,13 @@ export function HomePage() {
                     : '태그가 없습니다.'}
                 </p>
               ) : (
-                <ul className="tag-grid">
+                <ul
+                  className={
+                    selectedTagId
+                      ? 'tag-grid tag-grid--single-row'
+                      : 'tag-grid'
+                  }
+                >
                   {visibleTags.map((t) => (
                     <li key={t.id}>
                       <button
@@ -489,13 +536,24 @@ export function HomePage() {
         </main>
       </>
 
-      <button
-        type="button"
-        className="home-signout"
-        onClick={() => void signOut()}
-      >
-        로그아웃
-      </button>
+      <TagManageModal
+        open={tagManageOpen}
+        onClose={() => setTagManageOpen(false)}
+        tags={allTags}
+        onReload={loadData}
+        onDeletedTagId={(id) => {
+          setSelectedTagId((s) => (s === id ? null : s))
+        }}
+      />
+
+      {user ? (
+        <AccountModal
+          open={accountModalOpen}
+          onClose={() => setAccountModalOpen(false)}
+          user={user}
+          onSignOut={signOut}
+        />
+      ) : null}
     </div>
   )
 }

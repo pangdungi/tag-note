@@ -140,6 +140,46 @@ export async function createNoteWithTags(
   if (jErr) throw jErr
 }
 
+/** 태그 이름 수정 (본인 소유 행만 RLS) */
+export async function updateTag(tagId: string, rawName: string): Promise<void> {
+  const label = normalizeTagInput(rawName)
+  if (!label) throw new Error('태그 이름이 비었습니다.')
+  const { error } = await supabase
+    .from('tags')
+    .update({ name: label })
+    .eq('id', tagId)
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error('같은 이름의 태그가 이미 있습니다.')
+    }
+    throw error
+  }
+}
+
+/**
+ * 태그 삭제 전: 이 태그가 붙은 모든 메모를 먼저 삭제한 뒤 태그 삭제.
+ * (메모에 다른 태그가 있어도 해당 메모 행 전체가 삭제됩니다.)
+ */
+export async function deleteTagAndLinkedNotes(tagId: string): Promise<void> {
+  const { data: links, error: qErr } = await supabase
+    .from('note_tags')
+    .select('note_id')
+    .eq('tag_id', tagId)
+  if (qErr) throw qErr
+
+  const noteIds = [
+    ...new Set((links ?? []).map((r: { note_id: string }) => r.note_id)),
+  ]
+
+  if (noteIds.length > 0) {
+    const { error: nErr } = await supabase.from('notes').delete().in('id', noteIds)
+    if (nErr) throw nErr
+  }
+
+  const { error: tErr } = await supabase.from('tags').delete().eq('id', tagId)
+  if (tErr) throw tErr
+}
+
 export function filterTagsByQuery(all: TagRow[], q: string, excludeIds: string[]): TagRow[] {
   const query = normalizeTagInput(q).toLowerCase()
   if (!query) return []
