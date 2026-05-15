@@ -7,9 +7,9 @@
 }
 
 @font-face {
-  font-family: 'TagNote OngeulipRyuttung';
-  src: url('./assets/fonts/OngeulipRyuttungche.ttf') format('truetype');
-  font-weight: 400;
+  font-family: 'TagNote DonounMedium';
+  src: url('./assets/fonts/Donoun-Medium.ttf') format('truetype');
+  font-weight: 500;
   font-style: normal;
   font-display: swap;
 }

@@ -8,7 +8,7 @@ create table if not exists public.user_preferences (
       app_font_id in (
         'system',
         'leeseoyun',
-        'ongeulip_ryuttung',
+        'donoun_medium',
         'adultkid',
         'pak_yong_jun'
       )

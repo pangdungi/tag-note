@@ -5,7 +5,7 @@ export const APP_FONT_STORAGE_KEY = 'tag-note-app-font-v1'
 export type AppFontChoiceId =
   | 'system'
   | 'leeseoyun'
-  | 'ongeulip_ryuttung'
+  | 'donoun_medium'
   | 'adultkid'
   | 'pak_yong_jun'
 
@@ -30,9 +30,9 @@ export const APP_FONT_OPTIONS: AppFontOption[] = [
     cssStack: `'TagNote LeeSeoyun', ${SYSTEM_STACK}`,
   },
   {
-    id: 'ongeulip_ryuttung',
-    label: '온글잎 류뚱체',
-    cssStack: `'TagNote OngeulipRyuttung', ${SYSTEM_STACK}`,
+    id: 'donoun_medium',
+    label: 'Donoun Medium',
+    cssStack: `'TagNote DonounMedium', ${SYSTEM_STACK}`,
   },
   {
     id: 'adultkid',
