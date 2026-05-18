@@ -8,13 +8,13 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['pwa-192.png', 'pwa-512.png'],
+      includeAssets: ['favicon.svg', 'pwa-192.png', 'pwa-512.png'],
       manifest: {
         name: '태그노트',
         short_name: '태그노트',
         description: '태그로 정리하는 메모',
-        theme_color: '#4a73d9',
-        background_color: '#4a73d9',
+        theme_color: '#1e3a5f',
+        background_color: '#ffffff',
         display: 'standalone',
         orientation: 'any',
         lang: 'ko',
