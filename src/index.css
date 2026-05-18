@@ -1245,18 +1245,6 @@ body {
   cursor: not-allowed;
 }
 
-.tag-input-hint {
-  margin: -0.15rem 0 0;
-  font-size: 0.76rem;
-  line-height: 1.45;
-  color: var(--muted);
-}
-
-.tag-input-hint strong {
-  color: var(--text-strong);
-  font-weight: 700;
-}
-
 .tag-input {
   width: 100%;
   padding: 0.65rem 0.85rem;
@@ -1550,7 +1538,12 @@ body {
   overflow: hidden;
 }
 
-.tag-manage-dialog--edit-note {
+.tag-manage-overlay--nested {
+  z-index: 55;
+}
+
+.tag-manage-dialog--edit-note,
+.tag-manage-dialog--edit-tag {
   max-width: min(100%, 440px);
 }
 
@@ -1688,68 +1681,24 @@ body {
   border-bottom: none;
 }
 
-.tag-manage-row {
+.tag-manage-row-button {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  width: 100%;
+  margin: 0;
   padding: 0.5rem 0.65rem;
-}
-
-.tag-manage-row-main {
-  min-width: 0;
-  flex: 1;
-}
-
-.tag-manage-row-main--tappable {
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
-  border-radius: 10px;
+  color: inherit;
+  box-sizing: border-box;
 }
 
-.tag-manage-row-main--tappable:focus-visible {
+.tag-manage-row-button:focus-visible {
   outline: 2px solid var(--border-focus);
-  outline-offset: 2px;
-}
-
-.tag-manage-reveal-actions {
-  display: inline-flex;
-  align-items: center;
-  vertical-align: middle;
-}
-
-/* 마우스: 행 호버 시에만 이름 수정·삭제 표시 */
-.tag-manage-dialog:not(.tag-manage-dialog--tap-edit) .tag-manage-reveal-actions {
-  opacity: 0;
-  max-width: 0;
-  margin: 0;
-  overflow: hidden;
-  pointer-events: none;
-  transition:
-    opacity 0.12s ease,
-    max-width 0.2s ease;
-}
-
-.tag-manage-dialog:not(.tag-manage-dialog--tap-edit) .tag-manage-row:hover .tag-manage-reveal-actions {
-  opacity: 1;
-  max-width: 13rem;
-  pointer-events: auto;
-}
-
-/* 터치: 칩 영역 탭으로 펼침 */
-.tag-manage-dialog--tap-edit .tag-manage-reveal-actions {
-  opacity: 0;
-  max-width: 0;
-  margin: 0;
-  overflow: hidden;
-  pointer-events: none;
-  transition:
-    opacity 0.12s ease,
-    max-width 0.2s ease;
-}
-
-.tag-manage-dialog--tap-edit .tag-manage-item--reveal-actions .tag-manage-reveal-actions {
-  opacity: 1;
-  max-width: 13rem;
-  pointer-events: auto;
+  outline-offset: -2px;
 }
 
 .tag-manage-pill {
@@ -1763,125 +1712,6 @@ body {
   font-weight: 500;
   padding: 0.32rem 0.62rem;
   border-radius: 999px;
-}
-
-.tag-manage-text-actions {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 0;
-}
-
-.tag-manage-action-sep {
-  color: #d1d5db;
-  font-size: 0.75rem;
-  user-select: none;
-  padding: 0 0.1rem;
-}
-
-.tag-manage-text-action {
-  border: none;
-  background: transparent;
-  padding: 0.35rem 0.4rem;
-  font: inherit;
-  font-size: 0.76rem;
-  font-weight: 500;
-  color: #6b7280;
-  cursor: pointer;
-  border-radius: 6px;
-  white-space: nowrap;
-}
-
-.tag-manage-text-action:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.tag-manage-text-action:hover:not(:disabled) {
-  color: var(--text-strong);
-  background: var(--btn-hover-bg);
-}
-
-.tag-manage-text-action--danger {
-  color: #9ca3af;
-}
-
-.tag-manage-text-action--danger:hover:not(:disabled) {
-  color: #b91c1c;
-  background: var(--btn-hover-bg);
-}
-
-.tag-manage-edit-row {
-  padding: 0.65rem 0.5rem;
-}
-
-.tag-manage-edit-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  font: inherit;
-  font-size: 0.9rem;
-  margin-bottom: 0.5rem;
-}
-
-.tag-manage-edit-input:focus {
-  outline: none;
-  border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgb(229 231 235 / 0.55);
-}
-
-.tag-manage-edit-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.4rem;
-}
-
-.tag-manage-delete-panel {
-  padding: 0.75rem 0.5rem;
-  margin: 0.35rem 0 0.35rem;
-  border: 1px solid #fecaca;
-  border-radius: 12px;
-  background: #fef2f2;
-}
-
-.tag-manage-delete-title {
-  margin: 0 0 0.35rem;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.tag-manage-delete-name {
-  margin: 0 0 0.5rem;
-  font-size: 0.92rem;
-  font-weight: 600;
-  color: #991b1b;
-}
-
-.tag-manage-delete-warn {
-  margin: 0 0 0.75rem;
-  font-size: 0.78rem;
-  line-height: 1.5;
-  color: #7f1d1d;
-}
-
-.tag-manage-delete-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.4rem;
-}
-
-.tag-manage-delete-confirm {
-  background: #fef2f2;
-  border-color: #f87171;
-  color: #b91c1c;
-}
-
-.tag-manage-delete-confirm:hover:not(:disabled) {
-  background: var(--btn-hover-bg);
-  border-color: #b8d4ea;
 }
 
 .tag-manage-dialog--account {

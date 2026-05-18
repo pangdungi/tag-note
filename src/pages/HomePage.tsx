@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TagComposer, type SelectedTag } from '../components/TagComposer'
 import { TagManageModal } from '../components/TagManageModal'
 import { AccountModal } from '../components/AccountModal'
@@ -7,12 +7,14 @@ import { AddNoteModal } from '../components/AddNoteModal'
 import { useAuth } from '../contexts/useAuth'
 import {
   createNoteWithTags,
+  ensureStarterTagsIfEmpty,
   fetchNotesWithTags,
   fetchTags,
   filterNotesByMainSearch,
   filterTagsByMainSearch,
   mapNotesWithRenamedTag,
   mergeTagsFromNoteIntoAllTags,
+  syncNotesStateAfterTagSelectionPull,
   type NoteWithTags,
   type TagRow,
 } from '../lib/notesApi'
@@ -212,30 +214,61 @@ export function HomePage() {
   const [editingNote, setEditingNote] = useState<NoteWithTags | null>(null)
   const [noteMobileExpandedId, setNoteMobileExpandedId] = useState<string | null>(null)
 
-  const loadData = useCallback(async () => {
-    const uid = user?.id ?? null
-    if (!uid) {
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    try {
-      const [tags, noteRows] = await Promise.all([
-        fetchTags(),
-        fetchNotesWithTags(),
-      ])
-      setAllTags(tags)
-      setNotes(noteRows)
-      setSaveError(null)
-      setLoadError(null)
-    } catch (e) {
-      setLoadError(
-        e instanceof Error ? e.message : '알 수 없는 오류로 불러오지 못했습니다.',
-      )
-    } finally {
-      setLoading(false)
-    }
-  }, [user?.id])
+  /** 이 계정에서 첫 데이터 패치가 끝났는지 — 이후엔 태그 칸 전체「불러오는 중」을 안 띄움 */
+  const homeDataInitialLoadDoneRef = useRef(false)
+
+  /** 태그 클릭 시 `syncNotes…`에 넘길 최신 `notes` (비동기 완료 시점 참고용) */
+  const notesRef = useRef(notes)
+  useEffect(() => {
+    notesRef.current = notes
+  }, [notes])
+
+  const fetchHomeSnapshot = useCallback(async (uid: string) => {
+    const [tags, noteRows] = await Promise.all([
+      fetchTags(),
+      fetchNotesWithTags(),
+    ])
+    const tagsAfterStarter =
+      tags.length === 0 ? await ensureStarterTagsIfEmpty(uid) : tags
+    return { tags: tagsAfterStarter, notes: noteRows }
+  }, [])
+
+  const loadData = useCallback(
+    async (opts?: { showGridLoading?: boolean }) => {
+      const uid = user?.id ?? null
+      if (!uid) {
+        setLoading(false)
+        return
+      }
+      const showGrid =
+        opts?.showGridLoading ?? !homeDataInitialLoadDoneRef.current
+      if (showGrid) {
+        setLoading(true)
+      }
+      try {
+        const { tags, notes: noteRows } = await fetchHomeSnapshot(uid)
+        setAllTags(tags)
+        setNotes(noteRows)
+        setSaveError(null)
+        setLoadError(null)
+        homeDataInitialLoadDoneRef.current = true
+      } catch (e) {
+        setLoadError(
+          e instanceof Error
+            ? e.message
+            : '알 수 없는 오류로 불러오지 못했습니다.',
+        )
+      } finally {
+        if (showGrid) {
+          setLoading(false)
+        }
+      }
+    },
+    [user?.id, fetchHomeSnapshot],
+  )
+
+  /** 태그 클릭 시 해당 태그에 연결된 메모만 서버에서 받아 `notes`에 병합 */
+  const [tagPullLoading, setTagPullLoading] = useState(false)
 
   const applyNoteCreated = useCallback((note: NoteWithTags) => {
     setNotes((prev) => [note, ...prev.filter((n) => n.id !== note.id)])
@@ -275,9 +308,53 @@ export function HomePage() {
   )
 
   useEffect(() => {
+    homeDataInitialLoadDoneRef.current = false
+  }, [user?.id])
+
+  useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 초기/세션 전환 시 Supabase 페치
     void loadData()
   }, [loadData])
+
+  useEffect(() => {
+    if (!selectedTagId) {
+      return
+    }
+    const uid = user?.id
+    if (!uid) {
+      return
+    }
+    let cancelled = false
+    setTagPullLoading(true)
+    void (async () => {
+      try {
+        const next = await syncNotesStateAfterTagSelectionPull(
+          notesRef.current,
+          selectedTagId,
+        )
+        if (cancelled) {
+          return
+        }
+        setNotes(next)
+        setLoadError(null)
+      } catch (e) {
+        if (!cancelled) {
+          setLoadError(
+            e instanceof Error
+              ? e.message
+              : '알 수 없는 오류로 불러오지 못했습니다.',
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setTagPullLoading(false)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedTagId, user?.id])
 
   const visibleTags = useMemo(
     () => filterTagsByMainSearch(allTags, tagSearch),
@@ -408,7 +485,7 @@ export function HomePage() {
             type="button"
             className="setup-retry"
             disabled={loading}
-            onClick={() => void loadData()}
+            onClick={() => void loadData({ showGridLoading: true })}
           >
             다시 불러오기
           </button>
@@ -619,7 +696,9 @@ export function HomePage() {
                   : '선택한 태그의 메모'
               }
             >
-              {notesForSelectedTag.length === 0 ? (
+              {tagPullLoading ? (
+                <p className="notes-hint note-board-empty">메모를 불러오는 중…</p>
+              ) : notesForSelectedTag.length === 0 ? (
                 <p className="notes-hint note-board-empty">
                   이 태그가 달린 메모가 아직 없습니다.
                 </p>

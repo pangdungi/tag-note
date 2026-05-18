@@ -61,6 +61,81 @@ export async function fetchNoteWithTagsById(
   return data as unknown as NoteWithTags
 }
 
+function noteHasTagId(n: NoteWithTags, tagId: string): boolean {
+  return n.note_tags.some(
+    (nt) => nt.tag_id === tagId || nt.tags?.id === tagId,
+  )
+}
+
+/** 특정 태그가 붙은 메모만 조회(전체 목록 대신 태그 클릭 시 동기화용). */
+export async function fetchNotesWithTagsForTag(
+  tagId: string,
+): Promise<NoteWithTags[]> {
+  const { data: links, error: e1 } = await supabase
+    .from('note_tags')
+    .select('note_id')
+    .eq('tag_id', tagId)
+  if (e1) throw e1
+  const noteIds = [
+    ...new Set(
+      (links ?? []).map((l) => (l as { note_id: string }).note_id),
+    ),
+  ]
+  if (noteIds.length === 0) {
+    return []
+  }
+
+  const { data, error } = await supabase
+    .from('notes')
+    .select(NOTE_WITH_TAGS_SELECT)
+    .in('id', noteIds)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as unknown as NoteWithTags[]
+}
+
+/**
+ * 태그 선택 시: 해당 태그가 달린 메모만 서버에서 받아 기존 `notes` 상태에 병합한다.
+ * (이 태그를 뗀 메모는 개별 재조회로 반영, 삭제된 메모는 제거)
+ */
+export async function syncNotesStateAfterTagSelectionPull(
+  prev: NoteWithTags[],
+  tagId: string,
+): Promise<NoteWithTags[]> {
+  const fresh = await fetchNotesWithTagsForTag(tagId)
+  const freshIds = new Set(fresh.map((n) => n.id))
+  const staleIds = prev
+    .filter((n) => noteHasTagId(n, tagId) && !freshIds.has(n.id))
+    .map((n) => n.id)
+
+  const staleRows = await Promise.all(
+    staleIds.map(async (id) => {
+      try {
+        return await fetchNoteWithTagsById(id)
+      } catch {
+        return null
+      }
+    }),
+  )
+
+  const map = new Map(prev.map((n) => [n.id, n]))
+  for (const id of staleIds) {
+    map.delete(id)
+  }
+  for (const n of fresh) {
+    map.set(n.id, n)
+  }
+  for (const row of staleRows) {
+    if (row) {
+      map.set(row.id, row)
+    }
+  }
+  return Array.from(map.values()).sort(
+    (a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  )
+}
+
 async function ensureTagId(
   name: string,
   userId: string,
@@ -104,6 +179,24 @@ async function ensureTagId(
     color_index: created.color_index,
   })
   return created
+}
+
+/** 첫 진입 시 태그가 없으면 넣는 시작용 태그(사용자가 나중에 삭제 가능). */
+const STARTER_TAG_NAMES = ['일상', '아이디어', '읽을거리'] as const
+
+export async function ensureStarterTagsIfEmpty(
+  userId: string,
+): Promise<TagRow[]> {
+  const existing = await fetchTags()
+  if (existing.length > 0) {
+    return existing
+  }
+
+  const cache: TagRow[] = []
+  for (const name of STARTER_TAG_NAMES) {
+    await ensureTagId(name, userId, cache)
+  }
+  return fetchTags()
 }
 
 /** 검색으로 새 태그만 만들 때 (메모 없이) */

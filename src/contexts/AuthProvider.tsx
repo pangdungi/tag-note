@@ -16,6 +16,7 @@ import {
 import {
   AUTH_NOTICE_KEY,
   canAccessWithSubscription,
+  isSubscriptionGateActive,
   type UserSubscriptionRow,
 } from '../lib/subscription'
 import {
@@ -43,6 +44,16 @@ function setMissingSubscriptionNotice(): void {
   sessionStorage.setItem(
     AUTH_NOTICE_KEY,
     '구독 정보가 없어 로그인할 수 없습니다. 관리자에게 문의하세요.',
+  )
+}
+
+/** 이 이벤트는 조용히 processSession만 하면 되고, 앱 전체「불러오는 중」오버레이를 켜지 않는다. */
+function isAuthEventSilentForGlobalLoading(event: string): boolean {
+  return (
+    event === 'TOKEN_REFRESHED' ||
+    event === 'USER_UPDATED' ||
+    event === 'PASSWORD_RECOVERY' ||
+    event === 'MFA_CHALLENGE_VERIFIED'
   )
 }
 
@@ -102,7 +113,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw e
       }
 
-      if (!sub || !canAccessWithSubscription(sub)) {
+      if (
+        isSubscriptionGateActive() &&
+        (!sub || !canAccessWithSubscription(sub))
+      ) {
         await supabase.auth.signOut()
         if (!sub) {
           setMissingSubscriptionNotice()
@@ -190,7 +204,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           event,
         })
         void (async () => {
-          setLoading(true)
+          const blockGlobalLoading = !isAuthEventSilentForGlobalLoading(event)
+          if (blockGlobalLoading) {
+            setLoading(true)
+          }
           console.info('[tag-note][auth] onAuthStateChange processSession 시작', {
             event,
           })
@@ -206,9 +223,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               error: e,
             })
           } finally {
-            if (alive) {
+            if (alive && blockGlobalLoading) {
               setLoading(false)
               console.info('[tag-note][auth] onAuthStateChange 처리 끝', { event })
+            } else if (alive) {
+              console.info(
+                '[tag-note][auth] onAuthStateChange 처리 끝(전역 로딩 없음)',
+                { event },
+              )
             }
           }
         })()
@@ -220,51 +242,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       listener.unsubscribe()
     }
   }, [])
-
-  /** 이용 기간 경과 등 — 주기적으로 세션 갱신 후 차단 */
-  useEffect(() => {
-    if (!session?.user?.id || !isSupabaseConfigured) return
-    const userId = session.user.id
-    const accessToken = session.access_token
-
-    async function revalidate() {
-      let sub: UserSubscriptionRow | null
-      try {
-        sub = await fetchUserSubscription(userId, accessToken)
-      } catch (e) {
-        if (e instanceof SubscriptionFetchTimeoutError) {
-          return
-        }
-        throw e
-      }
-      if (!sub || !canAccessWithSubscription(sub)) {
-        await supabase.auth.signOut()
-        setExpiryNoticeAndSignOut()
-        setSubscription(null)
-        setSession(null)
-        resetAppFontForSignedOut()
-      } else {
-        setSubscription(sub)
-      }
-    }
-
-    const id = window.setInterval(
-      () => {
-        void revalidate()
-      },
-      60 * 1000,
-    )
-
-    function onVis() {
-      if (document.visibilityState === 'visible') void revalidate()
-    }
-    document.addEventListener('visibilitychange', onVis)
-
-    return () => {
-      window.clearInterval(id)
-      document.removeEventListener('visibilitychange', onVis)
-    }
-  }, [session?.user?.id, session?.access_token])
 
   const signIn = useCallback(
     async (email: string, password: string) => {
@@ -306,7 +283,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         throw e
       }
-      if (!sub || !canAccessWithSubscription(sub)) {
+      if (
+        isSubscriptionGateActive() &&
+        (!sub || !canAccessWithSubscription(sub))
+      ) {
         await supabase.auth.signOut()
         setSubscription(null)
         setSession(null)
@@ -523,7 +503,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw e
     }
     setSubscription(sub)
-    if (!sub || !canAccessWithSubscription(sub)) {
+    if (
+      isSubscriptionGateActive() &&
+      (!sub || !canAccessWithSubscription(sub))
+    ) {
       await supabase.auth.signOut()
       if (!sub) setMissingSubscriptionNotice()
       else setExpiryNoticeAndSignOut()

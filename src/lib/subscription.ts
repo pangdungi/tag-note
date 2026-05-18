@@ -33,6 +33,33 @@ export function canAccessWithSubscription(
 }
 
 /**
+ * 구독·체험 기간이 없거나 만료면 세션을 끊을지.
+ *
+ * - **프로덕션 빌드:** 기본 `true` (게이트 적용).
+ * - **`npm run dev`:** 기본 `false` — DB에 `user_subscriptions`가 없어도 로그인 유지.
+ * - `.env`에 `VITE_ENFORCE_SUBSCRIPTION_IN_DEV=true` → 개발에서도 프로덕션과 동일하게 게이트.
+ * - `VITE_SKIP_SUBSCRIPTION_GATE=true` → 어디서든 게이트 끔(디버그용).
+ */
+export function isSubscriptionGateActive(): boolean {
+  const skip =
+    import.meta.env.VITE_SKIP_SUBSCRIPTION_GATE === 'true' ||
+    import.meta.env.VITE_SKIP_SUBSCRIPTION_GATE === '1'
+  if (skip) {
+    return false
+  }
+
+  const enforceInDev =
+    import.meta.env.VITE_ENFORCE_SUBSCRIPTION_IN_DEV === 'true' ||
+    import.meta.env.VITE_ENFORCE_SUBSCRIPTION_IN_DEV === '1'
+
+  if (import.meta.env.DEV && !enforceInDev) {
+    return false
+  }
+
+  return true
+}
+
+/**
  * 내 계정 표시 문구 (요구사항)
  * - inactive + 기간 내 → 체험기간 중
  * - active + 기간 만료 → 구독 만료

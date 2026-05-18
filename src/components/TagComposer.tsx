@@ -205,12 +205,6 @@ export function TagComposer({ allTags, selected, onChange }: Props) {
           + 추가
         </button>
       </div>
-      {draftNormalized.length > 0 && selected.length === 0 ? (
-        <p className="tag-input-hint" role="status">
-          아래에 태그 칩이 생기면 저장돼요. <strong>엔터</strong>를 누르거나{' '}
-          <strong>+ 추가</strong>를 눌러 주세요.
-        </p>
-      ) : null}
       <div className="tag-chips" role="list">
         {selected.map((t, i) => (
           <span
