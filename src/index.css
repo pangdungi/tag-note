@@ -948,6 +948,148 @@ body {
   padding-top: 1.25rem;
 }
 
+/* 태그 메모 패널 — 서버 동기화 중 시각 피드백 */
+.tag-notes-pull-strip {
+  height: 3px;
+  margin: 0 0 0.85rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(
+    90deg,
+    rgb(224 234 248 / 55%),
+    rgb(224 234 248 / 90%),
+    rgb(224 234 248 / 55%)
+  );
+  background-size: 200% 100%;
+  animation: tag-notes-pull-strip-bg 1.1s ease-in-out infinite;
+}
+
+.tag-notes-pull-strip__glow {
+  height: 100%;
+  width: min(42%, 9rem);
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--tag-a-fg),
+    var(--tag-d-bg),
+    transparent
+  );
+  opacity: 0.85;
+  animation: tag-notes-pull-strip-slide 0.95s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes tag-notes-pull-strip-bg {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes tag-notes-pull-strip-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.tag-notes-skeleton-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-bottom: 0.35rem;
+}
+
+.tag-notes-skeleton-bone {
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 3%);
+}
+
+.tag-notes-skeleton-bone__tags {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+}
+
+.tag-notes-skeleton-bone__tags span {
+  display: inline-block;
+  height: 1.35rem;
+  width: 3.2rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    #eef2f7 0%,
+    #e2e8f0 45%,
+    #eef2f7 100%
+  );
+  background-size: 200% 100%;
+  animation: tag-notes-skel-shimmer 1.05s ease-in-out infinite;
+}
+
+.tag-notes-skeleton-bone__tags span:last-child {
+  width: 4.1rem;
+  animation-delay: 0.1s;
+}
+
+.tag-notes-skeleton-bone__line {
+  height: 0.72rem;
+  border-radius: 6px;
+  margin-top: 0.42rem;
+  background: linear-gradient(
+    90deg,
+    #f3f4f6 0%,
+    #e8ecf2 50%,
+    #f3f4f6 100%
+  );
+  background-size: 220% 100%;
+  animation: tag-notes-skel-shimmer 1.15s ease-in-out infinite;
+}
+
+.tag-notes-skeleton-bone__line--lg {
+  width: 100%;
+}
+
+.tag-notes-skeleton-bone__line--mid {
+  width: 88%;
+  animation-delay: 0.08s;
+}
+
+.tag-notes-skeleton-bone__line--short {
+  width: 52%;
+  animation-delay: 0.15s;
+}
+
+@keyframes tag-notes-skel-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: -100% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tag-notes-pull-strip,
+  .tag-notes-pull-strip__glow,
+  .tag-notes-skeleton-bone__tags span,
+  .tag-notes-skeleton-bone__line {
+    animation: none !important;
+  }
+
+  .tag-notes-pull-strip__glow {
+    transform: translateX(40%);
+    opacity: 0.55;
+  }
+}
+
 .note-memo-search-title {
   margin: 0 0 0.55rem;
   font-size: 0.8rem;

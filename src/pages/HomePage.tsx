@@ -4,6 +4,7 @@ import { TagManageModal } from '../components/TagManageModal'
 import { AccountModal } from '../components/AccountModal'
 import { EditNoteModal } from '../components/EditNoteModal'
 import { AddNoteModal } from '../components/AddNoteModal'
+import { TagNotesPullStatus } from '../components/TagNotesPullStatus'
 import { useAuth } from '../contexts/useAuth'
 import {
   createNoteWithTags,
@@ -690,19 +691,22 @@ export function HomePage() {
           {!showBootstrap && selectedTagId ? (
             <section
               className="note-board-section"
+              aria-busy={tagPullLoading}
               aria-label={
                 selectedTagLabel
                   ? `${selectedTagLabel} 관련 메모`
                   : '선택한 태그의 메모'
               }
             >
-              {tagPullLoading ? (
-                <p className="notes-hint note-board-empty">메모를 불러오는 중…</p>
-              ) : notesForSelectedTag.length === 0 ? (
+              <TagNotesPullStatus
+                active={tagPullLoading}
+                hasCachedNotes={notesForSelectedTag.length > 0}
+              />
+              {!tagPullLoading && notesForSelectedTag.length === 0 ? (
                 <p className="notes-hint note-board-empty">
                   이 태그가 달린 메모가 아직 없습니다.
                 </p>
-              ) : (
+              ) : notesForSelectedTag.length === 0 ? null : (
                 <ul className="note-board-list">
                   {notesForSelectedTag.map((note) => (
                     <li key={note.id}>
