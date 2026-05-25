@@ -71,6 +71,8 @@
 html {
   background-color: var(--bg);
   color-scheme: light;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 *,
@@ -83,6 +85,8 @@ body {
   margin: 0;
   min-height: 100vh;
   background: var(--bg);
+  /* 더블탭 확대 완화(모바일 웹/PWA에서 레이아웃 깨짐 방지) */
+  touch-action: manipulation;
 }
 
 #root {
