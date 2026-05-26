@@ -106,25 +106,11 @@ export function AccountModal({
     }
   }, [open, user.id])
 
-  useEffect(() => {
-    if (!open) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') handleClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, handleClose])
-
   if (!open) return null
 
   return (
     <div className="tag-manage-overlay" role="presentation">
-      <button
-        type="button"
-        className="tag-manage-backdrop"
-        aria-label="닫기"
-        onClick={() => handleClose()}
-      />
+      <div className="tag-manage-backdrop" aria-hidden="true" />
       <div
         className="tag-manage-dialog tag-manage-dialog--account"
         role="dialog"

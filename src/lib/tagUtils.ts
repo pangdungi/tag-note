@@ -52,9 +52,9 @@ export function tagsAreSimilar(a: string, b: string): boolean {
   return false
 }
 
-export const TAG_COLOR_COUNT = 5
+export const TAG_COLOR_COUNT = 30
 
-/** 새 태그에만 사용. 0..TAG_COLOR_COUNT-1 톤 중 무작위 배정(이름·유사도와 무관). */
+/** 새 태그에 0..TAG_COLOR_COUNT-1 파스텔 톤 중 무작위 배정. */
 export function pickColorIndex(
   _newName: string,
   _existing: { name: string; color_index: number }[],

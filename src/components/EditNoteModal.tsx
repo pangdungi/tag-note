@@ -27,7 +27,31 @@ type Props = {
   allTags: TagRow[]
   userId: string
   onNoteUpdated: (note: NoteWithTags) => void | Promise<void>
+  onUpdateError?: (message: string) => void
   onNoteDeleted: (noteId: string) => void | Promise<void>
+}
+
+function buildDraftNoteFromEdit(
+  noteId: string,
+  createdAt: string,
+  body: string,
+  source: string,
+  tags: SelectedTag[],
+): NoteWithTags {
+  return {
+    id: noteId,
+    body: body.trim(),
+    source: source.trim(),
+    created_at: createdAt,
+    note_tags: tags.map((t) => ({
+      tag_id: t.id ?? `draft-${t.name}`,
+      tags: {
+        id: t.id ?? `draft-${t.name}`,
+        name: t.name,
+        color_index: t.color_index,
+      },
+    })),
+  }
 }
 
 export function EditNoteModal({
@@ -37,18 +61,18 @@ export function EditNoteModal({
   allTags,
   userId,
   onNoteUpdated,
+  onUpdateError,
   onNoteDeleted,
 }: Props) {
   const titleId = useId()
   const [tags, setTags] = useState<SelectedTag[]>([])
   const [body, setBody] = useState('')
   const [source, setSource] = useState('')
-  const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
 
-  const busy = saving || deleting
+  const busy = deleting
 
   useEffect(() => {
     if (!open || !note) return
@@ -57,34 +81,17 @@ export function EditNoteModal({
       setBody(note.body ?? '')
       setSource(note.source ?? '')
       setError(null)
-      setSaving(false)
       setDeleting(false)
       setDeleteConfirmOpen(false)
     })
   }, [open, note])
-
-  useEffect(() => {
-    if (!open) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key !== 'Escape') return
-      if (deleteConfirmOpen) return
-      onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose, deleteConfirmOpen])
 
   if (!open || !note) return null
 
   return (
     <>
       <div className="tag-manage-overlay" role="presentation">
-      <button
-        type="button"
-        className="tag-manage-backdrop"
-        aria-label="닫기"
-        onClick={() => onClose()}
-      />
+      <div className="tag-manage-backdrop" aria-hidden="true" />
       <div
         className="tag-manage-dialog tag-manage-dialog--edit-note"
         role="dialog"
@@ -150,31 +157,41 @@ export function EditNoteModal({
               className="btn btn--emphasis edit-note-modal-submit"
               disabled={busy || tags.length === 0}
               onClick={() => {
+                setError(null)
+                const original = note
+                const saveBody = body
+                const saveTags = tags.map((t) => t.name)
+                const saveSource = source
+                const draft = buildDraftNoteFromEdit(
+                  note.id,
+                  note.created_at,
+                  saveBody,
+                  saveSource,
+                  tags,
+                )
+                void onNoteUpdated(draft)
+                onClose()
                 void (async () => {
-                  setSaving(true)
-                  setError(null)
                   try {
                     const updated = await updateNoteWithTags(
-                      note.id,
-                      body,
-                      tags.map((t) => t.name),
+                      original.id,
+                      saveBody,
+                      saveTags,
                       userId,
                       [...allTags],
-                      source,
+                      saveSource,
                     )
                     await onNoteUpdated(updated)
-                    onClose()
                   } catch (e) {
-                    setError(
+                    await onNoteUpdated(original)
+                    onUpdateError?.(
                       e instanceof Error ? e.message : '수정에 실패했습니다.',
                     )
-                  } finally {
-                    setSaving(false)
                   }
                 })()
               }}
             >
-              {saving ? '수정 중…' : '수정'}
+              수정
             </button>
           </div>
         </div>

@@ -38,28 +38,12 @@ export function EditTagModal({
     })
   }, [open, tag])
 
-  useEffect(() => {
-    if (!open) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key !== 'Escape') return
-      if (deleteConfirmOpen) return
-      onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose, deleteConfirmOpen])
-
   if (!open || !tag) return null
 
   return (
     <>
       <div className="tag-manage-overlay tag-manage-overlay--nested" role="presentation">
-        <button
-          type="button"
-          className="tag-manage-backdrop"
-          aria-label="닫기"
-          onClick={() => onClose()}
-        />
+        <div className="tag-manage-backdrop" aria-hidden="true" />
         <div
           className="tag-manage-dialog tag-manage-dialog--edit-tag"
           role="dialog"

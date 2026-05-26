@@ -1,4 +1,4 @@
-import { useEffect, useId } from 'react'
+import { useId } from 'react'
 
 type Props = {
   open: boolean
@@ -27,26 +27,11 @@ export function ConfirmModal({
   const titleId = useId()
   const descId = useId()
 
-  useEffect(() => {
-    if (!open) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !busy) onCancel()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, busy, onCancel])
-
   if (!open) return null
 
   return (
     <div className="confirm-modal-overlay" role="presentation">
-      <button
-        type="button"
-        className="tag-manage-backdrop"
-        aria-label="취소"
-        disabled={busy}
-        onClick={() => !busy && onCancel()}
-      />
+      <div className="tag-manage-backdrop" aria-hidden="true" />
       <div
         className="tag-manage-dialog confirm-modal-dialog"
         role="alertdialog"

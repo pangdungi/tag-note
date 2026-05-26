@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useId, useRef, useState, type ReactNode } from 'react'
 import type { TagRow } from '../lib/notesApi'
 import { displayTagName, normalizeTagInput, pickColorIndex, TAG_COLOR_COUNT } from '../lib/tagUtils'
 import { filterTagsByQuery } from '../lib/notesApi'
@@ -22,9 +22,11 @@ type Props = {
   allTags: TagRow[]
   selected: SelectedTag[]
   onChange: (tags: SelectedTag[]) => void
+  /** 태그 입력창 바로 아래 검증 안내 등 */
+  hint?: ReactNode
 }
 
-export function TagComposer({ allTags, selected, onChange }: Props) {
+export function TagComposer({ allTags, selected, onChange, hint }: Props) {
   const listId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const lastEnterAt = useRef(0)
@@ -205,6 +207,7 @@ export function TagComposer({ allTags, selected, onChange }: Props) {
           + 추가
         </button>
       </div>
+      {hint ? <div className="tag-composer-hint-wrap">{hint}</div> : null}
       <div className="tag-chips" role="list">
         {selected.map((t, i) => (
           <span

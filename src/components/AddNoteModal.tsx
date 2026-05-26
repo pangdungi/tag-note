@@ -1,6 +1,10 @@
 import { useEffect, useId, useState, startTransition } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
-import { createNoteWithTags, type NoteWithTags, type TagRow } from '../lib/notesApi'
+import {
+  createNoteWithTags,
+  type NoteWithTags,
+  type TagRow,
+} from '../lib/notesApi'
 
 type Props = {
   open: boolean
@@ -10,6 +14,7 @@ type Props = {
   allTags: TagRow[]
   userId: string
   onSaved: (note: NoteWithTags) => void | Promise<void>
+  onSaveError?: (message: string) => void
 }
 
 export function AddNoteModal({
@@ -19,6 +24,7 @@ export function AddNoteModal({
   allTags,
   userId,
   onSaved,
+  onSaveError,
 }: Props) {
   const titleId = useId()
   const idBase = useId()
@@ -28,8 +34,9 @@ export function AddNoteModal({
   const [tags, setTags] = useState<SelectedTag[]>([])
   const [body, setBody] = useState('')
   const [source, setSource] = useState('')
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** 저장 클릭 시 검증: 태그 영역 또는 메모 아래 안내 */
+  const [fieldHint, setFieldHint] = useState<'tags' | 'body' | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -38,29 +45,18 @@ export function AddNoteModal({
       setBody('')
       setSource('')
       setError(null)
-      setSaving(false)
+      setFieldHint(null)
     })
   }, [open, initialTags])
 
-  useEffect(() => {
-    if (!open) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
   if (!open) return null
+
+  const composerSaveReady =
+    tags.length > 0 && body.trim().length > 0
 
   return (
     <div className="tag-manage-overlay" role="presentation">
-      <button
-        type="button"
-        className="tag-manage-backdrop"
-        aria-label="닫기"
-        onClick={() => onClose()}
-      />
+      <div className="tag-manage-backdrop" aria-hidden="true" />
       <div
         className="tag-manage-dialog tag-manage-dialog--edit-note"
         role="dialog"
@@ -82,7 +78,21 @@ export function AddNoteModal({
         </div>
         <div className="edit-note-modal-body">
           <div className="composer-stack">
-            <TagComposer allTags={allTags} selected={tags} onChange={setTags} />
+            <TagComposer
+              allTags={allTags}
+              selected={tags}
+              onChange={(next) => {
+                setTags(next)
+                setFieldHint((h) => (h === 'tags' ? null : h))
+              }}
+              hint={
+                fieldHint === 'tags' ? (
+                  <p className="composer-field-hint" role="status">
+                    태그를 추가해 주세요.
+                  </p>
+                ) : undefined
+              }
+            />
             <div className="composer-field">
               <label className="composer-label" htmlFor={bodyId}>
                 메모
@@ -91,10 +101,18 @@ export function AddNoteModal({
                 id={bodyId}
                 className="composer-note edit-note-modal-note"
                 value={body}
-                onChange={(e) => setBody(e.target.value)}
+                onChange={(e) => {
+                  setBody(e.target.value)
+                  setFieldHint((h) => (h === 'body' ? null : h))
+                }}
                 placeholder="내용을 입력하세요"
                 rows={6}
               />
+              {fieldHint === 'body' ? (
+                <p className="composer-field-hint" role="status">
+                  메모를 입력해 주세요.
+                </p>
+              ) : null}
             </div>
             <div className="composer-field">
               <label className="composer-label" htmlFor={sourceId}>
@@ -115,33 +133,43 @@ export function AddNoteModal({
           <div className="edit-note-modal-actions edit-note-modal-actions--add-only">
             <button
               type="button"
-              className="btn btn--emphasis"
-              disabled={saving || tags.length === 0}
+              className={`btn btn--emphasis${
+                composerSaveReady ? ' btn--composer-ready' : ''
+              }`}
               onClick={() => {
+                setError(null)
+                if (tags.length === 0) {
+                  setFieldHint('tags')
+                  return
+                }
+                if (!body.trim()) {
+                  setFieldHint('body')
+                  return
+                }
+                setFieldHint(null)
+                const saveBody = body
+                const saveTags = tags.map((t) => t.name)
+                const saveSource = source
+                onClose()
                 void (async () => {
-                  setSaving(true)
-                  setError(null)
                   try {
                     const note = await createNoteWithTags(
-                      body,
-                      tags.map((t) => t.name),
+                      saveBody,
+                      saveTags,
                       userId,
                       [...allTags],
-                      source,
+                      saveSource,
                     )
                     await onSaved(note)
-                    onClose()
                   } catch (e) {
-                    setError(
+                    onSaveError?.(
                       e instanceof Error ? e.message : '저장에 실패했습니다.',
                     )
-                  } finally {
-                    setSaving(false)
                   }
                 })()
               }}
             >
-              {saving ? '저장 중…' : '저장'}
+              저장
             </button>
           </div>
         </div>

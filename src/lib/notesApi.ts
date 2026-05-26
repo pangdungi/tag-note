@@ -136,6 +136,45 @@ export async function syncNotesStateAfterTagSelectionPull(
   )
 }
 
+type NoteRowCore = {
+  id: string
+  body: string
+  source: string
+  created_at: string
+}
+
+function buildNoteWithTags(
+  noteRow: NoteRowCore,
+  tagLinks: { tag_id: string; name: string; color_index: number }[],
+): NoteWithTags {
+  return {
+    id: noteRow.id,
+    body: noteRow.body,
+    source: noteRow.source ?? '',
+    created_at: noteRow.created_at,
+    note_tags: tagLinks.map(({ tag_id, name, color_index }) => ({
+      tag_id,
+      tags: { id: tag_id, name, color_index },
+    })),
+  }
+}
+
+async function resolveTagIdsForNames(
+  names: string[],
+  userId: string,
+  cache: TagRow[],
+): Promise<{ tag_id: string; name: string; color_index: number }[]> {
+  const uniqueNames = [...new Set(names)]
+  const resolved = await Promise.all(
+    uniqueNames.map(async (nm) => {
+      const label = normalizeTagInput(nm)
+      const { id, color_index } = await ensureTagId(label, userId, cache)
+      return { tag_id: id, name: label, color_index }
+    }),
+  )
+  return resolved
+}
+
 async function ensureTagId(
   name: string,
   userId: string,
@@ -229,22 +268,17 @@ export async function createNoteWithTags(
   const { data: note, error: nErr } = await supabase
     .from('notes')
     .insert({ user_id: userId, body: trimmed, source: sourceTrim })
-    .select('id')
+    .select('id, body, source, created_at')
     .single()
   if (nErr) throw nErr
-  const noteId = (note as { id: string }).id
+  const noteRow = note as NoteRowCore
 
-  const uniqueNames = [...new Set(labels)]
-  const tagIds: string[] = []
-  for (const nm of uniqueNames) {
-    const { id } = await ensureTagId(nm, userId, tagCache)
-    tagIds.push(id)
-  }
+  const tagLinks = await resolveTagIdsForNames(labels, userId, tagCache)
 
-  const rows = tagIds.map((tag_id) => ({ note_id: noteId, tag_id }))
+  const rows = tagLinks.map(({ tag_id }) => ({ note_id: noteRow.id, tag_id }))
   const { error: jErr } = await supabase.from('note_tags').insert(rows)
   if (jErr) throw jErr
-  return fetchNoteWithTagsById(noteId)
+  return buildNoteWithTags(noteRow, tagLinks)
 }
 
 export async function updateNoteWithTags(
@@ -260,28 +294,26 @@ export async function updateNoteWithTags(
   const labels = tagNames.map((t) => normalizeTagInput(t)).filter(Boolean)
   if (labels.length === 0) throw new Error('태그를 하나 이상 유지하세요.')
 
-  const { error: uErr } = await supabase
+  const { data: note, error: uErr } = await supabase
     .from('notes')
     .update({ body: trimmed, source: sourceTrim })
     .eq('id', noteId)
+    .select('id, body, source, created_at')
+    .single()
   if (uErr) throw uErr
+  const noteRow = note as NoteRowCore
 
   const { error: dErr } = await supabase.from('note_tags').delete().eq('note_id', noteId)
   if (dErr) throw dErr
 
-  const uniqueNames = [...new Set(labels)]
-  const tagIds: string[] = []
-  for (const nm of uniqueNames) {
-    const { id } = await ensureTagId(nm, userId, tagCache)
-    tagIds.push(id)
-  }
+  const tagLinks = await resolveTagIdsForNames(labels, userId, tagCache)
 
-  const linkRows = tagIds.map((tag_id) => ({ note_id: noteId, tag_id }))
+  const linkRows = tagLinks.map(({ tag_id }) => ({ note_id: noteId, tag_id }))
   if (linkRows.length > 0) {
     const { error: jErr } = await supabase.from('note_tags').insert(linkRows)
     if (jErr) throw jErr
   }
-  return fetchNoteWithTagsById(noteId)
+  return buildNoteWithTags(noteRow, tagLinks)
 }
 
 export async function deleteNote(noteId: string): Promise<void> {
@@ -379,45 +411,159 @@ export function mapNotesWithRenamedTag(
   }))
 }
 
-export function filterTagsByQuery(all: TagRow[], q: string, excludeIds: string[]): TagRow[] {
-  const query = normalizeTagInput(q).toLowerCase()
-  if (!query) return []
-  return all.filter((t) => {
-    if (excludeIds.includes(t.id)) return false
-    const name = t.name.toLowerCase()
-    return name.includes(query) || [...query].some((ch) => name.includes(ch))
-  })
+function tagSearchKeys(raw: string): { plain: string; compact: string } {
+  const plain = normalizeTagInput(raw).toLowerCase()
+  return { plain, compact: plain.replace(/\s+/g, '') }
 }
 
-/** 메인 태그 그리드: 검색어 없으면 전체, 있으면 부분·글자·유사 단어 매칭 */
+/** 메인 검색·태그 입력 제안용 일치 점수 (높을수록 더 잘 맞음). -1이면 제외. */
+export function tagMainSearchScore(name: string, rawQuery: string): number {
+  const query = tagSearchKeys(rawQuery)
+  const tag = tagSearchKeys(name)
+  if (!query.plain) return 0
+
+  if (tag.plain === query.plain || tag.compact === query.compact) return 1000
+  if (
+    tag.plain.startsWith(query.plain) ||
+    tag.compact.startsWith(query.compact)
+  ) {
+    return 900
+  }
+  if (
+    tag.plain.includes(query.plain) ||
+    tag.compact.includes(query.compact)
+  ) {
+    return 800
+  }
+  if (tagsAreSimilar(name, rawQuery)) return 500
+
+  const qc = query.compact
+  const nc = tag.compact
+  if (qc.length >= 2) {
+    for (let len = qc.length; len >= 2; len--) {
+      for (let i = 0; i <= qc.length - len; i++) {
+        const sub = qc.slice(i, i + len)
+        if (nc.includes(sub)) return 300 + len * 10
+      }
+    }
+  }
+  return -1
+}
+
+function rankTagsByMainSearch(all: TagRow[], raw: string): TagRow[] {
+  return all
+    .map((t) => ({ t, score: tagMainSearchScore(t.name, raw) }))
+    .filter((x) => x.score >= 0)
+    .sort(
+      (a, b) =>
+        b.score - a.score || a.t.name.localeCompare(b.t.name, 'ko'),
+    )
+    .map((x) => x.t)
+}
+
+export function filterTagsByQuery(all: TagRow[], q: string, excludeIds: string[]): TagRow[] {
+  const raw = normalizeTagInput(q)
+  if (!raw) return []
+  return rankTagsByMainSearch(
+    all.filter((t) => !excludeIds.includes(t.id)),
+    raw,
+  )
+}
+
+/** 메인 태그 그리드: 검색어 없으면 전체, 있으면 일치도 순 */
 export function filterTagsByMainSearch(all: TagRow[], q: string): TagRow[] {
   const raw = normalizeTagInput(q)
   if (!raw) {
     return [...all].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   }
-  const query = raw.toLowerCase()
-  return all
-    .filter((t) => {
-      const name = t.name.toLowerCase()
-      if (name.includes(query)) return true
-      if ([...query].some((ch) => name.includes(ch))) return true
-      if (query.length >= 2 && tagsAreSimilar(t.name, raw)) return true
-      return false
-    })
-    .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  return rankTagsByMainSearch(all, raw)
 }
 
-/** 메인 검색: 메모 본문·출처에 검색어가 포함된 노트 (최신순 유지) */
+/** 메인 검색: 본문·출처·붙은 태그 이름 중 하나라도 맞으면 true */
+export function noteMatchesMainSearch(note: NoteWithTags, q: string): boolean {
+  const raw = normalizeTagInput(q)
+  if (!raw) return false
+  const needle = raw.toLowerCase()
+  const body = (note.body ?? '').toLowerCase()
+  const src = (note.source ?? '').toLowerCase()
+  if (body.includes(needle) || src.includes(needle)) return true
+  return note.note_tags.some((nt) => {
+    if (!nt.tags?.name) return false
+    return tagMainSearchScore(nt.tags.name, raw) >= 0
+  })
+}
+
+/** 메인 검색: 메모 본문·출처·태그 이름 (클라이언트 캐시용) */
 export function filterNotesByMainSearch(
   notes: NoteWithTags[],
   q: string,
 ): NoteWithTags[] {
   const raw = normalizeTagInput(q)
   if (!raw) return []
-  const needle = raw.toLowerCase()
-  return notes.filter((n) => {
-    const body = (n.body ?? '').toLowerCase()
-    const src = (n.source ?? '').toLowerCase()
-    return body.includes(needle) || src.includes(needle)
-  })
+  return notes.filter((n) => noteMatchesMainSearch(n, raw))
+}
+
+/** 메인 검색: 서버에서 본문·출처 ilike + 검색에 걸린 태그가 붙은 메모 전부 */
+export async function fetchNotesForMainSearch(
+  q: string,
+  matchingTagIds: string[],
+): Promise<NoteWithTags[]> {
+  const raw = normalizeTagInput(q)
+  if (!raw) return []
+
+  const byId = new Map<string, NoteWithTags>()
+
+  const { data: textRows, error: e1 } = await supabase
+    .from('notes')
+    .select(NOTE_WITH_TAGS_SELECT)
+    .or(`body.ilike.%${raw}%,source.ilike.%${raw}%`)
+    .order('created_at', { ascending: false })
+  if (e1) throw e1
+  for (const n of (textRows ?? []) as unknown as NoteWithTags[]) {
+    byId.set(n.id, n)
+  }
+
+  if (matchingTagIds.length > 0) {
+    const { data: links, error: e2 } = await supabase
+      .from('note_tags')
+      .select('note_id')
+      .in('tag_id', matchingTagIds)
+    if (e2) throw e2
+    const noteIds = [
+      ...new Set(
+        (links ?? []).map((l) => (l as { note_id: string }).note_id),
+      ),
+    ].filter((id) => !byId.has(id))
+
+    if (noteIds.length > 0) {
+      const { data: tagRows, error: e3 } = await supabase
+        .from('notes')
+        .select(NOTE_WITH_TAGS_SELECT)
+        .in('id', noteIds)
+        .order('created_at', { ascending: false })
+      if (e3) throw e3
+      for (const n of (tagRows ?? []) as unknown as NoteWithTags[]) {
+        byId.set(n.id, n)
+      }
+    }
+  }
+
+  return [...byId.values()].sort(
+    (a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  )
+}
+
+export function mergeNotesById(
+  prev: NoteWithTags[],
+  incoming: NoteWithTags[],
+): NoteWithTags[] {
+  const map = new Map(prev.map((n) => [n.id, n]))
+  for (const n of incoming) {
+    map.set(n.id, n)
+  }
+  return [...map.values()].sort(
+    (a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  )
 }

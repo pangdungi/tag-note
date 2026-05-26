@@ -73,6 +73,8 @@ html {
   color-scheme: light;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* 모바일 끝에서 당겼을 때 러버밴드·바디 체인 스크롤 완화 */
+  overscroll-behavior: none;
 }
 
 *,
@@ -87,10 +89,42 @@ body {
   background: var(--bg);
   /* 더블탭 확대 완화(모바일 웹/PWA에서 레이아웃 깨짐 방지) */
   touch-action: manipulation;
+  overscroll-behavior: none;
 }
 
 #root {
   min-height: 100vh;
+  overscroll-behavior: none;
+}
+
+/* 스크롤은 유지, 세로·가로 스크롤바만 숨김 (데스크탑·모바일·모달 공통) */
+html,
+body,
+#root {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#root::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+*,
+*::before,
+*::after {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+  background: transparent;
 }
 
 .sr-only {
@@ -513,6 +547,24 @@ body {
   border-color: #b8d4ea;
 }
 
+/* 메모 추가·첫 작성: 태그+본문 입력 완료 시 파랑 강조 (--tag 팔레트) */
+.btn.btn--composer-ready:not(:disabled) {
+  background: var(--tag-a-bg);
+  color: var(--tag-b-fg);
+  border-color: var(--tag-c-bg);
+}
+
+.btn.btn--composer-ready:not(:disabled):hover {
+  background: var(--btn-hover-bg);
+  border-color: var(--tag-d-bg);
+  color: #163b5f;
+}
+
+.btn.btn--composer-ready:not(:disabled):focus-visible {
+  border-color: var(--tag-d-bg);
+  box-shadow: 0 0 0 3px rgb(46 124 196 / 18%);
+}
+
 .btn--quiet {
   font-weight: 500;
   color: var(--muted);
@@ -654,7 +706,6 @@ body {
   max-width: 720px;
   margin: 0 auto;
   width: 100%;
-  overflow-y: auto;
 }
 
 .home-main--bootstrap {
@@ -876,7 +927,7 @@ body {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    overscroll-behavior: contain;
+    overscroll-behavior: none;
     -webkit-overflow-scrolling: touch;
   }
 
@@ -1433,6 +1484,7 @@ body {
   z-index: 20;
   max-height: 220px;
   overflow: auto;
+  overscroll-behavior: none;
 }
 
 .tag-suggest-item {
@@ -1462,46 +1514,96 @@ body {
   flex-shrink: 0;
 }
 
-/* 태그 pill/dots: Cloud White ~ Deep Navy (5톤) */
-.tag-tone-0 {
-  background: #f0f4fa;
-  color: #3a6ea8;
-}
-.tag-tone-0.tag-dot {
-  background: #3a6ea8;
-}
+/* 태그 pill/dots: 파스텔 30톤 — 빨·주·노·초·파·남·보 (연한 배경 + 같은 계열 글자색) */
+.tag-tone-0 { background: #ffe0e6; color: #c45c72; }  /* 빨 */
+.tag-tone-0.tag-dot { background: #c45c72; }
 
-.tag-tone-1 {
-  background: #c8dcef;
-  color: #1e4d7b;
-}
-.tag-tone-1.tag-dot {
-  background: #1e4d7b;
-}
+.tag-tone-1 { background: #ffd6dc; color: #b84d6f; }
+.tag-tone-1.tag-dot { background: #b84d6f; }
 
-.tag-tone-2 {
-  background: #a0c4e2;
-  color: #1e4d7b;
-}
-.tag-tone-2.tag-dot {
-  background: #1e4d7b;
-}
+.tag-tone-2 { background: #fce0ef; color: #a8558f; }
+.tag-tone-2.tag-dot { background: #a8558f; }
 
-.tag-tone-3 {
-  background: #2e7cc4;
-  color: #f0f4fa;
-}
-.tag-tone-3.tag-dot {
-  background: #f0f4fa;
-}
+.tag-tone-3 { background: #ffe8d6; color: #c45c26; }  /* 주 */
+.tag-tone-3.tag-dot { background: #c45c26; }
 
-.tag-tone-4 {
-  background: #1e4d7b;
-  color: #c8dcef;
-}
-.tag-tone-4.tag-dot {
-  background: #c8dcef;
-}
+.tag-tone-4 { background: #ffecd9; color: #c76a22; }
+.tag-tone-4.tag-dot { background: #c76a22; }
+
+.tag-tone-5 { background: #fff0db; color: #b87320; }
+.tag-tone-5.tag-dot { background: #b87320; }
+
+.tag-tone-6 { background: #fff6d6; color: #a68a1a; }  /* 노 */
+.tag-tone-6.tag-dot { background: #a68a1a; }
+
+.tag-tone-7 { background: #fff9dc; color: #9a8a14; }
+.tag-tone-7.tag-dot { background: #9a8a14; }
+
+.tag-tone-8 { background: #fffce0; color: #8f8018; }
+.tag-tone-8.tag-dot { background: #8f8018; }
+
+.tag-tone-9 { background: #f0f8dc; color: #6d8a2a; }  /* 연두 */
+.tag-tone-9.tag-dot { background: #6d8a2a; }
+
+.tag-tone-10 { background: #e8f5e0; color: #4d7a3a; } /* 초 */
+.tag-tone-10.tag-dot { background: #4d7a3a; }
+
+.tag-tone-11 { background: #dff2e4; color: #3d7a52; }
+.tag-tone-11.tag-dot { background: #3d7a52; }
+
+.tag-tone-12 { background: #daf5f0; color: #2a7a72; }
+.tag-tone-12.tag-dot { background: #2a7a72; }
+
+.tag-tone-13 { background: #daf5f8; color: #2a7a8a; } /* 청록 */
+.tag-tone-13.tag-dot { background: #2a7a8a; }
+
+.tag-tone-14 { background: #d6f2f8; color: #2a7a9a; }
+.tag-tone-14.tag-dot { background: #2a7a9a; }
+
+.tag-tone-15 { background: #e0f0ff; color: #3a7ab8; } /* 파 */
+.tag-tone-15.tag-dot { background: #3a7ab8; }
+
+.tag-tone-16 { background: #dceefb; color: #2e6da4; }
+.tag-tone-16.tag-dot { background: #2e6da4; }
+
+.tag-tone-17 { background: #e3f2fd; color: #1565a8; }
+.tag-tone-17.tag-dot { background: #1565a8; }
+
+.tag-tone-18 { background: #e8eaf8; color: #4a549e; } /* 남 */
+.tag-tone-18.tag-dot { background: #4a549e; }
+
+.tag-tone-19 { background: #e0e4f5; color: #3a4588; }
+.tag-tone-19.tag-dot { background: #3a4588; }
+
+.tag-tone-20 { background: #dde2f2; color: #334078; }
+.tag-tone-20.tag-dot { background: #334078; }
+
+.tag-tone-21 { background: #ede7f6; color: #6a4c9c; } /* 보 */
+.tag-tone-21.tag-dot { background: #6a4c9c; }
+
+.tag-tone-22 { background: #f0e6f8; color: #7b4397; }
+.tag-tone-22.tag-dot { background: #7b4397; }
+
+.tag-tone-23 { background: #f3e5f5; color: #8e4a9a; }
+.tag-tone-23.tag-dot { background: #8e4a9a; }
+
+.tag-tone-24 { background: #f5e6f8; color: #8a4590; }
+.tag-tone-24.tag-dot { background: #8a4590; }
+
+.tag-tone-25 { background: #fce4ec; color: #ad4578; } /* 자홍 */
+.tag-tone-25.tag-dot { background: #ad4578; }
+
+.tag-tone-26 { background: #fde8f0; color: #b84d72; }
+.tag-tone-26.tag-dot { background: #b84d72; }
+
+.tag-tone-27 { background: #ffece6; color: #bf5c48; } /* 산호 */
+.tag-tone-27.tag-dot { background: #bf5c48; }
+
+.tag-tone-28 { background: #f0ebe6; color: #7a6558; } /* 베이지 */
+.tag-tone-28.tag-dot { background: #7a6558; }
+
+.tag-tone-29 { background: #eceff1; color: #5a6a72; } /* 회청 */
+.tag-tone-29.tag-dot { background: #5a6a72; }
 
 .composer-source {
   width: 100%;
@@ -1550,6 +1652,24 @@ body {
   margin: 0.75rem 0 0;
   font-size: 0.85rem;
   color: #b91c1c;
+}
+
+/* 필드 바로 아래 검증 안내(API 오류 composer-error와 구분) */
+.composer-field-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: #b91c1c;
+}
+
+/* TagComposer 내: 입력 줄 바로 다음에 붙이기 */
+.tag-composer-hint-wrap {
+  margin-top: 0.12rem;
+  margin-bottom: 0;
+}
+
+.tag-composer-hint-wrap .composer-field-hint {
+  margin: 0;
 }
 
 /* 부트스트랩 카드: 전체 너비 저장만 레이아웃 보조 */
@@ -1672,7 +1792,7 @@ body {
   padding: 0;
   border: none;
   background: rgb(15 23 42 / 28%);
-  cursor: pointer;
+  cursor: default;
 }
 
 .tag-manage-dialog {
@@ -1706,6 +1826,7 @@ body {
   overflow: auto;
   flex: 1;
   min-height: 0;
+  overscroll-behavior: none;
 }
 
 .edit-note-modal-note {
@@ -1821,6 +1942,7 @@ body {
   overflow-y: auto;
   flex: 1;
   min-height: 0;
+  overscroll-behavior: none;
 }
 
 .tag-manage-item {
@@ -1880,6 +2002,7 @@ body {
   overflow-y: auto;
   flex: 1;
   min-height: 0;
+  overscroll-behavior: none;
 }
 
 .tag-manage-account-section {

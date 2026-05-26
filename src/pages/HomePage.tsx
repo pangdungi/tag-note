@@ -10,16 +10,18 @@ import {
   createNoteWithTags,
   ensureStarterTagsIfEmpty,
   fetchNotesWithTags,
+  fetchNotesForMainSearch,
   fetchTags,
   filterNotesByMainSearch,
   filterTagsByMainSearch,
   mapNotesWithRenamedTag,
   mergeTagsFromNoteIntoAllTags,
+  mergeNotesById,
   syncNotesStateAfterTagSelectionPull,
   type NoteWithTags,
   type TagRow,
 } from '../lib/notesApi'
-import { displayTagName, normalizeTagInput, pickColorIndex, TAG_COLOR_COUNT } from '../lib/tagUtils'
+import { displayTagName, normalizeTagInput, TAG_COLOR_COUNT } from '../lib/tagUtils'
 import { useLoadingUiMountLog } from '../lib/loadingUiMountLog'
 import { isSupabaseConfigured } from '../lib/supabase'
 import tagIconUrl from '../assets/tag-icon.png'
@@ -162,9 +164,8 @@ function HomeQuickActionButtons({
         type="button"
         className={`btn btn--icon${addNoteOpen ? ' btn--active' : ''}`}
         disabled={!canUseCompose}
-        aria-expanded={addNoteOpen}
-        aria-label={addNoteOpen ? '메모 추가 닫기' : '메모 추가 열기'}
-        title={addNoteOpen ? '메모 추가 닫기' : '새 메모'}
+        aria-label="메모 추가 열기"
+        title="새 메모"
         onClick={onToggleAddNote}
       >
         +
@@ -204,11 +205,14 @@ export function HomePage() {
   const [notes, setNotes] = useState<NoteWithTags[]>([])
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  /** 첫 작성 카드: 저장 검증 안내 */
+  const [bootstrapFieldHint, setBootstrapFieldHint] = useState<
+    'tags' | 'body' | null
+  >(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const [addNoteOpen, setAddNoteOpen] = useState(false)
-  const [addNoteSeedTags, setAddNoteSeedTags] = useState<SelectedTag[]>([])
 
   const [tagManageOpen, setTagManageOpen] = useState(false)
   const [accountModalOpen, setAccountModalOpen] = useState(false)
@@ -268,18 +272,27 @@ export function HomePage() {
     [user?.id, fetchHomeSnapshot],
   )
 
-  /** 태그 클릭 시 해당 태그에 연결된 메모만 서버에서 받아 `notes`에 병합 */
+  /** 태그 동기화 UI — 초기 스냅샷(loadData 성공) 이후 탭 바꿀 때는 표시 안 함 */
   const [tagPullLoading, setTagPullLoading] = useState(false)
+
+  /** 메모·출처 검색 — 서버 조회 결과 (검색어 키와 함께 보관) */
+  const [searchNotesResult, setSearchNotesResult] = useState<{
+    q: string
+    notes: NoteWithTags[]
+  } | null>(null)
+  const [searchNotesLoading, setSearchNotesLoading] = useState(false)
 
   const applyNoteCreated = useCallback((note: NoteWithTags) => {
     setNotes((prev) => [note, ...prev.filter((n) => n.id !== note.id)])
     setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
     setTagSearch('')
+    setSaveError(null)
   }, [])
 
   const applyNoteUpdated = useCallback((note: NoteWithTags) => {
     setNotes((prev) => prev.map((n) => (n.id === note.id ? note : n)))
     setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
+    setSaveError(null)
   }, [])
 
   const applyNoteDeleted = useCallback((noteId: string) => {
@@ -326,7 +339,10 @@ export function HomePage() {
       return
     }
     let cancelled = false
-    setTagPullLoading(true)
+    const showTagPullSpinner = !homeDataInitialLoadDoneRef.current
+    if (showTagPullSpinner) {
+      setTagPullLoading(true)
+    }
     void (async () => {
       try {
         const next = await syncNotesStateAfterTagSelectionPull(
@@ -347,13 +363,16 @@ export function HomePage() {
           )
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && showTagPullSpinner) {
           setTagPullLoading(false)
         }
       }
     })()
     return () => {
       cancelled = true
+      if (showTagPullSpinner) {
+        setTagPullLoading(false)
+      }
     }
   }, [selectedTagId, user?.id])
 
@@ -362,10 +381,27 @@ export function HomePage() {
     [allTags, tagSearch],
   )
 
-  const notesMatchingSearch = useMemo(
-    () => filterNotesByMainSearch(notes, tagSearch),
-    [notes, tagSearch],
+  const searchNormalized = useMemo(
+    () => normalizeTagInput(tagSearch).toLowerCase(),
+    [tagSearch],
   )
+
+  const hasActiveSearch = searchNormalized.length > 0
+
+  const notesMatchingSearch = useMemo(() => {
+    if (!hasActiveSearch || selectedTagId) return []
+    if (searchNotesResult?.q === searchNormalized) {
+      return searchNotesResult.notes
+    }
+    return filterNotesByMainSearch(notes, tagSearch)
+  }, [
+    hasActiveSearch,
+    selectedTagId,
+    searchNormalized,
+    searchNotesResult,
+    notes,
+    tagSearch,
+  ])
 
   const notesForSelectedTag = useMemo(() => {
     if (!selectedTagId) return []
@@ -378,6 +414,7 @@ export function HomePage() {
 
   function toggleTagSelect(tagId: string) {
     setSelectedTagId((cur) => (cur === tagId ? null : tagId))
+    setNoteMobileExpandedId(null)
   }
 
   function toggleNoteMobileExpand(noteId: string) {
@@ -395,34 +432,86 @@ export function HomePage() {
     return t ? displayTagName(t.name) : null
   }, [allTags, selectedTagId])
 
-  const searchNormalized = useMemo(
-    () => normalizeTagInput(tagSearch).toLowerCase(),
-    [tagSearch],
-  )
+  useEffect(() => {
+    if (!hasActiveSearch || selectedTagId || !user?.id) {
+      setSearchNotesResult(null)
+      setSearchNotesLoading(false)
+      return
+    }
+    const qKey = searchNormalized
+    const qRaw = tagSearch
+    const tagIds = visibleTags.map((t) => t.id)
+    let cancelled = false
+    setSearchNotesLoading(true)
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const rows = await fetchNotesForMainSearch(qRaw, tagIds)
+          if (cancelled) return
+          setSearchNotesResult({ q: qKey, notes: rows })
+          setNotes((prev) => mergeNotesById(prev, rows))
+          setLoadError(null)
+        } catch (e) {
+          if (!cancelled) {
+            setLoadError(
+              e instanceof Error
+                ? e.message
+                : '알 수 없는 오류로 검색하지 못했습니다.',
+            )
+          }
+        } finally {
+          if (!cancelled) {
+            setSearchNotesLoading(false)
+          }
+        }
+      })()
+    }, 250)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    hasActiveSearch,
+    selectedTagId,
+    searchNormalized,
+    tagSearch,
+    visibleTags,
+    user?.id,
+  ])
 
-  const hasExactTagMatch = useMemo(
-    () =>
-      searchNormalized.length > 0 &&
-      allTags.some(
-        (t) => normalizeTagInput(t.name).toLowerCase() === searchNormalized,
-      ),
-    [allTags, searchNormalized],
-  )
+  useEffect(() => {
+    if (!hasActiveSearch || !selectedTagId) return
+    if (!visibleTags.some((t) => t.id === selectedTagId)) {
+      setSelectedTagId(null)
+    }
+  }, [hasActiveSearch, selectedTagId, visibleTags])
 
   async function handleBootstrapSave() {
     if (!user?.id) return
     setSaveError(null)
+    if (bootstrapTags.length === 0) {
+      setBootstrapFieldHint('tags')
+      return
+    }
+    if (!bootstrapBody.trim()) {
+      setBootstrapFieldHint('body')
+      return
+    }
+    setBootstrapFieldHint(null)
+    const saveBody = bootstrapBody
+    const saveTags = bootstrapTags.map((t) => t.name)
+    const saveSource = bootstrapSource
+    setBootstrapBody('')
+    setBootstrapSource('')
+    setBootstrapTags([])
     try {
       const note = await createNoteWithTags(
-        bootstrapBody,
-        bootstrapTags.map((t) => t.name),
+        saveBody,
+        saveTags,
         user.id,
         [...allTags],
-        bootstrapSource,
+        saveSource,
       )
-      setBootstrapBody('')
-      setBootstrapSource('')
-      setBootstrapTags([])
       applyNoteCreated(note)
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : '저장에 실패했습니다.')
@@ -431,43 +520,22 @@ export function HomePage() {
 
   const showBootstrap = allTags.length === 0 && !loading
 
-  const showAddTagFromSearch =
-    !showBootstrap &&
-    !loading &&
-    !loadError &&
-    searchNormalized.length > 0 &&
-    !hasExactTagMatch
+  const bootstrapSaveReady =
+    bootstrapTags.length > 0 && bootstrapBody.trim().length > 0
 
   const canUseCompose = !showBootstrap && !loading && !loadError
 
   function openAddNote() {
     if (!canUseCompose) return
-    const seed: SelectedTag[] = []
-    if (showAddTagFromSearch) {
-      const label = normalizeTagInput(tagSearch)
-      if (label) {
-        const used = allTags.map((t) => ({
-          name: t.name,
-          color_index: t.color_index,
-        }))
-        seed.push({
-          name: label,
-          color_index: pickColorIndex(label, used),
-        })
-      }
-    }
-    setAddNoteSeedTags(seed)
     setAddNoteOpen(true)
   }
 
   function closeAddNote() {
     setAddNoteOpen(false)
-    setAddNoteSeedTags([])
   }
 
   function toggleAddNote() {
-    if (addNoteOpen) closeAddNote()
-    else openAddNote()
+    if (!addNoteOpen) openAddNote()
   }
 
   return (
@@ -489,6 +557,20 @@ export function HomePage() {
             onClick={() => void loadData({ showGridLoading: true })}
           >
             다시 불러오기
+          </button>
+        </div>
+      ) : null}
+
+      {saveError && !showBootstrap ? (
+        <div className="setup-banner" role="alert">
+          <p className="setup-banner-title">저장하지 못했습니다</p>
+          <p className="setup-banner-text">{saveError}</p>
+          <button
+            type="button"
+            className="setup-retry"
+            onClick={() => setSaveError(null)}
+          >
+            닫기
           </button>
         </div>
       ) : null}
@@ -552,10 +634,10 @@ export function HomePage() {
                   <HomeTagGridLoadingHint />
                 ) : visibleTags.length === 0 ? (
                   <p className="notes-hint">
-                    {normalizeTagInput(tagSearch)
+                    {hasActiveSearch
                       ? notesMatchingSearch.length > 0
-                        ? '이 검색과 맞는 태그는 없습니다. 아래 메모 결과를 확인해 보세요.'
-                        : '검색과 비슷한 태그가 없습니다.'
+                        ? '태그 검색 결과는 없습니다. 아래 메모·출처 결과를 확인해 보세요.'
+                        : '검색 결과가 없습니다.'
                       : '태그가 없습니다.'}
                   </p>
                 ) : (
@@ -616,7 +698,17 @@ export function HomePage() {
                   <TagComposer
                     allTags={allTags}
                     selected={bootstrapTags}
-                    onChange={setBootstrapTags}
+                    onChange={(next) => {
+                      setBootstrapTags(next)
+                      setBootstrapFieldHint((h) => (h === 'tags' ? null : h))
+                    }}
+                    hint={
+                      bootstrapFieldHint === 'tags' ? (
+                        <p className="composer-field-hint" role="status">
+                          태그를 추가해 주세요.
+                        </p>
+                      ) : undefined
+                    }
                   />
                   <div className="composer-field">
                     <label className="composer-label" htmlFor="bootstrap-note">
@@ -626,11 +718,21 @@ export function HomePage() {
                       id="bootstrap-note"
                       className="composer-note"
                       value={bootstrapBody}
-                      onChange={(e) => setBootstrapBody(e.target.value)}
+                      onChange={(e) => {
+                        setBootstrapBody(e.target.value)
+                        setBootstrapFieldHint((h) =>
+                          h === 'body' ? null : h,
+                        )
+                      }}
                       placeholder="내용을 입력하세요"
                       rows={5}
                       disabled={!!loadError}
                     />
+                    {bootstrapFieldHint === 'body' ? (
+                      <p className="composer-field-hint" role="status">
+                        메모를 입력해 주세요.
+                      </p>
+                    ) : null}
                   </div>
                   <div className="composer-field">
                     <label className="composer-label" htmlFor="bootstrap-source">
@@ -652,7 +754,9 @@ export function HomePage() {
               {saveError ? <p className="composer-error">{saveError}</p> : null}
               <button
                 type="button"
-                className="btn btn--emphasis btn--block composer-save"
+                className={`btn btn--emphasis btn--block composer-save${
+                  bootstrapSaveReady ? ' btn--composer-ready' : ''
+                }`}
                 disabled={loading || !!loadError}
                 onClick={() => void handleBootstrapSave()}
               >
@@ -661,30 +765,28 @@ export function HomePage() {
             </section>
           ) : null}
 
-          {!showBootstrap && searchNormalized.length > 0 ? (
+          {!showBootstrap &&
+          hasActiveSearch &&
+          !selectedTagId &&
+          notesMatchingSearch.length > 0 ? (
             <section
               className="note-board-section note-memo-search-section"
+              aria-busy={searchNotesLoading}
               aria-label="메모·출처 검색 결과"
             >
               <h2 className="note-memo-search-title">메모·출처 검색</h2>
-              {notesMatchingSearch.length === 0 ? (
-                <p className="notes-hint note-board-empty">
-                  본문·출처에 이 검색어가 포함된 메모가 없습니다.
-                </p>
-              ) : (
-                <ul className="note-board-list">
-                  {notesMatchingSearch.map((note) => (
-                    <li key={note.id}>
-                      <NoteBoardCard
-                        note={note}
-                        mobileExpanded={noteMobileExpandedId === note.id}
-                        onTouchToggleExpand={() => toggleNoteMobileExpand(note.id)}
-                        onEdit={openEditNote}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <ul className="note-board-list">
+                {notesMatchingSearch.map((note) => (
+                  <li key={note.id}>
+                    <NoteBoardCard
+                      note={note}
+                      mobileExpanded={noteMobileExpandedId === note.id}
+                      onTouchToggleExpand={() => toggleNoteMobileExpand(note.id)}
+                      onEdit={openEditNote}
+                    />
+                  </li>
+                ))}
+              </ul>
             </section>
           ) : null}
 
@@ -698,6 +800,9 @@ export function HomePage() {
                   : '선택한 태그의 메모'
               }
             >
+              {selectedTagLabel ? (
+                <h2 className="note-memo-search-title">{selectedTagLabel}</h2>
+              ) : null}
               <TagNotesPullStatus
                 active={tagPullLoading}
                 hasCachedNotes={notesForSelectedTag.length > 0}
@@ -729,10 +834,11 @@ export function HomePage() {
         <AddNoteModal
           open={addNoteOpen}
           onClose={() => closeAddNote()}
-          initialTags={addNoteSeedTags}
+          initialTags={[]}
           allTags={allTags}
           userId={user.id}
           onSaved={applyNoteCreated}
+          onSaveError={(message) => setSaveError(message)}
         />
       ) : null}
 
@@ -764,6 +870,7 @@ export function HomePage() {
           allTags={allTags}
           userId={user.id}
           onNoteUpdated={applyNoteUpdated}
+          onUpdateError={(message) => setSaveError(message)}
           onNoteDeleted={applyNoteDeleted}
         />
       ) : null}
