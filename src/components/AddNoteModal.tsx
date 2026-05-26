@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, startTransition } from 'react'
+import { useEffect, useId, useRef, useState, startTransition } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
 import {
   createNoteWithTags,
@@ -37,11 +37,20 @@ export function AddNoteModal({
   const [error, setError] = useState<string | null>(null)
   /** 저장 클릭 시 검증: 태그 영역 또는 메모 아래 안내 */
   const [fieldHint, setFieldHint] = useState<'tags' | 'body' | null>(null)
+  const wasOpenRef = useRef(false)
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      wasOpenRef.current = false
+      return
+    }
+    if (wasOpenRef.current) {
+      return
+    }
+    wasOpenRef.current = true
+    const seed = initialTags
     startTransition(() => {
-      setTags(initialTags.map((t) => ({ ...t })))
+      setTags(seed.map((t) => ({ ...t })))
       setBody('')
       setSource('')
       setError(null)

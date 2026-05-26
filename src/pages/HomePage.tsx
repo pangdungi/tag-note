@@ -28,6 +28,8 @@ import tagIconUrl from '../assets/tag-icon.png'
 import userCircleIconUrl from '../assets/user-circle-icon.png'
 import editPencilUrl from '../assets/edit-pencil.png'
 
+const EMPTY_MODAL_SEED_TAGS: SelectedTag[] = []
+
 function formatNoteWhen(iso: string) {
   try {
     return new Intl.DateTimeFormat('ko-KR', {
@@ -834,7 +836,7 @@ export function HomePage() {
         <AddNoteModal
           open={addNoteOpen}
           onClose={() => closeAddNote()}
-          initialTags={[]}
+          initialTags={EMPTY_MODAL_SEED_TAGS}
           allTags={allTags}
           userId={user.id}
           onSaved={applyNoteCreated}
