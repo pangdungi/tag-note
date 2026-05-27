@@ -14,6 +14,7 @@ type Props = {
   onTagError?: (message: string) => void
   /** 저장·삭제 실패 시 서버 기준으로 다시 불러옴 */
   onSyncFromServer?: () => void | Promise<void>
+  onSourcesChanged?: () => void | Promise<void>
 }
 
 export function EditTagModal({
@@ -25,6 +26,7 @@ export function EditTagModal({
   resolveLinkedNoteIds,
   onTagError,
   onSyncFromServer,
+  onSourcesChanged,
 }: Props) {
   const titleId = useId()
   const [name, setName] = useState('')
@@ -149,6 +151,7 @@ export function EditTagModal({
           void (async () => {
             try {
               await deleteTagAndLinkedNotes(tagId)
+              await onSourcesChanged?.()
             } catch (e) {
               console.error('[태그노트] EditTagModal 태그 삭제 실패', {
                 tagId,

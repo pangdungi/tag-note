@@ -12,6 +12,7 @@ type Props = {
   resolveLinkedNoteIds?: (tagId: string) => string[]
   onTagError?: (message: string) => void
   onSyncFromServer?: () => void | Promise<void>
+  onSourcesChanged?: () => void | Promise<void>
 }
 
 export function TagManageModal({
@@ -23,6 +24,7 @@ export function TagManageModal({
   resolveLinkedNoteIds,
   onTagError,
   onSyncFromServer,
+  onSourcesChanged,
 }: Props) {
   const titleId = useId()
   const [q, setQ] = useState('')
@@ -132,6 +134,7 @@ export function TagManageModal({
         resolveLinkedNoteIds={resolveLinkedNoteIds}
         onTagError={onTagError}
         onSyncFromServer={onSyncFromServer}
+        onSourcesChanged={onSourcesChanged}
       />
     </>
   )

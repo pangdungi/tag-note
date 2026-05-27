@@ -1,10 +1,12 @@
 import { useEffect, useId, useRef, useState, startTransition } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
+import { SourceComposer, type SelectedSource } from './SourceComposer'
 import { ConfirmModal } from './ConfirmModal'
 import {
   deleteNote,
   updateNoteWithTags,
   type NoteWithTags,
+  type SourceRow,
   type TagRow,
 } from '../lib/notesApi'
 import { onStructuredNoteBodyPaste } from '../lib/pasteNoteFormat'
@@ -21,17 +23,31 @@ function noteToSelectedTags(note: NoteWithTags): SelectedTag[] {
   }))
 }
 
+function noteToSelectedSource(note: NoteWithTags): SelectedSource | null {
+  const title = (note.sources?.title ?? note.source ?? '').trim()
+  if (!title) return null
+  return {
+    id: note.source_id ?? note.sources?.id,
+    title,
+  }
+}
+
 function buildLocalPreviewNote(
   noteId: string,
   createdAt: string,
   body: string,
-  source: string,
+  source: SelectedSource | null,
   tags: SelectedTag[],
 ): NoteWithTags {
+  const srcTitle = source?.title.trim() ?? ''
   return {
     id: noteId,
     body: body.trim(),
-    source: source.trim(),
+    source: srcTitle,
+    source_id: source?.id ?? null,
+    sources: source?.id && srcTitle
+      ? { id: source.id, title: srcTitle }
+      : null,
     created_at: createdAt,
     note_tags: tags.map((t) => ({
       tag_id: t.id ?? `pending-${t.name}`,
@@ -49,6 +65,7 @@ type Props = {
   onClose: () => void
   note: NoteWithTags | null
   allTags: TagRow[]
+  allSources: SourceRow[]
   userId: string
   /** 화면 즉시 반영(로컬) — 서버 응답 후 한 번 더 호출되어 맞춤 */
   onNoteUpdated: (note: NoteWithTags) => void | Promise<void>
@@ -56,6 +73,8 @@ type Props = {
   /** 실패 시 서버 기준으로 해당 메모만 다시 불러옴 */
   onSyncNoteFromServer?: (noteId: string) => void | Promise<void>
   onNoteDeleted: (noteId: string) => void | Promise<void>
+  /** 출처 변경·삭제 후 고아 출처 목록 갱신 */
+  onSourcesChanged?: () => void | Promise<void>
 }
 
 export function EditNoteModal({
@@ -63,16 +82,18 @@ export function EditNoteModal({
   onClose,
   note,
   allTags,
+  allSources,
   userId,
   onNoteUpdated,
   onUpdateError,
   onSyncNoteFromServer,
   onNoteDeleted,
+  onSourcesChanged,
 }: Props) {
   const titleId = useId()
   const [tags, setTags] = useState<SelectedTag[]>([])
   const [body, setBody] = useState('')
-  const [source, setSource] = useState('')
+  const [selectedSource, setSelectedSource] = useState<SelectedSource | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const seededNoteIdRef = useRef<string | null>(null)
@@ -91,7 +112,7 @@ export function EditNoteModal({
     startTransition(() => {
       setTags(noteToSelectedTags(note))
       setBody(note.body ?? '')
-      setSource(note.source ?? '')
+      setSelectedSource(noteToSelectedSource(note))
       setError(null)
       setDeleteConfirmOpen(false)
     })
@@ -135,26 +156,26 @@ export function EditNoteModal({
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 onPaste={(e) => {
-                  onStructuredNoteBodyPaste(e, body, source, setBody, setSource)
+                  onStructuredNoteBodyPaste(
+                    e,
+                    body,
+                    selectedSource?.title ?? '',
+                    setBody,
+                    (title) => {
+                      const t = title.trim()
+                      setSelectedSource(t ? { title: t } : null)
+                    },
+                  )
                 }}
                 placeholder="내용을 입력하세요"
                 rows={6}
               />
             </div>
-            <div className="composer-field">
-              <label className="composer-label" htmlFor="edit-note-source">
-                출처
-              </label>
-              <input
-                id="edit-note-source"
-                type="text"
-                className="composer-source"
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
-                placeholder="책, 링크, 기사 등 (선택)"
-                autoComplete="off"
-              />
-            </div>
+            <SourceComposer
+              allSources={allSources}
+              selected={selectedSource}
+              onChange={setSelectedSource}
+            />
           </div>
           {error ? <p className="composer-error">{error}</p> : null}
           <div className="edit-note-modal-actions">
@@ -175,12 +196,12 @@ export function EditNoteModal({
                 const noteId = note.id
                 const saveBody = body
                 const saveTags = tags.map((t) => t.name)
-                const saveSource = source
+                const saveSource = selectedSource?.title ?? ''
                 const preview = buildLocalPreviewNote(
                   noteId,
                   note.created_at,
                   saveBody,
-                  saveSource,
+                  selectedSource,
                   tags,
                 )
                 void onNoteUpdated(preview)
@@ -194,8 +215,10 @@ export function EditNoteModal({
                       userId,
                       [...allTags],
                       saveSource,
+                      [...allSources],
                     )
                     await onNoteUpdated(updated)
+                    await onSourcesChanged?.()
                   } catch (e) {
                     console.error('[태그노트] EditNoteModal 수정 실패', {
                       noteId,
@@ -235,6 +258,7 @@ export function EditNoteModal({
           void (async () => {
             try {
               await deleteNote(noteId)
+              await onSourcesChanged?.()
             } catch (e) {
               console.error('[태그노트] EditNoteModal 메모 삭제 실패', {
                 noteId,

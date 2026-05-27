@@ -1,8 +1,10 @@
 import { useEffect, useId, useRef, useState, startTransition } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
+import { SourceComposer, type SelectedSource } from './SourceComposer'
 import {
   createNoteWithTags,
   type NoteWithTags,
+  type SourceRow,
   type TagRow,
 } from '../lib/notesApi'
 import { onStructuredNoteBodyPaste } from '../lib/pasteNoteFormat'
@@ -18,6 +20,7 @@ type Props = {
   /** 열릴 때 태그칩에 미리 넣을 값(검색으로 새 태그 추가 등) */
   initialTags: SelectedTag[]
   allTags: TagRow[]
+  allSources: SourceRow[]
   userId: string
   onSaved: (note: NoteWithTags, options?: SavedOptions) => void | Promise<void>
   onSaveFailed?: (tempId: string) => void | Promise<void>
@@ -27,13 +30,18 @@ type Props = {
 function buildLocalPreviewNote(
   tempId: string,
   body: string,
-  source: string,
+  source: SelectedSource | null,
   tags: SelectedTag[],
 ): NoteWithTags {
+  const srcTitle = source?.title.trim() ?? ''
   return {
     id: tempId,
     body: body.trim(),
-    source: source.trim(),
+    source: srcTitle,
+    source_id: source?.id ?? null,
+    sources: source?.id && srcTitle
+      ? { id: source.id, title: srcTitle }
+      : null,
     created_at: new Date().toISOString(),
     note_tags: tags.map((t) => ({
       tag_id: t.id ?? `pending-${t.name}`,
@@ -51,6 +59,7 @@ export function AddNoteModal({
   onClose,
   initialTags,
   allTags,
+  allSources,
   userId,
   onSaved,
   onSaveFailed,
@@ -59,11 +68,10 @@ export function AddNoteModal({
   const titleId = useId()
   const idBase = useId()
   const bodyId = `${idBase}-body`
-  const sourceId = `${idBase}-source`
 
   const [tags, setTags] = useState<SelectedTag[]>([])
   const [body, setBody] = useState('')
-  const [source, setSource] = useState('')
+  const [selectedSource, setSelectedSource] = useState<SelectedSource | null>(null)
   const [error, setError] = useState<string | null>(null)
   /** 저장 클릭 시 검증: 태그 영역 또는 메모 아래 안내 */
   const [fieldHint, setFieldHint] = useState<'tags' | 'body' | null>(null)
@@ -82,7 +90,7 @@ export function AddNoteModal({
     startTransition(() => {
       setTags(seed.map((t) => ({ ...t })))
       setBody('')
-      setSource('')
+      setSelectedSource(null)
       setError(null)
       setFieldHint(null)
     })
@@ -145,7 +153,16 @@ export function AddNoteModal({
                   setFieldHint((h) => (h === 'body' ? null : h))
                 }}
                 onPaste={(e) => {
-                  onStructuredNoteBodyPaste(e, body, source, setBody, setSource)
+                  onStructuredNoteBodyPaste(
+                    e,
+                    body,
+                    selectedSource?.title ?? '',
+                    setBody,
+                    (title) => {
+                      const t = title.trim()
+                      setSelectedSource(t ? { title: t } : null)
+                    },
+                  )
                 }}
                 placeholder="내용을 입력하세요"
                 rows={6}
@@ -156,20 +173,11 @@ export function AddNoteModal({
                 </p>
               ) : null}
             </div>
-            <div className="composer-field">
-              <label className="composer-label" htmlFor={sourceId}>
-                출처
-              </label>
-              <input
-                id={sourceId}
-                type="text"
-                className="composer-source"
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
-                placeholder="책, 링크, 기사 등 (선택)"
-                autoComplete="off"
-              />
-            </div>
+            <SourceComposer
+              allSources={allSources}
+              selected={selectedSource}
+              onChange={setSelectedSource}
+            />
           </div>
           {error ? <p className="composer-error">{error}</p> : null}
           <div className="edit-note-modal-actions edit-note-modal-actions--add-only">
@@ -191,12 +199,12 @@ export function AddNoteModal({
                 setFieldHint(null)
                 const saveBody = body
                 const saveTags = tags.map((t) => t.name)
-                const saveSource = source
+                const saveSource = selectedSource?.title ?? ''
                 const tempId = crypto.randomUUID()
                 const preview = buildLocalPreviewNote(
                   tempId,
                   saveBody,
-                  saveSource,
+                  selectedSource,
                   tags,
                 )
                 void onSaved(preview)
@@ -209,6 +217,7 @@ export function AddNoteModal({
                       userId,
                       [...allTags],
                       saveSource,
+                      [...allSources],
                     )
                     await onSaved(note, { replacingId: tempId })
                   } catch (e) {

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TagComposer, type SelectedTag } from '../components/TagComposer'
+import { SourceComposer, type SelectedSource } from '../components/SourceComposer'
 import { TagManageModal } from '../components/TagManageModal'
 import { AccountModal } from '../components/AccountModal'
 import { EditNoteModal } from '../components/EditNoteModal'
+import { NoteViewModal } from '../components/NoteViewModal'
 import { AddNoteModal } from '../components/AddNoteModal'
 import { TagNotesPullStatus } from '../components/TagNotesPullStatus'
 import { useAuth } from '../contexts/useAuth'
@@ -10,26 +12,32 @@ import {
   createNoteWithTags,
   ensureStarterTagsIfEmpty,
   fetchNoteWithTagsById,
-  fetchNotesWithTags,
+  fetchNotesPage,
   fetchNotesForMainSearch,
+  fetchSourcesInUse,
   fetchTags,
-  filterNotesByMainSearch,
+  filterSourcesByQuery,
   filterTagsByMainSearch,
   mapNotesWithRenamedTag,
+  mergeSourcesFromNoteIntoAllSources,
   mergeTagsFromNoteIntoAllTags,
   mergeNotesById,
+  noteSourceLabel,
+  pruneAllOrphanSources,
   supabaseErrorMessage,
+  syncNotesStateAfterSourceSelectionPull,
   syncNotesStateAfterTagSelectionPull,
   type NoteWithTags,
+  type SourceRow,
   type TagRow,
 } from '../lib/notesApi'
 import { displayTagName, normalizeTagInput, TAG_COLOR_COUNT } from '../lib/tagUtils'
+import { displaySourceTitle, sourceTitleKey } from '../lib/sourceUtils'
 import { onStructuredNoteBodyPaste } from '../lib/pasteNoteFormat'
 import { useLoadingUiMountLog } from '../lib/loadingUiMountLog'
 import { isSupabaseConfigured } from '../lib/supabase'
 import tagIconUrl from '../assets/tag-icon.png'
 import userCircleIconUrl from '../assets/user-circle-icon.png'
-import editPencilUrl from '../assets/edit-pencil.png'
 
 const EMPTY_MODAL_SEED_TAGS: SelectedTag[] = []
 
@@ -46,14 +54,12 @@ function formatNoteWhen(iso: string) {
 
 function NoteBoardCard({
   note,
-  mobileExpanded,
-  onTouchToggleExpand,
-  onEdit,
+  onView,
+  onSourceFilter,
 }: {
   note: NoteWithTags
-  mobileExpanded: boolean
-  onTouchToggleExpand: () => void
-  onEdit: (n: NoteWithTags) => void
+  onView: (note: NoteWithTags) => void
+  onSourceFilter?: (sourceId: string) => void
 }) {
   const tagLinks = note.note_tags
     .map((nt) => nt.tags)
@@ -63,17 +69,25 @@ function NoteBoardCard({
     a.name.localeCompare(b.name, 'ko'),
   )
 
-  const src = (note.source ?? '').trim()
+  const src = noteSourceLabel(note)
+  const srcId = note.source_id ?? note.sources?.id ?? null
   const body = note.body?.trim() ?? ''
+  const showViewHint = Boolean(note.bodyIsPreview) && body.length > 0
 
   return (
     <article
-      className={`note-board-card${mobileExpanded ? ' note-board-card--mobile-expand' : ''}`}
+      className={`note-board-card${showViewHint ? ' note-board-card--viewable' : ''}`}
       onClick={() => {
-        if (typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches) {
-          onTouchToggleExpand()
+        if (body) onView(note)
+      }}
+      onKeyDown={(e) => {
+        if (!body) return
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onView(note)
         }
       }}
+      {...(body ? { role: 'button' as const, tabIndex: 0 } : {})}
     >
       <div className="note-board-card-head">
         <div className="note-board-card-tags">
@@ -86,35 +100,33 @@ function NoteBoardCard({
             </span>
           ))}
         </div>
-        <button
-          type="button"
-          className="note-board-card-edit"
-          aria-label="메모 수정"
-          onClick={(e) => {
-            e.stopPropagation()
-            onEdit(note)
-          }}
-        >
-          <img
-            src={editPencilUrl}
-            alt=""
-            width={12}
-            height={12}
-            decoding="async"
-            className="note-board-card-edit-img"
-          />
-        </button>
       </div>
       <p
         className={`note-board-card-preview${
           !body ? ' note-board-card-preview--empty' : ''
-        }`}
+        }${showViewHint ? ' note-board-card-preview--clamped' : ''}`}
       >
         {body || '내용 없음'}
       </p>
+      {showViewHint ? (
+        <p className="note-board-card-view-hint">클릭하여 전체 보기</p>
+      ) : null}
       <div className="note-board-card-meta">
         {src ? (
-          <span className="note-board-card-source">{src}</span>
+          srcId && onSourceFilter ? (
+            <button
+              type="button"
+              className="note-board-card-source note-board-card-source--link"
+              onClick={(e) => {
+                e.stopPropagation()
+                onSourceFilter(srcId)
+              }}
+            >
+              {src}
+            </button>
+          ) : (
+            <span className="note-board-card-source">{src}</span>
+          )
         ) : null}
         <time className="note-board-card-time" dateTime={note.created_at}>
           {formatNoteWhen(note.created_at)}
@@ -205,10 +217,16 @@ export function HomePage() {
   const [tagSearch, setTagSearch] = useState('')
   const [bootstrapTags, setBootstrapTags] = useState<SelectedTag[]>([])
   const [bootstrapBody, setBootstrapBody] = useState('')
-  const [bootstrapSource, setBootstrapSource] = useState('')
+  const [bootstrapSource, setBootstrapSource] = useState<SelectedSource | null>(null)
   const [allTags, setAllTags] = useState<TagRow[]>([])
+  const [allSources, setAllSources] = useState<SourceRow[]>([])
   const [notes, setNotes] = useState<NoteWithTags[]>([])
+  const [tagNotesHasMore, setTagNotesHasMore] = useState(false)
+  const [sourceNotesHasMore, setSourceNotesHasMore] = useState(false)
+  const [tagNotesLoadingMore, setTagNotesLoadingMore] = useState(false)
+  const [sourceNotesLoadingMore, setSourceNotesLoadingMore] = useState(false)
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null)
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [bootstrapSaving, setBootstrapSaving] = useState(false)
   /** 첫 작성 카드: 저장 검증 안내 */
@@ -224,7 +242,8 @@ export function HomePage() {
   const [tagManageOpen, setTagManageOpen] = useState(false)
   const [accountModalOpen, setAccountModalOpen] = useState(false)
   const [editingNote, setEditingNote] = useState<NoteWithTags | null>(null)
-  const [noteMobileExpandedId, setNoteMobileExpandedId] = useState<string | null>(null)
+  const [viewingNote, setViewingNote] = useState<NoteWithTags | null>(null)
+  const [viewNoteLoading, setViewNoteLoading] = useState(false)
 
   /** 이 계정에서 첫 데이터 패치가 끝났는지 — 이후엔 태그 칸 전체「불러오는 중」을 안 띄움 */
   const homeDataInitialLoadDoneRef = useRef(false)
@@ -236,13 +255,20 @@ export function HomePage() {
   }, [notes])
 
   const fetchHomeSnapshot = useCallback(async (uid: string) => {
-    const [tags, noteRows] = await Promise.all([
-      fetchTags(),
-      fetchNotesWithTags(),
-    ])
+    const [tags, notePage] = await Promise.all([fetchTags(), fetchNotesPage()])
     const tagsAfterStarter =
       tags.length === 0 ? await ensureStarterTagsIfEmpty(uid) : tags
-    return { tags: tagsAfterStarter, notes: noteRows }
+    try {
+      await pruneAllOrphanSources()
+    } catch (e) {
+      console.warn('[태그노트] 고아 출처 정리 실패', e)
+    }
+    const sources = await fetchSourcesInUse()
+    return {
+      tags: tagsAfterStarter,
+      sources,
+      notes: notePage.notes,
+    }
   }, [])
 
   const loadData = useCallback(
@@ -258,9 +284,12 @@ export function HomePage() {
         setLoading(true)
       }
       try {
-        const { tags, notes: noteRows } = await fetchHomeSnapshot(uid)
+        const { tags, sources, notes: noteRows } = await fetchHomeSnapshot(uid)
         setAllTags(tags)
+        setAllSources(sources)
         setNotes(noteRows)
+        setTagNotesHasMore(false)
+        setSourceNotesHasMore(false)
         setSaveError(null)
         setLoadError(null)
         setSearchError(null)
@@ -281,13 +310,28 @@ export function HomePage() {
 
   /** 태그 동기화 UI — 초기 스냅샷(loadData 성공) 이후 탭 바꿀 때는 표시 안 함 */
   const [tagPullLoading, setTagPullLoading] = useState(false)
+  const [sourcePullLoading, setSourcePullLoading] = useState(false)
 
-  /** 메모·출처 검색 — 서버 조회 결과 (검색어 키와 함께 보관) */
+  /** 메모 검색 — 서버 조회 결과 (검색어·hasMore와 함께 보관) */
   const [searchNotesResult, setSearchNotesResult] = useState<{
     q: string
     notes: NoteWithTags[]
+    hasMore: boolean
   } | null>(null)
   const [searchNotesLoading, setSearchNotesLoading] = useState(false)
+
+  const refreshSourcesInUse = useCallback(async () => {
+    try {
+      await pruneAllOrphanSources()
+      const sources = await fetchSourcesInUse()
+      setAllSources(sources)
+      setSelectedSourceId((cur) =>
+        cur && sources.some((s) => s.id === cur) ? cur : null,
+      )
+    } catch (e) {
+      console.warn('[태그노트] 출처 목록 갱신 실패', e)
+    }
+  }, [])
 
   const applyNoteCreated = useCallback(
     (note: NoteWithTags, opts?: { replacingId?: string }) => {
@@ -298,6 +342,7 @@ export function HomePage() {
         ),
       ])
       setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
+      setAllSources((prev) => mergeSourcesFromNoteIntoAllSources(prev, note))
       setTagSearch('')
       setSaveError(null)
     },
@@ -311,6 +356,7 @@ export function HomePage() {
   const applyNoteUpdated = useCallback((note: NoteWithTags) => {
     setNotes((prev) => prev.map((n) => (n.id === note.id ? note : n)))
     setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
+    setAllSources((prev) => mergeSourcesFromNoteIntoAllSources(prev, note))
     setSaveError(null)
   }, [])
 
@@ -399,7 +445,8 @@ export function HomePage() {
         if (cancelled) {
           return
         }
-        setNotes(next)
+        setNotes(next.notes)
+        setTagNotesHasMore(next.hasMore)
         setLoadError(null)
       } catch (e) {
         if (!cancelled) {
@@ -423,6 +470,53 @@ export function HomePage() {
     }
   }, [selectedTagId, user?.id])
 
+  useEffect(() => {
+    if (!selectedSourceId) {
+      return
+    }
+    const uid = user?.id
+    if (!uid) {
+      return
+    }
+    let cancelled = false
+    const showPullSpinner = !homeDataInitialLoadDoneRef.current
+    if (showPullSpinner) {
+      setSourcePullLoading(true)
+    }
+    void (async () => {
+      try {
+        const next = await syncNotesStateAfterSourceSelectionPull(
+          notesRef.current,
+          selectedSourceId,
+        )
+        if (cancelled) {
+          return
+        }
+        setNotes(next.notes)
+        setSourceNotesHasMore(next.hasMore)
+        setLoadError(null)
+      } catch (e) {
+        if (!cancelled) {
+          setLoadError(
+            e instanceof Error
+              ? e.message
+              : '알 수 없는 오류로 불러오지 못했습니다.',
+          )
+        }
+      } finally {
+        if (!cancelled && showPullSpinner) {
+          setSourcePullLoading(false)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+      if (showPullSpinner) {
+        setSourcePullLoading(false)
+      }
+    }
+  }, [selectedSourceId, user?.id])
+
   const visibleTags = useMemo(
     () => filterTagsByMainSearch(allTags, tagSearch),
     [allTags, tagSearch],
@@ -435,29 +529,79 @@ export function HomePage() {
 
   const hasActiveSearch = searchNormalized.length > 0
 
+  const visibleSources = useMemo(() => {
+    if (!hasActiveSearch) return allSources
+    return filterSourcesByQuery(allSources, tagSearch)
+  }, [allSources, tagSearch, hasActiveSearch])
+
   const notesMatchingSearch = useMemo(() => {
-    if (!hasActiveSearch || selectedTagId) return []
+    if (!hasActiveSearch || selectedTagId || selectedSourceId) return []
     if (searchNotesResult?.q === searchNormalized) {
       return searchNotesResult.notes
     }
-    return filterNotesByMainSearch(notes, tagSearch)
+    return []
   }, [
     hasActiveSearch,
     selectedTagId,
+    selectedSourceId,
     searchNormalized,
     searchNotesResult,
-    notes,
-    tagSearch,
   ])
+
+  const searchHasMore =
+    hasActiveSearch &&
+    searchNotesResult?.q === searchNormalized &&
+    searchNotesResult.hasMore
 
   const notesForSelectedTag = useMemo(() => {
     if (!selectedTagId) return []
-    return notes.filter((n) =>
-      n.note_tags.some(
-        (nt) => nt.tag_id === selectedTagId || nt.tags?.id === selectedTagId,
-      ),
-    )
+    return notes
+      .filter((n) =>
+        n.note_tags.some(
+          (nt) => nt.tag_id === selectedTagId || nt.tags?.id === selectedTagId,
+        ),
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      )
   }, [notes, selectedTagId])
+
+  const selectedSource = useMemo(() => {
+    if (!selectedSourceId) return null
+    return allSources.find((x) => x.id === selectedSourceId) ?? null
+  }, [allSources, selectedSourceId])
+
+  const notesForSelectedSource = useMemo(() => {
+    if (!selectedSourceId) return []
+    const sourceTitle = selectedSource?.title
+    return notes
+      .filter((n) => {
+        const sid = n.source_id ?? n.sources?.id
+        if (sid === selectedSourceId) return true
+        if (!sourceTitle || sid) return false
+        return sourceTitleKey(noteSourceLabel(n)) === sourceTitleKey(sourceTitle)
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      )
+  }, [notes, selectedSourceId, selectedSource])
+
+  /** 출처 필터 시 — 해당 출처 메모에 실제로 붙은 태그만 */
+  const displayTags = useMemo(() => {
+    if (!selectedSourceId) return visibleTags
+    const linkedIds = new Set<string>()
+    for (const note of notesForSelectedSource) {
+      for (const nt of note.note_tags) {
+        const id = nt.tags?.id ?? nt.tag_id
+        if (id && !id.startsWith('pending-')) {
+          linkedIds.add(id)
+        }
+      }
+    }
+    return visibleTags.filter((t) => linkedIds.has(t.id))
+  }, [visibleTags, selectedSourceId, notesForSelectedSource])
 
   function clearMainSearch() {
     setTagSearch('')
@@ -467,6 +611,12 @@ export function HomePage() {
 
   function clearTagFilter() {
     setSelectedTagId(null)
+    setTagNotesHasMore(false)
+  }
+
+  function clearSourceFilter() {
+    setSelectedSourceId(null)
+    setSourceNotesHasMore(false)
   }
 
   function toggleTagSelect(tagId: string) {
@@ -476,19 +626,120 @@ export function HomePage() {
         setTagSearch('')
         setSearchNotesResult(null)
         setSearchError(null)
+        setSelectedSourceId(null)
+        setSourceNotesHasMore(false)
       }
       return next
     })
-    setNoteMobileExpandedId(null)
+    setViewingNote(null)
   }
 
-  function toggleNoteMobileExpand(noteId: string) {
-    setNoteMobileExpandedId((cur) => (cur === noteId ? null : noteId))
+  function toggleSourceSelect(sourceId: string) {
+    setSelectedSourceId((cur) => {
+      const next = cur === sourceId ? null : sourceId
+      if (next !== null) {
+        setTagSearch('')
+        setSearchNotesResult(null)
+        setSearchError(null)
+        setSelectedTagId(null)
+        setTagNotesHasMore(false)
+      }
+      return next
+    })
+    setViewingNote(null)
   }
+
+  function filterBySourceFromCard(sourceId: string) {
+    setSelectedSourceId(sourceId)
+    setSelectedTagId(null)
+    setTagNotesHasMore(false)
+    setTagSearch('')
+    setSearchNotesResult(null)
+    setSearchError(null)
+    setViewingNote(null)
+  }
+
+  const openViewNote = useCallback((note: NoteWithTags) => {
+    setViewingNote(note)
+    if (!note.bodyIsPreview) return
+
+    setViewNoteLoading(true)
+    void (async () => {
+      try {
+        const full = await fetchNoteWithTagsById(note.id)
+        setNotes((prev) => mergeNotesById(prev, [full]))
+        setViewingNote(full)
+      } catch (e) {
+        console.error('[태그노트] 메모 전체 본문 불러오기 실패', note.id, e)
+        setViewingNote(null)
+      } finally {
+        setViewNoteLoading(false)
+      }
+    })()
+  }, [])
 
   function openEditNote(note: NoteWithTags) {
-    setEditingNote(note)
-    setNoteMobileExpandedId(null)
+    setViewingNote(null)
+    if (!note.bodyIsPreview) {
+      setEditingNote(note)
+      return
+    }
+    void (async () => {
+      try {
+        const full = await fetchNoteWithTagsById(note.id)
+        setNotes((prev) => mergeNotesById(prev, [full]))
+        setEditingNote(full)
+      } catch (e) {
+        console.error('[태그노트] 메모 전체 본문 불러오기 실패', note.id, e)
+        setEditingNote(note)
+      }
+    })()
+  }
+
+  async function loadMoreTagNotes() {
+    if (!selectedTagId || tagNotesLoadingMore || !tagNotesHasMore) return
+    const tagNotes = notesForSelectedTag
+    const before = tagNotes[tagNotes.length - 1]?.created_at
+    if (!before) return
+    setTagNotesLoadingMore(true)
+    try {
+      const result = await syncNotesStateAfterTagSelectionPull(
+        notesRef.current,
+        selectedTagId,
+        { before },
+      )
+      setNotes(result.notes)
+      setTagNotesHasMore(result.hasMore)
+    } catch (e) {
+      setLoadError(
+        supabaseErrorMessage(e, '알 수 없는 오류로 불러오지 못했습니다.'),
+      )
+    } finally {
+      setTagNotesLoadingMore(false)
+    }
+  }
+
+  async function loadMoreSourceNotes() {
+    if (!selectedSourceId || sourceNotesLoadingMore || !sourceNotesHasMore) return
+    const sourceNotes = notesForSelectedSource
+    const before = sourceNotes[sourceNotes.length - 1]?.created_at
+    if (!before) return
+    setSourceNotesLoadingMore(true)
+    try {
+      const result = await syncNotesStateAfterSourceSelectionPull(
+        notesRef.current,
+        selectedSourceId,
+        { before },
+      )
+      setNotes(result.notes)
+      setSourceNotesHasMore(result.hasMore)
+    } catch (e) {
+      setLoadError(
+        supabaseErrorMessage(e, '알 수 없는 오류로 불러오지 못했습니다.'),
+      )
+    } finally {
+      setSourceNotesLoadingMore(false)
+    }
   }
 
   const selectedTag = useMemo(() => {
@@ -497,18 +748,31 @@ export function HomePage() {
   }, [allTags, selectedTagId])
 
   const tagsForGrid = useMemo(() => {
-    if (!selectedTagId) return visibleTags
-    const idx = visibleTags.findIndex((t) => t.id === selectedTagId)
-    if (idx <= 0) return visibleTags
-    const picked = visibleTags[idx]
+    if (!selectedTagId) return displayTags
+    const idx = displayTags.findIndex((t) => t.id === selectedTagId)
+    if (idx <= 0) return displayTags
+    const picked = displayTags[idx]
     return [
       picked,
-      ...visibleTags.slice(0, idx),
-      ...visibleTags.slice(idx + 1),
+      ...displayTags.slice(0, idx),
+      ...displayTags.slice(idx + 1),
     ]
-  }, [visibleTags, selectedTagId])
+  }, [displayTags, selectedTagId])
+
+  const sourcesForGrid = useMemo(() => {
+    if (!selectedSourceId) return visibleSources
+    const idx = visibleSources.findIndex((s) => s.id === selectedSourceId)
+    if (idx <= 0) return visibleSources
+    const picked = visibleSources[idx]
+    return [
+      picked,
+      ...visibleSources.slice(0, idx),
+      ...visibleSources.slice(idx + 1),
+    ]
+  }, [visibleSources, selectedSourceId])
 
   const selectedTagBtnRef = useRef<HTMLButtonElement>(null)
+  const selectedSourceBtnRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!selectedTagId) return
@@ -520,7 +784,16 @@ export function HomePage() {
   }, [selectedTagId, tagsForGrid])
 
   useEffect(() => {
-    if (!hasActiveSearch || selectedTagId || !user?.id) {
+    if (!selectedSourceId) return
+    selectedSourceBtnRef.current?.scrollIntoView({
+      inline: 'center',
+      block: 'nearest',
+      behavior: 'smooth',
+    })
+  }, [selectedSourceId, sourcesForGrid])
+
+  useEffect(() => {
+    if (!hasActiveSearch || selectedTagId || selectedSourceId || !user?.id) {
       setSearchNotesResult(null)
       setSearchNotesLoading(false)
       setSearchError(null)
@@ -534,10 +807,14 @@ export function HomePage() {
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
-          const rows = await fetchNotesForMainSearch(qRaw, tagIds)
+          const result = await fetchNotesForMainSearch(qRaw, tagIds)
           if (cancelled) return
-          setSearchNotesResult({ q: qKey, notes: rows })
-          setNotes((prev) => mergeNotesById(prev, rows))
+          setSearchNotesResult({
+            q: qKey,
+            notes: result.notes,
+            hasMore: result.hasMore,
+          })
+          setNotes((prev) => mergeNotesById(prev, result.notes))
           setSearchError(null)
         } catch (e) {
           if (!cancelled) {
@@ -560,6 +837,7 @@ export function HomePage() {
   }, [
     hasActiveSearch,
     selectedTagId,
+    selectedSourceId,
     searchNormalized,
     tagSearch,
     visibleTags,
@@ -572,6 +850,13 @@ export function HomePage() {
       setSelectedTagId(null)
     }
   }, [selectedTagId, allTags])
+
+  useEffect(() => {
+    if (!selectedSourceId) return
+    if (!allSources.some((s) => s.id === selectedSourceId)) {
+      setSelectedSourceId(null)
+    }
+  }, [selectedSourceId, allSources])
 
   async function handleBootstrapSave() {
     if (!user?.id) return
@@ -587,7 +872,7 @@ export function HomePage() {
     setBootstrapFieldHint(null)
     const saveBody = bootstrapBody
     const saveTags = bootstrapTags.map((t) => t.name)
-    const saveSource = bootstrapSource
+    const saveSource = bootstrapSource?.title ?? ''
     setBootstrapSaving(true)
     try {
       const note = await createNoteWithTags(
@@ -596,9 +881,10 @@ export function HomePage() {
         user.id,
         [...allTags],
         saveSource,
+        [...allSources],
       )
       setBootstrapBody('')
-      setBootstrapSource('')
+      setBootstrapSource(null)
       setBootstrapTags([])
       applyNoteCreated(note)
     } catch (e) {
@@ -642,7 +928,9 @@ export function HomePage() {
             Supabase 연결·테이블·권한(RLS) 문제일 수 있습니다. 대시보드{' '}
             <strong>SQL Editor</strong>에서{' '}
             <code className="inline-code">supabase/migrations/001_notes_tags.sql</code>
-            {' '}전체를 실행했는지,{' '}
+            {' '}및{' '}
+            <code className="inline-code">009_sources.sql</code>
+            {' '}을 실행했는지,{' '}
             <code className="inline-code">.env</code>의 URL·키가 같은 프로젝트인지
             확인하세요.
           </p>
@@ -691,7 +979,7 @@ export function HomePage() {
           <>
             <header
             className={
-              selectedTagId || searchNormalized.length > 0
+              selectedTagId || selectedSourceId || searchNormalized.length > 0
                 ? 'home-top-tag-search home-top-tag-search--with-note-board'
                 : 'home-top-tag-search'
             }
@@ -725,6 +1013,7 @@ export function HomePage() {
                         const v = e.target.value
                         if (normalizeTagInput(v).length > 0) {
                           setSelectedTagId(null)
+                          setSelectedSourceId(null)
                         }
                         setTagSearch(v)
                       }}
@@ -744,12 +1033,14 @@ export function HomePage() {
                     />
                   </div>
                 </div>
-              {(selectedTag) || hasActiveSearch ? (
+              {(selectedTag || selectedSource) || hasActiveSearch ? (
                 <div
                   className={`home-filter-mode${
                     selectedTag
                       ? ' home-filter-mode--tag'
-                      : ' home-filter-mode--search'
+                      : selectedSource
+                        ? ' home-filter-mode--source'
+                        : ' home-filter-mode--search'
                   }`}
                   role="status"
                 >
@@ -773,6 +1064,45 @@ export function HomePage() {
                         필터 해제
                       </button>
                     </>
+                  ) : selectedSource ? (
+                    <>
+                      <div className="home-filter-mode-source-main">
+                        <span
+                          className="home-filter-mode-source-pill"
+                          title={displaySourceTitle(selectedSource.title)}
+                        >
+                          <span className="home-filter-mode-source-icon" aria-hidden="true">
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="14"
+                              height="14"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                            </svg>
+                          </span>
+                          <span className="home-filter-mode-source-pill-label">
+                            {displaySourceTitle(selectedSource.title)}
+                          </span>
+                        </span>
+                        <span className="home-filter-mode-source-desc">
+                          이 출처의 메모만
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="home-filter-mode-clear"
+                        onClick={() => clearSourceFilter()}
+                      >
+                        필터 해제
+                      </button>
+                    </>
                   ) : (
                     <>
                       <span className="home-filter-mode-label">
@@ -789,48 +1119,124 @@ export function HomePage() {
                   )}
                 </div>
               ) : null}
-              <section className="tag-grid-section" aria-label="내 태그">
-                {loading ? (
+              <section
+                className="tag-grid-section"
+                aria-label={
+                  selectedSourceId ? '이 출처 메모의 태그' : '내 태그'
+                }
+              >
+                {loading || (selectedSourceId && sourcePullLoading) ? (
                   <HomeTagGridLoadingHint />
-                ) : visibleTags.length === 0 ? (
+                ) : displayTags.length === 0 ? (
                   <p className="notes-hint">
-                    {hasActiveSearch
-                      ? notesMatchingSearch.length > 0
-                        ? '태그 검색 결과는 없습니다. 아래 메모·출처 결과를 확인해 보세요.'
-                        : '검색 결과가 없습니다.'
-                      : '태그가 없습니다.'}
+                    {selectedSourceId
+                      ? '이 출처 메모에 붙은 태그가 없습니다.'
+                      : hasActiveSearch
+                        ? notesMatchingSearch.length > 0
+                          ? '태그 검색 결과는 없습니다. 아래 메모·출처 결과를 확인해 보세요.'
+                          : '검색 결과가 없습니다.'
+                        : '태그가 없습니다.'}
                   </p>
                 ) : (
                   <ul
                     className={
-                      selectedTagId || addNoteOpen
+                      selectedTagId || selectedSourceId || addNoteOpen
                         ? `tag-grid tag-grid--single-row${
-                            selectedTagId ? ' tag-grid--has-selection' : ''
+                            selectedTagId || selectedSourceId
+                              ? ' tag-grid--has-selection'
+                              : ''
                           }`
                         : 'tag-grid'
                     }
                   >
                     {tagsForGrid.map((t) => (
                       <li key={t.id}>
-                        <button
-                          ref={
-                            selectedTagId === t.id ? selectedTagBtnRef : undefined
-                          }
-                          type="button"
-                          className={`tag-grid-pill tag-tone-${t.color_index % TAG_COLOR_COUNT}${
-                            selectedTagId === t.id ? ' tag-grid-pill--selected' : ''
-                          }`}
-                          aria-pressed={selectedTagId === t.id}
-                          aria-current={selectedTagId === t.id ? 'true' : undefined}
-                          onClick={() => toggleTagSelect(t.id)}
-                        >
-                          {displayTagName(t.name)}
-                        </button>
+                        {selectedSourceId && !selectedTagId ? (
+                          <span
+                            className={`tag-grid-pill tag-grid-pill--context tag-tone-${t.color_index % TAG_COLOR_COUNT}`}
+                          >
+                            {displayTagName(t.name)}
+                          </span>
+                        ) : (
+                          <button
+                            ref={
+                              selectedTagId === t.id ? selectedTagBtnRef : undefined
+                            }
+                            type="button"
+                            className={`tag-grid-pill tag-tone-${t.color_index % TAG_COLOR_COUNT}${
+                              selectedTagId === t.id ? ' tag-grid-pill--selected' : ''
+                            }`}
+                            aria-pressed={selectedTagId === t.id}
+                            aria-current={selectedTagId === t.id ? 'true' : undefined}
+                            onClick={() => toggleTagSelect(t.id)}
+                          >
+                            {displayTagName(t.name)}
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>
                 )}
               </section>
+              {!loading &&
+              allSources.length > 0 &&
+              !selectedTagId &&
+              !hasActiveSearch ? (
+                <section className="source-grid-section" aria-label="내 출처">
+                  <h3 className="source-grid-heading">내 출처</h3>
+                  <ul
+                    className={
+                      selectedSourceId || addNoteOpen
+                        ? `source-grid source-grid--single-row${
+                            selectedSourceId ? ' source-grid--has-selection' : ''
+                          }`
+                        : 'source-grid'
+                    }
+                  >
+                    {sourcesForGrid.map((s) => (
+                      <li key={s.id}>
+                        <button
+                          ref={
+                            selectedSourceId === s.id
+                              ? selectedSourceBtnRef
+                              : undefined
+                          }
+                          type="button"
+                          className={`source-grid-pill${
+                            selectedSourceId === s.id
+                              ? ' source-grid-pill--selected'
+                              : ''
+                          }`}
+                          title={displaySourceTitle(s.title)}
+                          aria-pressed={selectedSourceId === s.id}
+                          aria-current={selectedSourceId === s.id ? 'true' : undefined}
+                          onClick={() => toggleSourceSelect(s.id)}
+                        >
+                          <span className="source-grid-pill-icon" aria-hidden="true">
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="13"
+                              height="13"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                            </svg>
+                          </span>
+                          <span className="source-grid-pill-label">
+                            {displaySourceTitle(s.title)}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
               </div>
             </header>
 
@@ -894,9 +1300,12 @@ export function HomePage() {
                         onStructuredNoteBodyPaste(
                           e,
                           bootstrapBody,
-                          bootstrapSource,
+                          bootstrapSource?.title ?? '',
                           setBootstrapBody,
-                          setBootstrapSource,
+                          (title) => {
+                            const t = title.trim()
+                            setBootstrapSource(t ? { title: t } : null)
+                          },
                         )
                       }}
                       placeholder="내용을 입력하세요"
@@ -909,21 +1318,11 @@ export function HomePage() {
                       </p>
                     ) : null}
                   </div>
-                  <div className="composer-field">
-                    <label className="composer-label" htmlFor="bootstrap-source">
-                      출처
-                    </label>
-                    <input
-                      id="bootstrap-source"
-                      type="text"
-                      className="composer-source"
-                      value={bootstrapSource}
-                      onChange={(e) => setBootstrapSource(e.target.value)}
-                      placeholder="책, 링크, 기사 등 (선택)"
-                      autoComplete="off"
-                      disabled={!!loadError}
-                    />
-                  </div>
+                  <SourceComposer
+                    allSources={allSources}
+                    selected={bootstrapSource}
+                    onChange={setBootstrapSource}
+                  />
                 </div>
               </div>
               {saveError ? <p className="composer-error">{saveError}</p> : null}
@@ -943,6 +1342,36 @@ export function HomePage() {
           {!showBootstrap &&
           hasActiveSearch &&
           !selectedTagId &&
+          !selectedSourceId &&
+          searchNotesLoading &&
+          notesMatchingSearch.length === 0 ? (
+            <section
+              className="note-board-section note-memo-search-section"
+              aria-busy={true}
+              aria-label="메모·출처 검색 결과"
+            >
+              <p className="notes-hint">검색하는 중…</p>
+            </section>
+          ) : null}
+
+          {!showBootstrap &&
+          hasActiveSearch &&
+          !selectedTagId &&
+          !selectedSourceId &&
+          !searchNotesLoading &&
+          notesMatchingSearch.length === 0 ? (
+            <section
+              className="note-board-section note-memo-search-section"
+              aria-label="메모·출처 검색 결과"
+            >
+              <p className="notes-hint note-board-empty">검색 결과가 없습니다.</p>
+            </section>
+          ) : null}
+
+          {!showBootstrap &&
+          hasActiveSearch &&
+          !selectedTagId &&
+          !selectedSourceId &&
           notesMatchingSearch.length > 0 ? (
             <section
               className="note-board-section note-memo-search-section"
@@ -955,13 +1384,18 @@ export function HomePage() {
                   <li key={note.id}>
                     <NoteBoardCard
                       note={note}
-                      mobileExpanded={noteMobileExpandedId === note.id}
-                      onTouchToggleExpand={() => toggleNoteMobileExpand(note.id)}
-                      onEdit={openEditNote}
+                      onView={openViewNote}
+                      onSourceFilter={filterBySourceFromCard}
                     />
                   </li>
                 ))}
               </ul>
+              {searchHasMore ? (
+                <p className="notes-hint note-board-more-hint" role="status">
+                  검색 결과가 50개를 넘습니다. 검색어를 더 구체적으로 입력해
+                  보세요.
+                </p>
+              ) : null}
             </section>
           ) : null}
 
@@ -989,14 +1423,67 @@ export function HomePage() {
                     <li key={note.id}>
                       <NoteBoardCard
                         note={note}
-                        mobileExpanded={noteMobileExpandedId === note.id}
-                        onTouchToggleExpand={() => toggleNoteMobileExpand(note.id)}
-                        onEdit={openEditNote}
+                        onView={openViewNote}
+                        onSourceFilter={filterBySourceFromCard}
                       />
                     </li>
                   ))}
                 </ul>
               )}
+              {tagNotesHasMore && notesForSelectedTag.length > 0 ? (
+                <button
+                  type="button"
+                  className="btn note-board-load-more"
+                  disabled={tagNotesLoadingMore || tagPullLoading}
+                  onClick={() => void loadMoreTagNotes()}
+                >
+                  {tagNotesLoadingMore ? '불러오는 중…' : '이 태그 메모 더 보기'}
+                </button>
+              ) : null}
+            </section>
+          ) : null}
+
+          {!showBootstrap && selectedSourceId ? (
+            <section
+              className="note-board-section"
+              aria-busy={sourcePullLoading}
+              aria-label={
+                selectedSource
+                  ? `${displaySourceTitle(selectedSource.title)} 관련 메모`
+                  : '선택한 출처의 메모'
+              }
+            >
+              <TagNotesPullStatus
+                active={sourcePullLoading}
+                hasCachedNotes={notesForSelectedSource.length > 0}
+              />
+              {!sourcePullLoading && notesForSelectedSource.length === 0 ? (
+                <p className="notes-hint note-board-empty">
+                  이 출처의 메모가 아직 없습니다.
+                </p>
+              ) : notesForSelectedSource.length === 0 ? null : (
+                <ul className="note-board-list">
+                  {notesForSelectedSource.map((note) => (
+                    <li key={note.id}>
+                      <NoteBoardCard
+                        note={note}
+                        onView={openViewNote}
+                        onSourceFilter={filterBySourceFromCard}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {sourceNotesHasMore && notesForSelectedSource.length > 0 ? (
+                <button
+                  type="button"
+                  className="btn note-board-load-more"
+                  disabled={sourceNotesLoadingMore || sourcePullLoading}
+                  onClick={() => void loadMoreSourceNotes()}
+                >
+                  {sourceNotesLoadingMore ? '불러오는 중…' : '이 출처 메모 더 보기'}
+                </button>
+              ) : null}
             </section>
           ) : null}
         </main>
@@ -1008,6 +1495,7 @@ export function HomePage() {
           onClose={() => closeAddNote()}
           initialTags={EMPTY_MODAL_SEED_TAGS}
           allTags={allTags}
+          allSources={allSources}
           userId={user.id}
           onSaved={applyNoteCreated}
           onSaveFailed={async (tempId) => {
@@ -1027,6 +1515,7 @@ export function HomePage() {
         resolveLinkedNoteIds={resolveLinkedNoteIds}
         onTagError={(message) => setSaveError(message)}
         onSyncFromServer={syncAllFromServer}
+        onSourcesChanged={refreshSourcesInUse}
       />
 
       {user ? (
@@ -1042,16 +1531,32 @@ export function HomePage() {
       ) : null}
 
       {user ? (
+        <NoteViewModal
+          open={viewingNote !== null}
+          note={viewingNote}
+          loading={viewNoteLoading}
+          onClose={() => {
+            setViewingNote(null)
+            setViewNoteLoading(false)
+          }}
+          onEdit={openEditNote}
+          onSourceFilter={filterBySourceFromCard}
+        />
+      ) : null}
+
+      {user ? (
         <EditNoteModal
           open={editingNote !== null}
           onClose={() => setEditingNote(null)}
           note={editingNote}
           allTags={allTags}
+          allSources={allSources}
           userId={user.id}
           onNoteUpdated={applyNoteUpdated}
           onUpdateError={(message) => setSaveError(message)}
           onSyncNoteFromServer={syncNoteFromServer}
           onNoteDeleted={applyNoteDeleted}
+          onSourcesChanged={refreshSourcesInUse}
         />
       ) : null}
     </div>
