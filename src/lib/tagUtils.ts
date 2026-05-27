@@ -54,6 +54,15 @@ export function tagsAreSimilar(a: string, b: string): boolean {
 
 export const TAG_COLOR_COUNT = 30
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Supabase에 저장된 태그 id인지 (로컬 미리보기 `pending-…` 제외). */
+export function isPersistedTagId(id: string | undefined | null): boolean {
+  if (!id || id.startsWith('pending-')) return false
+  return UUID_RE.test(id)
+}
+
 /** 새 태그에 0..TAG_COLOR_COUNT-1 파스텔 톤 중 무작위 배정. */
 export function pickColorIndex(
   _newName: string,

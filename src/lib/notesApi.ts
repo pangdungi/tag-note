@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { normalizeTagInput, pickColorIndex } from './tagUtils'
+import { normalizeTagInput, pickColorIndex, isPersistedTagId } from './tagUtils'
 
 /** Supabase/PostgREST 오류에서 사람이 읽을 메시지 추출 */
 export function supabaseErrorMessage(error: unknown, fallback: string): string {
@@ -520,7 +520,7 @@ export function mergeTagsFromNoteIntoAllTags(
   const byId = new Map(prev.map((t) => [t.id, { ...t }]))
   for (const nt of note.note_tags) {
     const tg = nt.tags
-    if (!tg) continue
+    if (!tg || !isPersistedTagId(tg.id)) continue
     const cur = byId.get(tg.id)
     byId.set(tg.id, {
       id: tg.id,
@@ -600,11 +600,12 @@ export function filterTagsByQuery(all: TagRow[], q: string, excludeIds: string[]
 
 /** 메인 태그 그리드: 검색어 없으면 전체, 있으면 일치도 순 */
 export function filterTagsByMainSearch(all: TagRow[], q: string): TagRow[] {
+  const persisted = all.filter((t) => isPersistedTagId(t.id))
   const raw = normalizeTagInput(q)
   if (!raw) {
-    return [...all].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+    return [...persisted].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   }
-  return rankTagsByMainSearch(all, raw)
+  return rankTagsByMainSearch(persisted, raw)
 }
 
 /** 메인 검색: 본문·출처·붙은 태그 이름 중 하나라도 맞으면 true */
@@ -664,10 +665,17 @@ export async function fetchNotesForMainSearch(
   }
 
   if (matchingTagIds.length > 0) {
+    const persistedTagIds = matchingTagIds.filter(isPersistedTagId)
+    if (persistedTagIds.length === 0) {
+      return [...byId.values()].sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      )
+    }
     const { data: links, error: e2 } = await supabase
       .from('note_tags')
       .select('note_id')
-      .in('tag_id', matchingTagIds)
+      .in('tag_id', persistedTagIds)
     if (e2) throw e2
     const noteIds = [
       ...new Set(

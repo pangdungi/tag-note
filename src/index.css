@@ -944,6 +944,57 @@ body::-webkit-scrollbar,
   }
 }
 
+.home-filter-mode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.55rem;
+  padding: 0.42rem 0.65rem;
+  border-radius: 10px;
+  background: #f9fafb;
+  border: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.home-filter-mode-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-strong);
+}
+
+.home-filter-mode--tag .home-filter-mode-label {
+  font-weight: 600;
+}
+
+.home-filter-mode-hash {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.home-filter-mode-suffix {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.home-filter-mode-clear {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--tag-a-fg);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.15rem 0.2rem;
+}
+
+.home-filter-mode-clear:hover {
+  text-decoration: underline;
+}
+
 .tag-grid-section {
   /* 검색 행과의 간격 = .home-top-tag-search 하단 패딩(0.75rem)과 동일 */
   margin-top: 0.75rem;

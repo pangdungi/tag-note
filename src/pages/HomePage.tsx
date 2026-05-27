@@ -458,8 +458,26 @@ export function HomePage() {
     )
   }, [notes, selectedTagId])
 
+  function clearMainSearch() {
+    setTagSearch('')
+    setSearchNotesResult(null)
+    setSearchError(null)
+  }
+
+  function clearTagFilter() {
+    setSelectedTagId(null)
+  }
+
   function toggleTagSelect(tagId: string) {
-    setSelectedTagId((cur) => (cur === tagId ? null : tagId))
+    setSelectedTagId((cur) => {
+      const next = cur === tagId ? null : tagId
+      if (next !== null) {
+        setTagSearch('')
+        setSearchNotesResult(null)
+        setSearchError(null)
+      }
+      return next
+    })
     setNoteMobileExpandedId(null)
   }
 
@@ -526,11 +544,11 @@ export function HomePage() {
   ])
 
   useEffect(() => {
-    if (!hasActiveSearch || !selectedTagId) return
-    if (!visibleTags.some((t) => t.id === selectedTagId)) {
+    if (!selectedTagId) return
+    if (!allTags.some((t) => t.id === selectedTagId)) {
       setSelectedTagId(null)
     }
-  }, [hasActiveSearch, selectedTagId, visibleTags])
+  }, [selectedTagId, allTags])
 
   async function handleBootstrapSave() {
     if (!user?.id) return
@@ -681,7 +699,11 @@ export function HomePage() {
                       className="home-search-input"
                       value={tagSearch}
                       onChange={(e) => {
-                        setTagSearch(e.target.value)
+                        const v = e.target.value
+                        if (normalizeTagInput(v).length > 0) {
+                          setSelectedTagId(null)
+                        }
+                        setTagSearch(v)
                       }}
                       placeholder="태그·메모 검색 (이름, 본문, 출처)"
                       autoComplete="off"
@@ -699,6 +721,46 @@ export function HomePage() {
                     />
                   </div>
                 </div>
+              {(selectedTagId && selectedTagLabel) || hasActiveSearch ? (
+                <div
+                  className={`home-filter-mode${
+                    selectedTagId
+                      ? ' home-filter-mode--tag'
+                      : ' home-filter-mode--search'
+                  }`}
+                  role="status"
+                >
+                  {selectedTagId && selectedTagLabel ? (
+                    <>
+                      <span className="home-filter-mode-label">
+                        <span className="home-filter-mode-hash">#</span>
+                        {selectedTagLabel}
+                        <span className="home-filter-mode-suffix"> 메모</span>
+                      </span>
+                      <button
+                        type="button"
+                        className="home-filter-mode-clear"
+                        onClick={() => clearTagFilter()}
+                      >
+                        필터 해제
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="home-filter-mode-label">
+                        「{normalizeTagInput(tagSearch)}」 검색 중
+                      </span>
+                      <button
+                        type="button"
+                        className="home-filter-mode-clear"
+                        onClick={() => clearMainSearch()}
+                      >
+                        검색 지우기
+                      </button>
+                    </>
+                  )}
+                </div>
+              ) : null}
               <section className="tag-grid-section" aria-label="내 태그">
                 {loading ? (
                   <HomeTagGridLoadingHint />
@@ -870,9 +932,6 @@ export function HomePage() {
                   : '선택한 태그의 메모'
               }
             >
-              {selectedTagLabel ? (
-                <h2 className="note-memo-search-title">{selectedTagLabel}</h2>
-              ) : null}
               <TagNotesPullStatus
                 active={tagPullLoading}
                 hasCachedNotes={notesForSelectedTag.length > 0}
