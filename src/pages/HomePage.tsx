@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/useAuth'
 import {
   createNoteWithTags,
   ensureStarterTagsIfEmpty,
+  fetchNoteWithTagsById,
   fetchNotesWithTags,
   fetchNotesForMainSearch,
   fetchTags,
@@ -17,6 +18,7 @@ import {
   mapNotesWithRenamedTag,
   mergeTagsFromNoteIntoAllTags,
   mergeNotesById,
+  supabaseErrorMessage,
   syncNotesStateAfterTagSelectionPull,
   type NoteWithTags,
   type TagRow,
@@ -207,11 +209,13 @@ export function HomePage() {
   const [notes, setNotes] = useState<NoteWithTags[]>([])
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [bootstrapSaving, setBootstrapSaving] = useState(false)
   /** 첫 작성 카드: 저장 검증 안내 */
   const [bootstrapFieldHint, setBootstrapFieldHint] = useState<
     'tags' | 'body' | null
   >(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const [addNoteOpen, setAddNoteOpen] = useState(false)
@@ -258,12 +262,12 @@ export function HomePage() {
         setNotes(noteRows)
         setSaveError(null)
         setLoadError(null)
+        setSearchError(null)
         homeDataInitialLoadDoneRef.current = true
       } catch (e) {
+        console.error('[태그노트] HomePage 초기 불러오기 실패', e)
         setLoadError(
-          e instanceof Error
-            ? e.message
-            : '알 수 없는 오류로 불러오지 못했습니다.',
+          supabaseErrorMessage(e, '알 수 없는 오류로 불러오지 못했습니다.'),
         )
       } finally {
         if (showGrid) {
@@ -284,11 +288,23 @@ export function HomePage() {
   } | null>(null)
   const [searchNotesLoading, setSearchNotesLoading] = useState(false)
 
-  const applyNoteCreated = useCallback((note: NoteWithTags) => {
-    setNotes((prev) => [note, ...prev.filter((n) => n.id !== note.id)])
-    setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
-    setTagSearch('')
-    setSaveError(null)
+  const applyNoteCreated = useCallback(
+    (note: NoteWithTags, opts?: { replacingId?: string }) => {
+      setNotes((prev) => [
+        note,
+        ...prev.filter(
+          (n) => n.id !== note.id && n.id !== opts?.replacingId,
+        ),
+      ])
+      setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
+      setTagSearch('')
+      setSaveError(null)
+    },
+    [],
+  )
+
+  const applyNoteRemoved = useCallback((noteId: string) => {
+    setNotes((prev) => prev.filter((n) => n.id !== noteId))
   }, [])
 
   const applyNoteUpdated = useCallback((note: NoteWithTags) => {
@@ -300,6 +316,34 @@ export function HomePage() {
   const applyNoteDeleted = useCallback((noteId: string) => {
     setNotes((prev) => prev.filter((n) => n.id !== noteId))
     setEditingNote((cur) => (cur?.id === noteId ? null : cur))
+  }, [])
+
+  /** 실패·동기화 시 서버 기준으로 메모 한 건만 다시 불러옴 (로컬 롤백 없음) */
+  const syncNoteFromServer = useCallback(
+    async (noteId: string) => {
+      try {
+        const fresh = await fetchNoteWithTagsById(noteId)
+        setNotes((prev) => prev.map((n) => (n.id === noteId ? fresh : n)))
+        setEditingNote((cur) => (cur?.id === noteId ? fresh : cur))
+      } catch {
+        void loadData({ showGridLoading: false })
+      }
+    },
+    [loadData],
+  )
+
+  const syncAllFromServer = useCallback(async () => {
+    void loadData({ showGridLoading: false })
+  }, [loadData])
+
+  const resolveLinkedNoteIds = useCallback((tagId: string) => {
+    return notesRef.current
+      .filter((n) =>
+        n.note_tags.some(
+          (nt) => nt.tag_id === tagId || nt.tags?.id === tagId,
+        ),
+      )
+      .map((n) => n.id)
   }, [])
 
   const applyTagUpdated = useCallback((row: TagRow) => {
@@ -438,6 +482,7 @@ export function HomePage() {
     if (!hasActiveSearch || selectedTagId || !user?.id) {
       setSearchNotesResult(null)
       setSearchNotesLoading(false)
+      setSearchError(null)
       return
     }
     const qKey = searchNormalized
@@ -452,13 +497,12 @@ export function HomePage() {
           if (cancelled) return
           setSearchNotesResult({ q: qKey, notes: rows })
           setNotes((prev) => mergeNotesById(prev, rows))
-          setLoadError(null)
+          setSearchError(null)
         } catch (e) {
           if (!cancelled) {
-            setLoadError(
-              e instanceof Error
-                ? e.message
-                : '알 수 없는 오류로 검색하지 못했습니다.',
+            console.error('[태그노트] HomePage 메모 검색 실패', { q: qRaw }, e)
+            setSearchError(
+              supabaseErrorMessage(e, '알 수 없는 오류로 검색하지 못했습니다.'),
             )
           }
         } finally {
@@ -503,9 +547,7 @@ export function HomePage() {
     const saveBody = bootstrapBody
     const saveTags = bootstrapTags.map((t) => t.name)
     const saveSource = bootstrapSource
-    setBootstrapBody('')
-    setBootstrapSource('')
-    setBootstrapTags([])
+    setBootstrapSaving(true)
     try {
       const note = await createNoteWithTags(
         saveBody,
@@ -514,9 +556,19 @@ export function HomePage() {
         [...allTags],
         saveSource,
       )
+      setBootstrapBody('')
+      setBootstrapSource('')
+      setBootstrapTags([])
       applyNoteCreated(note)
     } catch (e) {
+      console.error('[태그노트] HomePage 첫 메모 저장 실패', {
+        bodyLength: saveBody.length,
+        sourceLength: saveSource.length,
+        tagCount: saveTags.length,
+      }, e)
       setSaveError(e instanceof Error ? e.message : '저장에 실패했습니다.')
+    } finally {
+      setBootstrapSaving(false)
     }
   }
 
@@ -544,12 +596,14 @@ export function HomePage() {
     <div className="home-layout">
       {loadError ? (
         <div className="setup-banner" role="status">
-          <p className="setup-banner-title">Supabase 테이블이 아직 없는 것 같아요</p>
+          <p className="setup-banner-title">데이터를 불러오지 못했습니다</p>
           <p className="setup-banner-text">
-            대시보드에서 <strong>SQL Editor</strong>를 열고, 프로젝트 안의{' '}
-            <code className="inline-code">supabase/migrations/001_notes_tags.sql</code>{' '}
-            파일 <strong>전체</strong>를 복사해 붙여넣은 뒤 <strong>Run</strong>으로
-            실행하세요. 끝나면 아래 <strong>다시 불러오기</strong>를 누르면 됩니다.
+            Supabase 연결·테이블·권한(RLS) 문제일 수 있습니다. 대시보드{' '}
+            <strong>SQL Editor</strong>에서{' '}
+            <code className="inline-code">supabase/migrations/001_notes_tags.sql</code>
+            {' '}전체를 실행했는지,{' '}
+            <code className="inline-code">.env</code>의 URL·키가 같은 프로젝트인지
+            확인하세요.
           </p>
           <p className="setup-banner-tech">{loadError}</p>
           <button
@@ -559,6 +613,20 @@ export function HomePage() {
             onClick={() => void loadData({ showGridLoading: true })}
           >
             다시 불러오기
+          </button>
+        </div>
+      ) : null}
+
+      {searchError && !loadError ? (
+        <div className="setup-banner" role="alert">
+          <p className="setup-banner-title">검색하지 못했습니다</p>
+          <p className="setup-banner-text">{searchError}</p>
+          <button
+            type="button"
+            className="setup-retry"
+            onClick={() => setSearchError(null)}
+          >
+            닫기
           </button>
         </div>
       ) : null}
@@ -759,10 +827,10 @@ export function HomePage() {
                 className={`btn btn--emphasis btn--block composer-save${
                   bootstrapSaveReady ? ' btn--composer-ready' : ''
                 }`}
-                disabled={loading || !!loadError}
+                disabled={loading || !!loadError || bootstrapSaving}
                 onClick={() => void handleBootstrapSave()}
               >
-                저장
+                {bootstrapSaving ? '저장 중…' : '저장'}
               </button>
             </section>
           ) : null}
@@ -840,6 +908,10 @@ export function HomePage() {
           allTags={allTags}
           userId={user.id}
           onSaved={applyNoteCreated}
+          onSaveFailed={async (tempId) => {
+            applyNoteRemoved(tempId)
+            await syncAllFromServer()
+          }}
           onSaveError={(message) => setSaveError(message)}
         />
       ) : null}
@@ -850,6 +922,9 @@ export function HomePage() {
         tags={allTags}
         onTagUpdated={applyTagUpdated}
         onTagDeleted={applyTagDeleted}
+        resolveLinkedNoteIds={resolveLinkedNoteIds}
+        onTagError={(message) => setSaveError(message)}
+        onSyncFromServer={syncAllFromServer}
       />
 
       {user ? (
@@ -873,6 +948,7 @@ export function HomePage() {
           userId={user.id}
           onNoteUpdated={applyNoteUpdated}
           onUpdateError={(message) => setSaveError(message)}
+          onSyncNoteFromServer={syncNoteFromServer}
           onNoteDeleted={applyNoteDeleted}
         />
       ) : null}

@@ -1,5 +1,61 @@
 import { supabase } from './supabase'
-import { normalizeTagInput, pickColorIndex, tagsAreSimilar } from './tagUtils'
+import { normalizeTagInput, pickColorIndex } from './tagUtils'
+
+/** Supabase/PostgREST 오류에서 사람이 읽을 메시지 추출 */
+export function supabaseErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message
+  if (error && typeof error === 'object') {
+    const o = error as { message?: string; details?: string; hint?: string }
+    const parts = [o.message, o.details, o.hint].filter(Boolean)
+    if (parts.length > 0) return parts.join(' — ')
+  }
+  return fallback
+}
+
+function ilikePattern(raw: string): string {
+  const escaped = raw.replace(/[%_,\\]/g, (c) => `\\${c}`)
+  return `%${escaped}%`
+}
+
+/** 메모 저장/수정 실패 원인 추적용 (개발자 도구 콘솔) */
+function logNoteSaveError(
+  op: 'create' | 'update',
+  step: string,
+  context: Record<string, unknown>,
+  error: unknown,
+) {
+  const err =
+    error && typeof error === 'object'
+      ? (error as {
+          message?: string
+          code?: string
+          details?: string
+          hint?: string
+          status?: number
+        })
+      : null
+  console.error(`[태그노트] 메모 ${op} 실패 · ${step}`, {
+    ...context,
+    errorMessage: err?.message ?? String(error),
+    errorCode: err?.code,
+    errorDetails: err?.details,
+    errorHint: err?.hint,
+    errorStatus: err?.status,
+    rawError: error,
+  })
+}
+
+function noteSavePayloadMeta(body: string, source: string, tagNames: string[]) {
+  const trimmed = body.trim()
+  const sourceTrim = (source ?? '').trim()
+  return {
+    bodyLength: body.length,
+    bodyTrimmedLength: trimmed.length,
+    sourceLength: sourceTrim.length,
+    tagCount: tagNames.length,
+    tagNames,
+  }
+}
 
 export type TagRow = {
   id: string
@@ -204,10 +260,17 @@ async function ensureTagId(
         .eq('user_id', userId)
         .eq('name_normalized', label.toLowerCase())
         .maybeSingle()
-      if (e2) throw e2
-      if (!row) throw error
+      if (e2) {
+        logNoteSaveError('create', '태그 중복 조회', { tagName: label, userId }, e2)
+        throw e2
+      }
+      if (!row) {
+        logNoteSaveError('create', '태그 중복인데 행 없음', { tagName: label, userId }, error)
+        throw error
+      }
       return row as { id: string; color_index: number }
     }
+    logNoteSaveError('create', '태그 insert', { tagName: label, userId, color_index }, error)
     throw error
   }
 
@@ -263,21 +326,46 @@ export async function createNoteWithTags(
   const trimmed = body.trim()
   const sourceTrim = (source ?? '').trim()
   const labels = tagNames.map((t) => normalizeTagInput(t)).filter(Boolean)
-  if (labels.length === 0) throw new Error('태그를 하나 이상 추가하세요.')
+  const meta = noteSavePayloadMeta(body, source ?? '', tagNames)
+  console.info('[태그노트] 메모 create 시작', { userId, ...meta })
+
+  if (labels.length === 0) {
+    const err = new Error('태그를 하나 이상 추가하세요.')
+    logNoteSaveError('create', '입력 검증', { userId, ...meta }, err)
+    throw err
+  }
+
+  let tagLinks: { tag_id: string; name: string; color_index: number }[]
+  try {
+    tagLinks = await resolveTagIdsForNames(labels, userId, tagCache)
+  } catch (error) {
+    logNoteSaveError('create', '태그 ID 해석', { userId, ...meta }, error)
+    throw error
+  }
 
   const { data: note, error: nErr } = await supabase
     .from('notes')
     .insert({ user_id: userId, body: trimmed, source: sourceTrim })
     .select('id, body, source, created_at')
     .single()
-  if (nErr) throw nErr
+  if (nErr) {
+    logNoteSaveError('create', 'notes insert', { userId, ...meta }, nErr)
+    throw nErr
+  }
   const noteRow = note as NoteRowCore
-
-  const tagLinks = await resolveTagIdsForNames(labels, userId, tagCache)
 
   const rows = tagLinks.map(({ tag_id }) => ({ note_id: noteRow.id, tag_id }))
   const { error: jErr } = await supabase.from('note_tags').insert(rows)
-  if (jErr) throw jErr
+  if (jErr) {
+    logNoteSaveError('create', 'note_tags insert', {
+      userId,
+      noteId: noteRow.id,
+      tagIds: tagLinks.map((t) => t.tag_id),
+      ...meta,
+    }, jErr)
+    throw jErr
+  }
+  console.info('[태그노트] 메모 create 성공', { noteId: noteRow.id, ...meta })
   return buildNoteWithTags(noteRow, tagLinks)
 }
 
@@ -292,7 +380,23 @@ export async function updateNoteWithTags(
   const trimmed = body.trim()
   const sourceTrim = (source ?? '').trim()
   const labels = tagNames.map((t) => normalizeTagInput(t)).filter(Boolean)
-  if (labels.length === 0) throw new Error('태그를 하나 이상 유지하세요.')
+  const meta = { noteId, userId, ...noteSavePayloadMeta(body, source ?? '', tagNames) }
+  console.info('[태그노트] 메모 update 시작', meta)
+
+  if (labels.length === 0) {
+    const err = new Error('태그를 하나 이상 유지하세요.')
+    logNoteSaveError('update', '입력 검증', meta, err)
+    throw err
+  }
+
+  let tagLinks: { tag_id: string; name: string; color_index: number }[]
+  try {
+    tagLinks = await resolveTagIdsForNames(labels, userId, tagCache)
+  } catch (error) {
+    logNoteSaveError('update', '태그 ID 해석', meta, error)
+    throw error
+  }
+  const newTagIds = new Set(tagLinks.map((t) => t.tag_id))
 
   const { data: note, error: uErr } = await supabase
     .from('notes')
@@ -300,19 +404,55 @@ export async function updateNoteWithTags(
     .eq('id', noteId)
     .select('id, body, source, created_at')
     .single()
-  if (uErr) throw uErr
+  if (uErr) {
+    logNoteSaveError('update', 'notes update', meta, uErr)
+    throw uErr
+  }
   const noteRow = note as NoteRowCore
 
-  const { error: dErr } = await supabase.from('note_tags').delete().eq('note_id', noteId)
-  if (dErr) throw dErr
-
-  const tagLinks = await resolveTagIdsForNames(labels, userId, tagCache)
-
-  const linkRows = tagLinks.map(({ tag_id }) => ({ note_id: noteId, tag_id }))
-  if (linkRows.length > 0) {
-    const { error: jErr } = await supabase.from('note_tags').insert(linkRows)
-    if (jErr) throw jErr
+  const { data: currentLinks, error: qErr } = await supabase
+    .from('note_tags')
+    .select('tag_id')
+    .eq('note_id', noteId)
+  if (qErr) {
+    logNoteSaveError('update', 'note_tags select', meta, qErr)
+    throw qErr
   }
+  const currentTagIds = new Set(
+    (currentLinks ?? []).map((l) => (l as { tag_id: string }).tag_id),
+  )
+
+  const toAdd = tagLinks.filter((t) => !currentTagIds.has(t.tag_id))
+  if (toAdd.length > 0) {
+    const { error: jErr } = await supabase.from('note_tags').insert(
+      toAdd.map(({ tag_id }) => ({ note_id: noteId, tag_id })),
+    )
+    if (jErr) {
+      logNoteSaveError('update', 'note_tags insert', {
+        ...meta,
+        tagIds: toAdd.map((t) => t.tag_id),
+      }, jErr)
+      throw jErr
+    }
+  }
+
+  const toRemove = [...currentTagIds].filter((id) => !newTagIds.has(id))
+  if (toRemove.length > 0) {
+    const { error: dErr } = await supabase
+      .from('note_tags')
+      .delete()
+      .eq('note_id', noteId)
+      .in('tag_id', toRemove)
+    if (dErr) {
+      logNoteSaveError('update', 'note_tags delete', {
+        ...meta,
+        tagIds: toRemove,
+      }, dErr)
+      throw dErr
+    }
+  }
+
+  console.info('[태그노트] 메모 update 성공', meta)
   return buildNoteWithTags(noteRow, tagLinks)
 }
 
@@ -416,7 +556,7 @@ function tagSearchKeys(raw: string): { plain: string; compact: string } {
   return { plain, compact: plain.replace(/\s+/g, '') }
 }
 
-/** 메인 검색·태그 입력 제안용 일치 점수 (높을수록 더 잘 맞음). -1이면 제외. */
+/** 태그 이름 검색: 검색어가 태그 이름에 들어있을 때만 (엄격). -1이면 제외. */
 export function tagMainSearchScore(name: string, rawQuery: string): number {
   const query = tagSearchKeys(rawQuery)
   const tag = tagSearchKeys(name)
@@ -434,18 +574,6 @@ export function tagMainSearchScore(name: string, rawQuery: string): number {
     tag.compact.includes(query.compact)
   ) {
     return 800
-  }
-  if (tagsAreSimilar(name, rawQuery)) return 500
-
-  const qc = query.compact
-  const nc = tag.compact
-  if (qc.length >= 2) {
-    for (let len = qc.length; len >= 2; len--) {
-      for (let i = 0; i <= qc.length - len; i++) {
-        const sub = qc.slice(i, i + len)
-        if (nc.includes(sub)) return 300 + len * 10
-      }
-    }
   }
   return -1
 }
@@ -512,14 +640,26 @@ export async function fetchNotesForMainSearch(
   if (!raw) return []
 
   const byId = new Map<string, NoteWithTags>()
+  const pattern = ilikePattern(raw)
 
-  const { data: textRows, error: e1 } = await supabase
-    .from('notes')
-    .select(NOTE_WITH_TAGS_SELECT)
-    .or(`body.ilike.%${raw}%,source.ilike.%${raw}%`)
-    .order('created_at', { ascending: false })
-  if (e1) throw e1
-  for (const n of (textRows ?? []) as unknown as NoteWithTags[]) {
+  const [bodyRes, sourceRes] = await Promise.all([
+    supabase
+      .from('notes')
+      .select(NOTE_WITH_TAGS_SELECT)
+      .ilike('body', pattern)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('notes')
+      .select(NOTE_WITH_TAGS_SELECT)
+      .ilike('source', pattern)
+      .order('created_at', { ascending: false }),
+  ])
+  if (bodyRes.error) throw bodyRes.error
+  if (sourceRes.error) throw sourceRes.error
+  for (const n of (bodyRes.data ?? []) as unknown as NoteWithTags[]) {
+    byId.set(n.id, n)
+  }
+  for (const n of (sourceRes.data ?? []) as unknown as NoteWithTags[]) {
     byId.set(n.id, n)
   }
 

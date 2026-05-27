@@ -13,7 +13,7 @@ import {
 } from '../lib/appFont'
 import { isSupabaseConfigured } from '../lib/supabase'
 import {
-  ensureUserAppFontRow,
+  fetchUserAppFontId,
   upsertUserAppFontId,
 } from '../lib/userPreferencesApi'
 import { deleteOwnAccount } from '../lib/accountApi'
@@ -92,11 +92,12 @@ export function AccountModal({
     let cancelled = false
     void (async () => {
       try {
-        const id = await ensureUserAppFontRow(user.id)
+        const id = await fetchUserAppFontId(user.id)
         if (cancelled) return
-        setAppFontId(id)
-        setStoredAppFontId(id)
-        applyAppFontToDocument(id)
+        const resolved = id ?? getStoredAppFontId()
+        setAppFontId(resolved)
+        setStoredAppFontId(resolved)
+        applyAppFontToDocument(resolved)
       } catch {
         /* 마이그레이션 미적용·오프라인 등 */
       }

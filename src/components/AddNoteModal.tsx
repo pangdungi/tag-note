@@ -6,6 +6,11 @@ import {
   type TagRow,
 } from '../lib/notesApi'
 
+type SavedOptions = {
+  /** 서버 저장 성공 후 임시(로컬) 메모 id를 교체할 때 */
+  replacingId?: string
+}
+
 type Props = {
   open: boolean
   onClose: () => void
@@ -13,8 +18,31 @@ type Props = {
   initialTags: SelectedTag[]
   allTags: TagRow[]
   userId: string
-  onSaved: (note: NoteWithTags) => void | Promise<void>
+  onSaved: (note: NoteWithTags, options?: SavedOptions) => void | Promise<void>
+  onSaveFailed?: (tempId: string) => void | Promise<void>
   onSaveError?: (message: string) => void
+}
+
+function buildLocalPreviewNote(
+  tempId: string,
+  body: string,
+  source: string,
+  tags: SelectedTag[],
+): NoteWithTags {
+  return {
+    id: tempId,
+    body: body.trim(),
+    source: source.trim(),
+    created_at: new Date().toISOString(),
+    note_tags: tags.map((t) => ({
+      tag_id: t.id ?? `pending-${t.name}`,
+      tags: {
+        id: t.id ?? `pending-${t.name}`,
+        name: t.name,
+        color_index: t.color_index,
+      },
+    })),
+  }
 }
 
 export function AddNoteModal({
@@ -24,6 +52,7 @@ export function AddNoteModal({
   allTags,
   userId,
   onSaved,
+  onSaveFailed,
   onSaveError,
 }: Props) {
   const titleId = useId()
@@ -159,6 +188,14 @@ export function AddNoteModal({
                 const saveBody = body
                 const saveTags = tags.map((t) => t.name)
                 const saveSource = source
+                const tempId = crypto.randomUUID()
+                const preview = buildLocalPreviewNote(
+                  tempId,
+                  saveBody,
+                  saveSource,
+                  tags,
+                )
+                void onSaved(preview)
                 onClose()
                 void (async () => {
                   try {
@@ -169,8 +206,15 @@ export function AddNoteModal({
                       [...allTags],
                       saveSource,
                     )
-                    await onSaved(note)
+                    await onSaved(note, { replacingId: tempId })
                   } catch (e) {
+                    console.error('[태그노트] AddNoteModal 저장 실패', {
+                      tempId,
+                      bodyLength: saveBody.length,
+                      sourceLength: saveSource.length,
+                      tagCount: saveTags.length,
+                    }, e)
+                    await onSaveFailed?.(tempId)
                     onSaveError?.(
                       e instanceof Error ? e.message : '저장에 실패했습니다.',
                     )

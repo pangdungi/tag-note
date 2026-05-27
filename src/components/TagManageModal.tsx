@@ -9,6 +9,9 @@ type Props = {
   tags: TagRow[]
   onTagUpdated: (row: TagRow) => void
   onTagDeleted: (payload: { tagId: string; deletedNoteIds: string[] }) => void
+  resolveLinkedNoteIds?: (tagId: string) => string[]
+  onTagError?: (message: string) => void
+  onSyncFromServer?: () => void | Promise<void>
 }
 
 export function TagManageModal({
@@ -17,6 +20,9 @@ export function TagManageModal({
   tags,
   onTagUpdated,
   onTagDeleted,
+  resolveLinkedNoteIds,
+  onTagError,
+  onSyncFromServer,
 }: Props) {
   const titleId = useId()
   const [q, setQ] = useState('')
@@ -123,6 +129,9 @@ export function TagManageModal({
         onClose={() => setEditingTag(null)}
         onTagUpdated={onTagUpdated}
         onTagDeleted={onTagDeleted}
+        resolveLinkedNoteIds={resolveLinkedNoteIds}
+        onTagError={onTagError}
+        onSyncFromServer={onSyncFromServer}
       />
     </>
   )

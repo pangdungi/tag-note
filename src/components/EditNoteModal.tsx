@@ -20,18 +20,7 @@ function noteToSelectedTags(note: NoteWithTags): SelectedTag[] {
   }))
 }
 
-type Props = {
-  open: boolean
-  onClose: () => void
-  note: NoteWithTags | null
-  allTags: TagRow[]
-  userId: string
-  onNoteUpdated: (note: NoteWithTags) => void | Promise<void>
-  onUpdateError?: (message: string) => void
-  onNoteDeleted: (noteId: string) => void | Promise<void>
-}
-
-function buildDraftNoteFromEdit(
+function buildLocalPreviewNote(
   noteId: string,
   createdAt: string,
   body: string,
@@ -44,14 +33,28 @@ function buildDraftNoteFromEdit(
     source: source.trim(),
     created_at: createdAt,
     note_tags: tags.map((t) => ({
-      tag_id: t.id ?? `draft-${t.name}`,
+      tag_id: t.id ?? `pending-${t.name}`,
       tags: {
-        id: t.id ?? `draft-${t.name}`,
+        id: t.id ?? `pending-${t.name}`,
         name: t.name,
         color_index: t.color_index,
       },
     })),
   }
+}
+
+type Props = {
+  open: boolean
+  onClose: () => void
+  note: NoteWithTags | null
+  allTags: TagRow[]
+  userId: string
+  /** 화면 즉시 반영(로컬) — 서버 응답 후 한 번 더 호출되어 맞춤 */
+  onNoteUpdated: (note: NoteWithTags) => void | Promise<void>
+  onUpdateError?: (message: string) => void
+  /** 실패 시 서버 기준으로 해당 메모만 다시 불러옴 */
+  onSyncNoteFromServer?: (noteId: string) => void | Promise<void>
+  onNoteDeleted: (noteId: string) => void | Promise<void>
 }
 
 export function EditNoteModal({
@@ -62,18 +65,16 @@ export function EditNoteModal({
   userId,
   onNoteUpdated,
   onUpdateError,
+  onSyncNoteFromServer,
   onNoteDeleted,
 }: Props) {
   const titleId = useId()
   const [tags, setTags] = useState<SelectedTag[]>([])
   const [body, setBody] = useState('')
   const [source, setSource] = useState('')
-  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const seededNoteIdRef = useRef<string | null>(null)
-
-  const busy = deleting
 
   useEffect(() => {
     if (!open || !note) {
@@ -91,7 +92,6 @@ export function EditNoteModal({
       setBody(note.body ?? '')
       setSource(note.source ?? '')
       setError(null)
-      setDeleting(false)
       setDeleteConfirmOpen(false)
     })
   }, [open, note])
@@ -157,34 +157,34 @@ export function EditNoteModal({
             <button
               type="button"
               className="btn btn--danger"
-              disabled={busy || deleteConfirmOpen}
+              disabled={deleteConfirmOpen}
               onClick={() => setDeleteConfirmOpen(true)}
             >
-              {deleting ? '삭제 중…' : '메모 삭제'}
+              메모 삭제
             </button>
             <button
               type="button"
               className="btn btn--emphasis edit-note-modal-submit"
-              disabled={busy || tags.length === 0}
+              disabled={tags.length === 0}
               onClick={() => {
                 setError(null)
-                const original = note
+                const noteId = note.id
                 const saveBody = body
                 const saveTags = tags.map((t) => t.name)
                 const saveSource = source
-                const draft = buildDraftNoteFromEdit(
-                  note.id,
+                const preview = buildLocalPreviewNote(
+                  noteId,
                   note.created_at,
                   saveBody,
                   saveSource,
                   tags,
                 )
-                void onNoteUpdated(draft)
+                void onNoteUpdated(preview)
                 onClose()
                 void (async () => {
                   try {
                     const updated = await updateNoteWithTags(
-                      original.id,
+                      noteId,
                       saveBody,
                       saveTags,
                       userId,
@@ -193,7 +193,13 @@ export function EditNoteModal({
                     )
                     await onNoteUpdated(updated)
                   } catch (e) {
-                    await onNoteUpdated(original)
+                    console.error('[태그노트] EditNoteModal 수정 실패', {
+                      noteId,
+                      bodyLength: saveBody.length,
+                      sourceLength: saveSource.length,
+                      tagCount: saveTags.length,
+                    }, e)
+                    await onSyncNoteFromServer?.(noteId)
                     onUpdateError?.(
                       e instanceof Error ? e.message : '수정에 실패했습니다.',
                     )
@@ -213,28 +219,28 @@ export function EditNoteModal({
         title="메모 삭제"
         message="이 메모를 삭제할까요? 삭제한 뒤에는 되돌릴 수 없습니다."
         cancelLabel="취소"
-        confirmLabel={deleting ? '삭제 중…' : '삭제'}
+        confirmLabel="삭제"
         danger
-        busy={deleting}
-        onCancel={() => {
-          if (!deleting) setDeleteConfirmOpen(false)
-        }}
-        onConfirm={async () => {
-          setDeleting(true)
+        onCancel={() => setDeleteConfirmOpen(false)}
+        onConfirm={() => {
           setError(null)
-          try {
-            await deleteNote(note.id)
-            setDeleteConfirmOpen(false)
-            await onNoteDeleted(note.id)
-            onClose()
-          } catch (e) {
-            setDeleteConfirmOpen(false)
-            setError(
-              e instanceof Error ? e.message : '삭제에 실패했습니다.',
-            )
-          } finally {
-            setDeleting(false)
-          }
+          const noteId = note.id
+          void onNoteDeleted(noteId)
+          setDeleteConfirmOpen(false)
+          onClose()
+          void (async () => {
+            try {
+              await deleteNote(noteId)
+            } catch (e) {
+              console.error('[태그노트] EditNoteModal 메모 삭제 실패', {
+                noteId,
+              }, e)
+              await onSyncNoteFromServer?.(noteId)
+              onUpdateError?.(
+                e instanceof Error ? e.message : '삭제에 실패했습니다.',
+              )
+            }
+          })()
         }}
       />
     </>
