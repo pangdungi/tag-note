@@ -490,11 +490,33 @@ export function HomePage() {
     setNoteMobileExpandedId(null)
   }
 
-  const selectedTagLabel = useMemo(() => {
+  const selectedTag = useMemo(() => {
     if (!selectedTagId) return null
-    const t = allTags.find((x) => x.id === selectedTagId)
-    return t ? displayTagName(t.name) : null
+    return allTags.find((x) => x.id === selectedTagId) ?? null
   }, [allTags, selectedTagId])
+
+  const tagsForGrid = useMemo(() => {
+    if (!selectedTagId) return visibleTags
+    const idx = visibleTags.findIndex((t) => t.id === selectedTagId)
+    if (idx <= 0) return visibleTags
+    const picked = visibleTags[idx]
+    return [
+      picked,
+      ...visibleTags.slice(0, idx),
+      ...visibleTags.slice(idx + 1),
+    ]
+  }, [visibleTags, selectedTagId])
+
+  const selectedTagBtnRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!selectedTagId) return
+    selectedTagBtnRef.current?.scrollIntoView({
+      inline: 'center',
+      block: 'nearest',
+      behavior: 'smooth',
+    })
+  }, [selectedTagId, tagsForGrid])
 
   useEffect(() => {
     if (!hasActiveSearch || selectedTagId || !user?.id) {
@@ -721,22 +743,27 @@ export function HomePage() {
                     />
                   </div>
                 </div>
-              {(selectedTagId && selectedTagLabel) || hasActiveSearch ? (
+              {(selectedTag) || hasActiveSearch ? (
                 <div
                   className={`home-filter-mode${
-                    selectedTagId
+                    selectedTag
                       ? ' home-filter-mode--tag'
                       : ' home-filter-mode--search'
                   }`}
                   role="status"
                 >
-                  {selectedTagId && selectedTagLabel ? (
+                  {selectedTag ? (
                     <>
-                      <span className="home-filter-mode-label">
-                        <span className="home-filter-mode-hash">#</span>
-                        {selectedTagLabel}
-                        <span className="home-filter-mode-suffix"> 메모</span>
-                      </span>
+                      <div className="home-filter-mode-tag-main">
+                        <span
+                          className={`home-filter-mode-tag-pill tag-tone-${selectedTag.color_index % TAG_COLOR_COUNT}`}
+                        >
+                          {displayTagName(selectedTag.name)}
+                        </span>
+                        <span className="home-filter-mode-tag-desc">
+                          이 태그가 붙은 메모만
+                        </span>
+                      </div>
                       <button
                         type="button"
                         className="home-filter-mode-clear"
@@ -776,18 +803,24 @@ export function HomePage() {
                   <ul
                     className={
                       selectedTagId || addNoteOpen
-                        ? 'tag-grid tag-grid--single-row'
+                        ? `tag-grid tag-grid--single-row${
+                            selectedTagId ? ' tag-grid--has-selection' : ''
+                          }`
                         : 'tag-grid'
                     }
                   >
-                    {visibleTags.map((t) => (
+                    {tagsForGrid.map((t) => (
                       <li key={t.id}>
                         <button
+                          ref={
+                            selectedTagId === t.id ? selectedTagBtnRef : undefined
+                          }
                           type="button"
                           className={`tag-grid-pill tag-tone-${t.color_index % TAG_COLOR_COUNT}${
                             selectedTagId === t.id ? ' tag-grid-pill--selected' : ''
                           }`}
                           aria-pressed={selectedTagId === t.id}
+                          aria-current={selectedTagId === t.id ? 'true' : undefined}
                           onClick={() => toggleTagSelect(t.id)}
                         >
                           {displayTagName(t.name)}
@@ -927,8 +960,8 @@ export function HomePage() {
               className="note-board-section"
               aria-busy={tagPullLoading}
               aria-label={
-                selectedTagLabel
-                  ? `${selectedTagLabel} 관련 메모`
+                selectedTag
+                  ? `${displayTagName(selectedTag.name)} 관련 메모`
                   : '선택한 태그의 메모'
               }
             >
