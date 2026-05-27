@@ -24,6 +24,7 @@ import {
   type TagRow,
 } from '../lib/notesApi'
 import { displayTagName, normalizeTagInput, TAG_COLOR_COUNT } from '../lib/tagUtils'
+import { onStructuredNoteBodyPaste } from '../lib/pasteNoteFormat'
 import { useLoadingUiMountLog } from '../lib/loadingUiMountLog'
 import { isSupabaseConfigured } from '../lib/supabase'
 import tagIconUrl from '../assets/tag-icon.png'
@@ -887,6 +888,15 @@ export function HomePage() {
                         setBootstrapBody(e.target.value)
                         setBootstrapFieldHint((h) =>
                           h === 'body' ? null : h,
+                        )
+                      }}
+                      onPaste={(e) => {
+                        onStructuredNoteBodyPaste(
+                          e,
+                          bootstrapBody,
+                          bootstrapSource,
+                          setBootstrapBody,
+                          setBootstrapSource,
                         )
                       }}
                       placeholder="내용을 입력하세요"

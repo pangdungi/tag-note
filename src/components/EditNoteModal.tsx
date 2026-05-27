@@ -7,6 +7,7 @@ import {
   type NoteWithTags,
   type TagRow,
 } from '../lib/notesApi'
+import { onStructuredNoteBodyPaste } from '../lib/pasteNoteFormat'
 
 function noteToSelectedTags(note: NoteWithTags): SelectedTag[] {
   return (
@@ -133,6 +134,9 @@ export function EditNoteModal({
                 className="composer-note edit-note-modal-note"
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
+                onPaste={(e) => {
+                  onStructuredNoteBodyPaste(e, body, source, setBody, setSource)
+                }}
                 placeholder="내용을 입력하세요"
                 rows={6}
               />

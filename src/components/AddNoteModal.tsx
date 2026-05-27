@@ -5,6 +5,7 @@ import {
   type NoteWithTags,
   type TagRow,
 } from '../lib/notesApi'
+import { onStructuredNoteBodyPaste } from '../lib/pasteNoteFormat'
 
 type SavedOptions = {
   /** 서버 저장 성공 후 임시(로컬) 메모 id를 교체할 때 */
@@ -142,6 +143,9 @@ export function AddNoteModal({
                 onChange={(e) => {
                   setBody(e.target.value)
                   setFieldHint((h) => (h === 'body' ? null : h))
+                }}
+                onPaste={(e) => {
+                  onStructuredNoteBodyPaste(e, body, source, setBody, setSource)
                 }}
                 placeholder="내용을 입력하세요"
                 rows={6}
