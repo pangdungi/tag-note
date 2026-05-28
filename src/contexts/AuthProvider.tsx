@@ -57,6 +57,21 @@ function isAuthEventSilentForGlobalLoading(event: string): boolean {
   )
 }
 
+/** 탭 전환·토큰 갱신 등 — 사용자 id가 같으면 화면을 비우지 않는다. */
+function shouldShowGlobalAuthLoading(
+  event: string,
+  prevUserId: string | null,
+  nextUserId: string | null,
+): boolean {
+  if (event === 'INITIAL_SESSION') return false
+  if (isAuthEventSilentForGlobalLoading(event)) return false
+  if (prevUserId && nextUserId === prevUserId) return false
+  if (!prevUserId && nextUserId) return true
+  if (prevUserId && !nextUserId) return true
+  if (prevUserId && nextUserId && prevUserId !== nextUserId) return true
+  return false
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [subscription, setSubscription] = useState<UserSubscriptionRow | null>(
@@ -65,6 +80,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const processInFlightRef = useRef(0)
+  const sessionRef = useRef<Session | null>(null)
+
+  useLayoutEffect(() => {
+    sessionRef.current = session
+  }, [session])
 
   const processSession = useCallback(async (next: Session | null) => {
     processInFlightRef.current += 1
@@ -203,13 +223,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.info('[tag-note][auth] onAuthStateChange: setTimeout(0) 콜백 실행', {
           event,
         })
+        const prevUserId = sessionRef.current?.user?.id ?? null
+        const nextUserId = nextSession?.user?.id ?? null
+        if (prevUserId && nextUserId === prevUserId) {
+          if (nextSession) {
+            setSession(nextSession)
+          }
+          console.info(
+            '[tag-note][auth] onAuthStateChange: 동일 사용자 — 세션만 갱신, processSession 생략',
+            { event },
+          )
+          return
+        }
         void (async () => {
-          const blockGlobalLoading = !isAuthEventSilentForGlobalLoading(event)
+          const blockGlobalLoading = shouldShowGlobalAuthLoading(
+            event,
+            prevUserId,
+            nextUserId,
+          )
           if (blockGlobalLoading) {
             setLoading(true)
           }
           console.info('[tag-note][auth] onAuthStateChange processSession 시작', {
             event,
+            blockGlobalLoading,
           })
           try {
             await new Promise<void>((resolve) => {
