@@ -8,10 +8,51 @@ export type ParsedNotePaste = {
 
 const URL_LINE_RE = /^https?:\/\/\S+/i
 
+/** 출처로 쓰지 않을 전자책·서점 안내 줄 */
+const SOURCE_NOISE_RES = [
+  /교보\s*e?\s*book/i,
+  /kyobobook/i,
+  /자세히\s*보기/i,
+  /ebook-product\./i,
+  /yes24/i,
+  /알라딘/i,
+]
+
 function isUrlLine(line: string): boolean {
   const t = line.trim()
   if (!t) return false
   return URL_LINE_RE.test(t) || /^www\.\S+/i.test(t)
+}
+
+function isSourceNoiseLine(line: string): boolean {
+  const t = line.trim()
+  if (!t) return true
+  if (isUrlLine(t)) return true
+  return SOURCE_NOISE_RES.some((re) => re.test(t))
+}
+
+/** `"책제목"중에서` 등 → 책 제목만 */
+export function extractSourceTitleFromPasteLine(line: string): string {
+  let t = line.trim()
+  const quoted = t.match(
+    /^[「"'『]\s*(.+?)\s*[」"'』]\s*(?:중에서|에서)?\s*$/u,
+  )
+  if (quoted) return quoted[1].trim()
+
+  const quotedMid = t.match(/^[「"'『]\s*(.+?)\s*[」"'』]\s*중에서/u)
+  if (quotedMid) return quotedMid[1].trim()
+
+  t = t.replace(/\s*중에서\s*$/u, '').trim()
+  t = t.replace(/^[「"'『]\s*/, '').replace(/\s*[」"'』]$/, '')
+  return t.trim()
+}
+
+function findSourceLineIdx(lines: string[], urlLineIdx: number): number {
+  for (let i = urlLineIdx - 1; i >= 0; i--) {
+    if (isSourceNoiseLine(lines[i])) continue
+    return i
+  }
+  return -1
 }
 
 /** 전자책·웹 복사 시 붙는 끝 `...` / `…` 제거 */
@@ -55,16 +96,13 @@ export function parseNotePasteWithTrailingUrl(
   }
   if (urlLineIdx === -1) return null
 
-  let sourceLineIdx = -1
-  for (let i = urlLineIdx - 1; i >= 0; i--) {
-    const t = lines[i].trim()
-    if (!t) continue
-    sourceLineIdx = i
-    break
-  }
+  const sourceLineIdx = findSourceLineIdx(lines, urlLineIdx)
 
-  const source =
-    sourceLineIdx >= 0 ? lines[sourceLineIdx].trim() : null
+  const sourceRaw =
+    sourceLineIdx >= 0
+      ? extractSourceTitleFromPasteLine(lines[sourceLineIdx].trim())
+      : null
+  const source = sourceRaw && sourceRaw.length > 0 ? sourceRaw : null
   const bodyEnd = sourceLineIdx >= 0 ? sourceLineIdx : urlLineIdx
   const body = cleanPastedMemoText(
     lines
