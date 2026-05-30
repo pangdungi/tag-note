@@ -2000,6 +2000,74 @@ body::-webkit-scrollbar,
   box-shadow: 0 0 0 3px rgb(229 231 235 / 0.6);
 }
 
+.memo-note-editor {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+
+.memo-note-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #b8bcc4;
+  pointer-events: none;
+}
+
+.memo-note-editor--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.memo-body-inline-icon {
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.18em;
+  object-fit: contain;
+  margin: 0 0.02em;
+  display: inline;
+  pointer-events: none;
+  user-select: none;
+}
+
+.memo-emoji-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem;
+  margin-top: 0.4rem;
+  padding: 0.1rem 0.05rem;
+}
+
+.memo-emoji-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0.28rem 0.34rem;
+  border-radius: 8px;
+  user-select: none;
+}
+
+.memo-emoji-bar-icon {
+  display: block;
+  width: 1.35rem;
+  height: 1.35rem;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.memo-emoji-bar-btn:hover {
+  background: rgb(0 0 0 / 5%);
+}
+
+.memo-emoji-bar-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
 .composer-error {
   margin: 0.75rem 0 0;
   font-size: 0.85rem;

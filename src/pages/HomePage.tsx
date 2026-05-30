@@ -33,7 +33,8 @@ import {
 } from '../lib/notesApi'
 import { displayTagName, normalizeTagInput, TAG_COLOR_COUNT } from '../lib/tagUtils'
 import { displaySourceTitle, sourceTitleKey } from '../lib/sourceUtils'
-import { onStructuredNoteBodyPaste } from '../lib/pasteNoteFormat'
+import { MemoBodyContent } from '../components/MemoBodyContent'
+import { MemoNoteEditor } from '../components/MemoNoteEditor'
 import { useLoadingUiMountLog } from '../lib/loadingUiMountLog'
 import { isSupabaseConfigured } from '../lib/supabase'
 import tagIconUrl from '../assets/tag-icon.png'
@@ -101,13 +102,14 @@ function NoteBoardCard({
           ))}
         </div>
       </div>
-      <p
+      <MemoBodyContent
+        as="p"
+        body={body}
         className={`note-board-card-preview${
           !body ? ' note-board-card-preview--empty' : ''
         }${showViewHint ? ' note-board-card-preview--clamped' : ''}`}
-      >
-        {body || '내용 없음'}
-      </p>
+        emptyLabel="내용 없음"
+      />
       {showViewHint ? (
         <p className="note-board-card-view-hint">클릭하여 전체 보기</p>
       ) : null}
@@ -1286,27 +1288,19 @@ export function HomePage() {
                     <label className="composer-label" htmlFor="bootstrap-note">
                       메모
                     </label>
-                    <textarea
+                    <MemoNoteEditor
                       id="bootstrap-note"
-                      className="composer-note"
                       value={bootstrapBody}
-                      onChange={(e) => {
-                        setBootstrapBody(e.target.value)
+                      onChange={(next) => {
+                        setBootstrapBody(next)
                         setBootstrapFieldHint((h) =>
                           h === 'body' ? null : h,
                         )
                       }}
-                      onPaste={(e) => {
-                        onStructuredNoteBodyPaste(
-                          e,
-                          bootstrapBody,
-                          bootstrapSource?.title ?? '',
-                          setBootstrapBody,
-                          (title) => {
-                            const t = title.trim()
-                            setBootstrapSource(t ? { title: t } : null)
-                          },
-                        )
+                      source={bootstrapSource?.title ?? ''}
+                      onSourceChange={(title) => {
+                        const t = title.trim()
+                        setBootstrapSource(t ? { title: t } : null)
                       }}
                       placeholder="내용을 입력하세요"
                       rows={5}

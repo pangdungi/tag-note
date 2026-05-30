@@ -7,7 +7,7 @@ import {
   type SourceRow,
   type TagRow,
 } from '../lib/notesApi'
-import { onStructuredNoteBodyPaste } from '../lib/pasteNoteFormat'
+import { MemoNoteEditor } from './MemoNoteEditor'
 
 type SavedOptions = {
   /** 서버 저장 성공 후 임시(로컬) 메모 id를 교체할 때 */
@@ -144,25 +144,18 @@ export function AddNoteModal({
               <label className="composer-label" htmlFor={bodyId}>
                 메모
               </label>
-              <textarea
+              <MemoNoteEditor
                 id={bodyId}
-                className="composer-note edit-note-modal-note"
+                className="edit-note-modal-note"
                 value={body}
-                onChange={(e) => {
-                  setBody(e.target.value)
+                onChange={(next) => {
+                  setBody(next)
                   setFieldHint((h) => (h === 'body' ? null : h))
                 }}
-                onPaste={(e) => {
-                  onStructuredNoteBodyPaste(
-                    e,
-                    body,
-                    selectedSource?.title ?? '',
-                    setBody,
-                    (title) => {
-                      const t = title.trim()
-                      setSelectedSource(t ? { title: t } : null)
-                    },
-                  )
+                source={selectedSource?.title ?? ''}
+                onSourceChange={(title) => {
+                  const t = title.trim()
+                  setSelectedSource(t ? { title: t } : null)
                 }}
                 placeholder="내용을 입력하세요"
                 rows={6}

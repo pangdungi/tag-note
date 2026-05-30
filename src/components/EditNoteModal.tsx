@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, startTransition } from 'react'
+import { useId, useLayoutEffect, useState } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
 import { SourceComposer, type SelectedSource } from './SourceComposer'
 import { ConfirmModal } from './ConfirmModal'
@@ -9,7 +9,7 @@ import {
   type SourceRow,
   type TagRow,
 } from '../lib/notesApi'
-import { onStructuredNoteBodyPaste } from '../lib/pasteNoteFormat'
+import { MemoNoteEditor } from './MemoNoteEditor'
 
 function noteToSelectedTags(note: NoteWithTags): SelectedTag[] {
   return (
@@ -96,27 +96,17 @@ export function EditNoteModal({
   const [selectedSource, setSelectedSource] = useState<SelectedSource | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const seededNoteIdRef = useRef<string | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open || !note) {
-      if (!open) {
-        seededNoteIdRef.current = null
-      }
       return
     }
-    if (seededNoteIdRef.current === note.id) {
-      return
-    }
-    seededNoteIdRef.current = note.id
-    startTransition(() => {
-      setTags(noteToSelectedTags(note))
-      setBody(note.body ?? '')
-      setSelectedSource(noteToSelectedSource(note))
-      setError(null)
-      setDeleteConfirmOpen(false)
-    })
-  }, [open, note])
+    setTags(noteToSelectedTags(note))
+    setBody(note.body ?? '')
+    setSelectedSource(noteToSelectedSource(note))
+    setError(null)
+    setDeleteConfirmOpen(false)
+  }, [open, note?.id, note?.body])
 
   if (!open || !note) return null
 
@@ -150,22 +140,17 @@ export function EditNoteModal({
               <label className="composer-label" htmlFor="edit-note-body">
                 메모
               </label>
-              <textarea
+              <MemoNoteEditor
+                key={note.id}
                 id="edit-note-body"
-                className="composer-note edit-note-modal-note"
+                resetKey={note.id}
+                className="edit-note-modal-note"
                 value={body}
-                onChange={(e) => setBody(e.target.value)}
-                onPaste={(e) => {
-                  onStructuredNoteBodyPaste(
-                    e,
-                    body,
-                    selectedSource?.title ?? '',
-                    setBody,
-                    (title) => {
-                      const t = title.trim()
-                      setSelectedSource(t ? { title: t } : null)
-                    },
-                  )
+                onChange={setBody}
+                source={selectedSource?.title ?? ''}
+                onSourceChange={(title) => {
+                  const t = title.trim()
+                  setSelectedSource(t ? { title: t } : null)
                 }}
                 placeholder="내용을 입력하세요"
                 rows={6}

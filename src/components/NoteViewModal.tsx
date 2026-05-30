@@ -5,6 +5,7 @@ import {
 } from '../lib/notesApi'
 import { displayTagName, TAG_COLOR_COUNT } from '../lib/tagUtils'
 import { displaySourceTitle } from '../lib/sourceUtils'
+import { MemoBodyContent } from './MemoBodyContent'
 
 function formatNoteWhen(iso: string) {
   try {
@@ -89,14 +90,14 @@ export function NoteViewModal({
               ))}
             </div>
           ) : null}
-          <div
+          <MemoBodyContent
+            as="div"
+            body={loading ? '' : body}
             className={`note-view-modal-text${
               !body && !loading ? ' note-view-modal-text--empty' : ''
             }`}
-            aria-busy={loading}
-          >
-            {loading ? '불러오는 중…' : body || '내용 없음'}
-          </div>
+            emptyLabel={loading ? '불러오는 중…' : '내용 없음'}
+          />
           <div className="note-view-modal-meta">
             {src ? (
               srcId && onSourceFilter ? (
