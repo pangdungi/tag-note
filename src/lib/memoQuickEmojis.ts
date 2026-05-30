@@ -70,6 +70,20 @@ export function memoEmojiToken(id: string): string {
   return `:m/${id}:`
 }
 
+/** 입력 `->` 등을 고정 아이콘 토큰으로 치환 */
+const MEMO_TEXT_SHORTCUTS: { pattern: RegExp; id: string }[] = [
+  { pattern: /->/g, id: 'arrowright' },
+]
+
+export function applyMemoTextShortcuts(body: string): string {
+  let result = body
+  for (const { pattern, id } of MEMO_TEXT_SHORTCUTS) {
+    pattern.lastIndex = 0
+    result = result.replace(pattern, memoEmojiToken(id))
+  }
+  return result
+}
+
 export function memoEmojiById(id: string): MemoQuickEmoji | undefined {
   return MEMO_EMOJI_BY_ID.get(id)
 }
@@ -80,7 +94,8 @@ export type MemoBodySegment =
 
 /** 본문을 텍스트·고정 아이콘 구간으로 나눔 (토큰 + 예전 유니코드) */
 export function parseMemoBody(body: string): MemoBodySegment[] {
-  if (!body) {
+  const normalized = applyMemoTextShortcuts(body)
+  if (!normalized) {
     return []
   }
 
@@ -89,7 +104,7 @@ export function parseMemoBody(body: string): MemoBodySegment[] {
 
   MEMO_EMOJI_TOKEN_RE.lastIndex = 0
   let tokenMatch: RegExpExecArray | null
-  while ((tokenMatch = MEMO_EMOJI_TOKEN_RE.exec(body)) !== null) {
+  while ((tokenMatch = MEMO_EMOJI_TOKEN_RE.exec(normalized)) !== null) {
     marks.push({
       index: tokenMatch.index,
       length: tokenMatch[0].length,
@@ -100,8 +115,8 @@ export function parseMemoBody(body: string): MemoBodySegment[] {
   for (const emoji of MEMO_QUICK_EMOJIS) {
     if (!emoji.legacyUnicode) continue
     let from = 0
-    while (from < body.length) {
-      const idx = body.indexOf(emoji.legacyUnicode, from)
+    while (from < normalized.length) {
+      const idx = normalized.indexOf(emoji.legacyUnicode, from)
       if (idx === -1) break
       marks.push({
         index: idx,
@@ -126,7 +141,7 @@ export function parseMemoBody(body: string): MemoBodySegment[] {
   let pos = 0
   for (const mark of picked) {
     if (mark.index > pos) {
-      segments.push({ type: 'text', value: body.slice(pos, mark.index) })
+      segments.push({ type: 'text', value: normalized.slice(pos, mark.index) })
     }
     const emoji = memoEmojiById(mark.id)
     if (emoji) {
@@ -134,14 +149,14 @@ export function parseMemoBody(body: string): MemoBodySegment[] {
     } else {
       segments.push({
         type: 'text',
-        value: body.slice(mark.index, mark.index + mark.length),
+        value: normalized.slice(mark.index, mark.index + mark.length),
       })
     }
     pos = mark.index + mark.length
   }
 
-  if (pos < body.length) {
-    segments.push({ type: 'text', value: body.slice(pos) })
+  if (pos < normalized.length) {
+    segments.push({ type: 'text', value: normalized.slice(pos) })
   }
 
   return segments
@@ -246,6 +261,40 @@ export function serializedOffsetInEditor(
   const tmp = document.createElement('div')
   tmp.appendChild(range.cloneContents())
   return memoBodyFromEditor(tmp).length
+}
+
+/** `->` 입력 직후 커서 앞 문자열을 화살표 아이콘으로 치환 */
+export function applyMemoTextShortcutsInEditor(root: HTMLElement): boolean {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) {
+    return false
+  }
+
+  const range = sel.getRangeAt(0)
+  if (!range.collapsed || !root.contains(range.startContainer)) {
+    return false
+  }
+
+  const { startContainer, startOffset } = range
+  if (startContainer.nodeType !== Node.TEXT_NODE) {
+    return false
+  }
+
+  const textNode = startContainer as Text
+  const raw = textNode.textContent ?? ''
+  if (startOffset < 2 || raw.slice(startOffset - 2, startOffset) !== '->') {
+    return false
+  }
+
+  const deleteRange = document.createRange()
+  deleteRange.setStart(textNode, startOffset - 2)
+  deleteRange.setEnd(textNode, startOffset)
+  deleteRange.deleteContents()
+
+  sel.removeAllRanges()
+  sel.addRange(deleteRange)
+
+  return insertMemoEmojiInEditor(root, 'arrowright')
 }
 
 export function insertMemoEmojiInEditor(root: HTMLElement, id: string): boolean {

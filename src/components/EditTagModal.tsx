@@ -87,20 +87,21 @@ export function EditTagModal({
               </div>
             </div>
             {error ? <p className="composer-error">{error}</p> : null}
-            <div className="edit-note-modal-actions">
-              <button
-                type="button"
-                className="btn btn--danger"
-                disabled={deleteConfirmOpen}
-                onClick={() => setDeleteConfirmOpen(true)}
-              >
-                태그 삭제
-              </button>
-              <button
-                type="button"
-                className="btn btn--emphasis edit-note-modal-submit"
-                disabled={!normalizeTagInput(name)}
-                onClick={() => {
+          </div>
+          <div className="edit-note-modal-actions">
+            <button
+              type="button"
+              className="btn btn--danger"
+              disabled={deleteConfirmOpen}
+              onClick={() => setDeleteConfirmOpen(true)}
+            >
+              태그 삭제
+            </button>
+            <button
+              type="button"
+              className="btn btn--emphasis edit-note-modal-submit"
+              disabled={!normalizeTagInput(name)}
+              onClick={() => {
                   setError(null)
                   const tagId = tag.id
                   const saveName = name
@@ -128,7 +129,6 @@ export function EditTagModal({
               >
                 저장
               </button>
-            </div>
           </div>
         </div>
       </div>

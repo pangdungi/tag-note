@@ -159,6 +159,7 @@ export function AddNoteModal({
                 }}
                 placeholder="내용을 입력하세요"
                 rows={6}
+                scrollClamp
               />
               {fieldHint === 'body' ? (
                 <p className="composer-field-hint" role="status">
@@ -173,13 +174,14 @@ export function AddNoteModal({
             />
           </div>
           {error ? <p className="composer-error">{error}</p> : null}
-          <div className="edit-note-modal-actions edit-note-modal-actions--add-only">
-            <button
-              type="button"
-              className={`btn btn--emphasis${
-                composerSaveReady ? ' btn--composer-ready' : ''
-              }`}
-              onClick={() => {
+        </div>
+        <div className="edit-note-modal-actions edit-note-modal-actions--add-only">
+          <button
+            type="button"
+            className={`btn btn--emphasis${
+              composerSaveReady ? ' btn--composer-ready' : ''
+            }`}
+            onClick={() => {
                 setError(null)
                 if (tags.length === 0) {
                   setFieldHint('tags')
@@ -230,7 +232,6 @@ export function AddNoteModal({
             >
               저장
             </button>
-          </div>
         </div>
       </div>
     </div>

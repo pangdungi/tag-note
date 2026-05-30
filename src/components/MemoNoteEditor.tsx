@@ -9,6 +9,8 @@ import {
 } from 'react'
 import { applyStructuredNotePaste, cleanPastedMemoText } from '../lib/pasteNoteFormat'
 import {
+  applyMemoTextShortcuts,
+  applyMemoTextShortcutsInEditor,
   insertMemoEmojiInEditor,
   memoBodyFromEditor,
   memoBodyToEditorHtml,
@@ -29,6 +31,8 @@ type Props = {
   onSourceChange?: (next: string) => void
   /** note.id 등 — 바뀔 때 에디터 내용을 value로 다시 채움 */
   resetKey?: string
+  /** true면 min 높이에서 더 늘어나지 않고 내부 스크롤 */
+  scrollClamp?: boolean
 }
 
 export function MemoNoteEditor({
@@ -42,6 +46,7 @@ export function MemoNoteEditor({
   source = '',
   onSourceChange,
   resetKey,
+  scrollClamp = false,
 }: Props) {
   const editorRef = useRef<HTMLDivElement>(null)
   const lastSerializedRef = useRef<string | null>(null)
@@ -52,8 +57,9 @@ export function MemoNoteEditor({
   const syncEditorFromValue = useCallback((body: string) => {
     const el = editorRef.current
     if (!el) return
-    lastSerializedRef.current = body
-    el.innerHTML = body ? memoBodyToEditorHtml(body) : ''
+    const normalized = applyMemoTextShortcuts(body)
+    lastSerializedRef.current = normalized
+    el.innerHTML = normalized ? memoBodyToEditorHtml(normalized) : ''
   }, [])
 
   useLayoutEffect(() => {
@@ -73,13 +79,19 @@ export function MemoNoteEditor({
   const emitChange = useCallback(() => {
     const el = editorRef.current
     if (!el) return
-    const next = normalizeMemoBodyStorage(memoBodyFromEditor(el))
+    const next = applyMemoTextShortcuts(
+      normalizeMemoBodyStorage(memoBodyFromEditor(el)),
+    )
     lastSerializedRef.current = next
     onChange(next)
   }, [onChange])
 
   const handleInput = () => {
     if (isComposingRef.current) return
+    const el = editorRef.current
+    if (el) {
+      applyMemoTextShortcutsInEditor(el)
+    }
     emitChange()
   }
 
@@ -152,7 +164,7 @@ export function MemoNoteEditor({
     window.setTimeout(() => emitChange(), 0)
   }
 
-  const minHeight = `${Math.max(rows, 3) * 1.5 + 1.5}rem`
+  const boxHeight = `${Math.max(rows, 3) * 1.5 + 1.5}rem`
 
   return (
     <>
@@ -164,8 +176,11 @@ export function MemoNoteEditor({
         aria-placeholder={placeholder}
         contentEditable={!disabled}
         suppressContentEditableWarning
-        className={`composer-note memo-note-editor${className ? ` ${className}` : ''}${disabled ? ' memo-note-editor--disabled' : ''}`}
-        style={{ minHeight }}
+        className={`composer-note memo-note-editor${className ? ` ${className}` : ''}${disabled ? ' memo-note-editor--disabled' : ''}${scrollClamp ? ' memo-note-editor--scroll-clamp' : ''}`}
+        style={{
+          minHeight: boxHeight,
+          ...(scrollClamp ? { maxHeight: boxHeight } : {}),
+        }}
         data-placeholder={placeholder}
         onInput={handleInput}
         onCompositionStart={() => {

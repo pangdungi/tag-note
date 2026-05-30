@@ -154,6 +154,7 @@ export function EditNoteModal({
                 }}
                 placeholder="내용을 입력하세요"
                 rows={6}
+                scrollClamp
               />
             </div>
             <SourceComposer
@@ -163,20 +164,21 @@ export function EditNoteModal({
             />
           </div>
           {error ? <p className="composer-error">{error}</p> : null}
-          <div className="edit-note-modal-actions">
-            <button
-              type="button"
-              className="btn btn--danger"
-              disabled={deleteConfirmOpen}
-              onClick={() => setDeleteConfirmOpen(true)}
-            >
-              메모 삭제
-            </button>
-            <button
-              type="button"
-              className="btn btn--emphasis edit-note-modal-submit"
-              disabled={tags.length === 0}
-              onClick={() => {
+        </div>
+        <div className="edit-note-modal-actions">
+          <button
+            type="button"
+            className="btn btn--danger"
+            disabled={deleteConfirmOpen}
+            onClick={() => setDeleteConfirmOpen(true)}
+          >
+            메모 삭제
+          </button>
+          <button
+            type="button"
+            className="btn btn--emphasis edit-note-modal-submit"
+            disabled={tags.length === 0}
+            onClick={() => {
                 setError(null)
                 const noteId = note.id
                 const saveBody = body
@@ -221,7 +223,6 @@ export function EditNoteModal({
             >
               수정
             </button>
-          </div>
         </div>
       </div>
     </div>
