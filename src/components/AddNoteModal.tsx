@@ -167,13 +167,16 @@ export function AddNoteModal({
                 </p>
               ) : null}
             </div>
-            <SourceComposer
-              allSources={allSources}
-              selected={selectedSource}
-              onChange={setSelectedSource}
-            />
           </div>
           {error ? <p className="composer-error">{error}</p> : null}
+        </div>
+        <div className="edit-note-modal-source">
+          <SourceComposer
+            allSources={allSources}
+            selected={selectedSource}
+            onChange={setSelectedSource}
+            suggestPlacement="up"
+          />
         </div>
         <div className="edit-note-modal-actions edit-note-modal-actions--add-only">
           <button

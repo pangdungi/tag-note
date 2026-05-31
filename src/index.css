@@ -993,6 +993,23 @@ body::-webkit-scrollbar,
   text-overflow: ellipsis;
 }
 
+.home-filter-mode-search-context {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.home-filter-mode-clear-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem 0.75rem;
+  flex-shrink: 0;
+}
+
 .home-filter-mode-label {
   min-width: 0;
   overflow: hidden;
@@ -1325,6 +1342,11 @@ body::-webkit-scrollbar,
   box-shadow: 0 6px 20px rgb(0 0 0 / 10%);
   max-height: 12rem;
   overflow-y: auto;
+}
+
+.source-suggest--dropup {
+  top: auto;
+  bottom: calc(100% + 4px);
 }
 
 .source-suggest-item {
@@ -2329,15 +2351,26 @@ body::-webkit-scrollbar,
 }
 
 .edit-note-modal-body {
-  padding: 0 1rem 1rem;
+  padding: 0 1rem 0.75rem;
   overflow: auto;
   flex: 1;
   min-height: 0;
   overscroll-behavior: contain;
 }
 
+.edit-note-modal-source {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 4;
+  padding: 0 1rem 0.75rem;
+  border-top: 1px solid var(--border);
+  background: #ffffff;
+}
+
 .edit-note-modal-actions {
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;

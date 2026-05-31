@@ -609,6 +609,8 @@ export function HomePage() {
     setTagSearch('')
     setSearchNotesResult(null)
     setSearchError(null)
+    setSelectedTagId(null)
+    setTagNotesHasMore(false)
   }
 
   function clearTagFilter() {
@@ -625,9 +627,6 @@ export function HomePage() {
     setSelectedTagId((cur) => {
       const next = cur === tagId ? null : tagId
       if (next !== null) {
-        setTagSearch('')
-        setSearchNotesResult(null)
-        setSearchError(null)
         setSelectedSourceId(null)
         setSourceNotesHasMore(false)
       }
@@ -1049,6 +1048,11 @@ export function HomePage() {
                   {selectedTag ? (
                     <>
                       <div className="home-filter-mode-tag-main">
+                        {hasActiveSearch ? (
+                          <span className="home-filter-mode-search-context">
+                            「{normalizeTagInput(tagSearch)}」 검색
+                          </span>
+                        ) : null}
                         <span
                           className={`home-filter-mode-tag-pill tag-tone-${selectedTag.color_index % TAG_COLOR_COUNT}`}
                         >
@@ -1058,13 +1062,24 @@ export function HomePage() {
                           이 태그가 붙은 메모만
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        className="home-filter-mode-clear"
-                        onClick={() => clearTagFilter()}
-                      >
-                        필터 해제
-                      </button>
+                      <div className="home-filter-mode-clear-group">
+                        <button
+                          type="button"
+                          className="home-filter-mode-clear"
+                          onClick={() => clearTagFilter()}
+                        >
+                          {hasActiveSearch ? '태그 선택 해제' : '필터 해제'}
+                        </button>
+                        {hasActiveSearch ? (
+                          <button
+                            type="button"
+                            className="home-filter-mode-clear"
+                            onClick={() => clearMainSearch()}
+                          >
+                            검색 지우기
+                          </button>
+                        ) : null}
+                      </div>
                     </>
                   ) : selectedSource ? (
                     <>

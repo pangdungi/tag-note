@@ -19,9 +19,16 @@ type Props = {
   allSources: SourceRow[]
   selected: SelectedSource | null
   onChange: (source: SelectedSource | null) => void
+  /** 모달 푸터 위 등 — 목록이 아래로 가려질 때 위로 펼침 */
+  suggestPlacement?: 'down' | 'up'
 }
 
-export function SourceComposer({ allSources, selected, onChange }: Props) {
+export function SourceComposer({
+  allSources,
+  selected,
+  onChange,
+  suggestPlacement = 'down',
+}: Props) {
   const listId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const lastEnterAt = useRef(0)
@@ -183,7 +190,13 @@ export function SourceComposer({ allSources, selected, onChange }: Props) {
             </button>
           ) : null}
           {!selected && open && draft.trim() && suggestions.length > 0 ? (
-            <ul id={listId + '-suggest'} className="source-suggest" role="listbox">
+            <ul
+              id={listId + '-suggest'}
+              className={`source-suggest${
+                suggestPlacement === 'up' ? ' source-suggest--dropup' : ''
+              }`}
+              role="listbox"
+            >
               {suggestions.map((s, idx) => (
                 <li key={s.id} role="presentation">
                   <button
