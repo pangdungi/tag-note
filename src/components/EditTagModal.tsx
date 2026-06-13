@@ -1,12 +1,18 @@
 import { useEffect, useId, useState, startTransition } from 'react'
 import { ConfirmModal } from './ConfirmModal'
-import { deleteTagAndLinkedNotes, updateTag, type TagRow } from '../lib/notesApi'
-import { displayTagName, normalizeTagInput } from '../lib/tagUtils'
+import {
+  deleteTagAndLinkedNotes,
+  unassignTagFromParent,
+  updateTag,
+  type TagRow,
+} from '../lib/notesApi'
+import { displayTagName, normalizeTagInput, TAG_COLOR_COUNT } from '../lib/tagUtils'
 
 type Props = {
   open: boolean
   onClose: () => void
   tag: TagRow | null
+  tags: TagRow[]
   onTagUpdated: (row: TagRow) => void
   onTagDeleted: (payload: { tagId: string; deletedNoteIds: string[] }) => void
   /** 태그 삭제 시 로컬에서 함께 지울 메모 id (화면 즉시 반영용) */
@@ -21,6 +27,7 @@ export function EditTagModal({
   open,
   onClose,
   tag,
+  tags,
   onTagUpdated,
   onTagDeleted,
   resolveLinkedNoteIds,
@@ -43,6 +50,10 @@ export function EditTagModal({
   }, [open, tag])
 
   if (!open || !tag) return null
+
+  const parentTag = tag.parent_id
+    ? tags.find((t) => t.id === tag.parent_id) ?? null
+    : null
 
   return (
     <>
@@ -69,6 +80,16 @@ export function EditTagModal({
           </div>
           <div className="edit-note-modal-body">
             <div className="composer-stack">
+              {parentTag ? (
+                <p className="tag-manage-hint">
+                  상위 태그:{' '}
+                  <span
+                    className={`tag-manage-pill tag-tone-${parentTag.color_index % TAG_COLOR_COUNT}`}
+                  >
+                    {displayTagName(parentTag.name)}
+                  </span>
+                </p>
+              ) : null}
               <div className="composer-field">
                 <label className="composer-label" htmlFor="edit-tag-name">
                   태그 이름
@@ -89,6 +110,37 @@ export function EditTagModal({
             {error ? <p className="composer-error">{error}</p> : null}
           </div>
           <div className="edit-note-modal-actions">
+            {parentTag ? (
+              <button
+                type="button"
+                className="btn"
+                disabled={deleteConfirmOpen}
+                onClick={() => {
+                  setError(null)
+                  const tagId = tag.id
+                  onTagUpdated({ ...tag, parent_id: null })
+                  onClose()
+                  void (async () => {
+                    try {
+                      const row = await unassignTagFromParent(tagId)
+                      onTagUpdated(row)
+                    } catch (e) {
+                      console.error('[태그노트] EditTagModal 상위 해제 실패', {
+                        tagId,
+                      }, e)
+                      await onSyncFromServer?.()
+                      onTagError?.(
+                        e instanceof Error
+                          ? e.message
+                          : '상위 태그에서 빼지 못했습니다.',
+                      )
+                    }
+                  })()
+                }}
+              >
+                상위에서 빼기
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn btn--danger"

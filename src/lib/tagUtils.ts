@@ -1,3 +1,10 @@
+export type TagHierarchyRow = {
+  id: string
+  name: string
+  color_index: number
+  parent_id?: string | null
+}
+
 /** 입력에서 # 접두사 제거, 앞뒤 공백 */
 export function normalizeTagInput(raw: string): string {
   const t = raw.trim()
@@ -71,4 +78,53 @@ export function pickColorIndex(
   void _newName
   void _existing
   return Math.floor(Math.random() * TAG_COLOR_COUNT)
+}
+
+export function tagHasChildren(tagId: string, tags: TagHierarchyRow[]): boolean {
+  return tags.some((t) => t.parent_id === tagId)
+}
+
+export function getChildTags(
+  parentId: string,
+  tags: TagHierarchyRow[],
+): TagHierarchyRow[] {
+  return tags
+    .filter((t) => t.parent_id === parentId)
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+}
+
+export function getParentTags(tags: TagHierarchyRow[]): TagHierarchyRow[] {
+  return tags
+    .filter((t) => tagHasChildren(t.id, tags))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+}
+
+export function getIndependentTags(tags: TagHierarchyRow[]): TagHierarchyRow[] {
+  return tags
+    .filter((t) => !t.parent_id && !tagHasChildren(t.id, tags))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+}
+
+export function resolveTagFilterIds(
+  selectedTagId: string,
+  tags: TagHierarchyRow[],
+): string[] {
+  if (tagHasChildren(selectedTagId, tags)) {
+    return [
+      selectedTagId,
+      ...getChildTags(selectedTagId, tags).map((t) => t.id),
+    ]
+  }
+  return [selectedTagId]
+}
+
+export function canAssignTagToParent(
+  tag: TagHierarchyRow,
+  parentId: string,
+  tags: TagHierarchyRow[],
+): boolean {
+  if (tag.id === parentId) return false
+  if (tag.parent_id) return false
+  if (tagHasChildren(tag.id, tags)) return false
+  return true
 }

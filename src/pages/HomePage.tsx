@@ -31,7 +31,7 @@ import {
   type SourceRow,
   type TagRow,
 } from '../lib/notesApi'
-import { displayTagName, normalizeTagInput, TAG_COLOR_COUNT } from '../lib/tagUtils'
+import { displayTagName, normalizeTagInput, resolveTagFilterIds, tagHasChildren, TAG_COLOR_COUNT } from '../lib/tagUtils'
 import { displaySourceTitle, sourceTitleKey } from '../lib/sourceUtils'
 import { MemoBodyContent } from '../components/MemoBodyContent'
 import { MemoNoteEditor } from '../components/MemoNoteEditor'
@@ -403,11 +403,37 @@ export function HomePage() {
     setNotes((prev) => mapNotesWithRenamedTag(prev, row.id, row.name, row.color_index))
   }, [])
 
+  const applyTagCreated = useCallback((row: TagRow) => {
+    setAllTags((prev) => {
+      if (prev.some((t) => t.id === row.id)) {
+        return prev.map((t) => (t.id === row.id ? row : t))
+      }
+      return [...prev, row].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+    })
+  }, [])
+
+  const applyTagsAssigned = useCallback((rows: TagRow[]) => {
+    if (rows.length === 0) return
+    setAllTags((prev) => {
+      const map = new Map(prev.map((t) => [t.id, t]))
+      for (const row of rows) {
+        map.set(row.id, row)
+      }
+      return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+    })
+  }, [])
+
   const applyTagDeleted = useCallback(
     (payload: { tagId: string; deletedNoteIds: string[] }) => {
       const { tagId, deletedNoteIds } = payload
       setSelectedTagId((s) => (s === tagId ? null : s))
-      setAllTags((prev) => prev.filter((t) => t.id !== tagId))
+      setAllTags((prev) =>
+        prev
+          .filter((t) => t.id !== tagId)
+          .map((t) =>
+            t.parent_id === tagId ? { ...t, parent_id: null } : t,
+          ),
+      )
       setNotes((prev) => prev.filter((n) => !deletedNoteIds.includes(n.id)))
       setEditingNote((cur) =>
         cur && deletedNoteIds.includes(cur.id) ? null : cur,
@@ -433,6 +459,7 @@ export function HomePage() {
     if (!uid) {
       return
     }
+    const tagIds = resolveTagFilterIds(selectedTagId, allTags)
     let cancelled = false
     const showTagPullSpinner = !homeDataInitialLoadDoneRef.current
     if (showTagPullSpinner) {
@@ -443,6 +470,7 @@ export function HomePage() {
         const next = await syncNotesStateAfterTagSelectionPull(
           notesRef.current,
           selectedTagId,
+          { tagIds },
         )
         if (cancelled) {
           return
@@ -470,7 +498,7 @@ export function HomePage() {
         setTagPullLoading(false)
       }
     }
-  }, [selectedTagId, user?.id])
+  }, [selectedTagId, user?.id, allTags])
 
   useEffect(() => {
     if (!selectedSourceId) {
@@ -557,17 +585,20 @@ export function HomePage() {
 
   const notesForSelectedTag = useMemo(() => {
     if (!selectedTagId) return []
+    const tagIds = new Set(resolveTagFilterIds(selectedTagId, allTags))
     return notes
       .filter((n) =>
         n.note_tags.some(
-          (nt) => nt.tag_id === selectedTagId || nt.tags?.id === selectedTagId,
+          (nt) =>
+            tagIds.has(nt.tag_id) ||
+            (nt.tags?.id != null && tagIds.has(nt.tags.id)),
         ),
       )
       .sort(
         (a, b) =>
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
       )
-  }, [notes, selectedTagId])
+  }, [notes, selectedTagId, allTags])
 
   const selectedSource = useMemo(() => {
     if (!selectedSourceId) return null
@@ -592,18 +623,33 @@ export function HomePage() {
 
   /** 출처 필터 시 — 해당 출처 메모에 실제로 붙은 태그만 */
   const displayTags = useMemo(() => {
-    if (!selectedSourceId) return visibleTags
-    const linkedIds = new Set<string>()
-    for (const note of notesForSelectedSource) {
-      for (const nt of note.note_tags) {
-        const id = nt.tags?.id ?? nt.tag_id
-        if (id && !id.startsWith('pending-')) {
-          linkedIds.add(id)
+    if (selectedSourceId) {
+      const linkedIds = new Set<string>()
+      for (const note of notesForSelectedSource) {
+        for (const nt of note.note_tags) {
+          const id = nt.tags?.id ?? nt.tag_id
+          if (id && !id.startsWith('pending-')) {
+            linkedIds.add(id)
+          }
         }
       }
+      return visibleTags.filter((t) => linkedIds.has(t.id))
     }
-    return visibleTags.filter((t) => linkedIds.has(t.id))
-  }, [visibleTags, selectedSourceId, notesForSelectedSource])
+    if (hasActiveSearch) {
+      return visibleTags
+    }
+    if (selectedTagId && tagHasChildren(selectedTagId, allTags)) {
+      return visibleTags.filter((t) => t.parent_id === selectedTagId)
+    }
+    return visibleTags.filter((t) => !t.parent_id)
+  }, [
+    visibleTags,
+    selectedSourceId,
+    notesForSelectedSource,
+    hasActiveSearch,
+    selectedTagId,
+    allTags,
+  ])
 
   function clearMainSearch() {
     setTagSearch('')
@@ -707,7 +753,10 @@ export function HomePage() {
       const result = await syncNotesStateAfterTagSelectionPull(
         notesRef.current,
         selectedTagId,
-        { before },
+        {
+          before,
+          tagIds: resolveTagFilterIds(selectedTagId, allTags),
+        },
       )
       setNotes(result.notes)
       setTagNotesHasMore(result.hasMore)
@@ -747,6 +796,10 @@ export function HomePage() {
     if (!selectedTagId) return null
     return allTags.find((x) => x.id === selectedTagId) ?? null
   }, [allTags, selectedTagId])
+
+  const selectedTagIsParent = Boolean(
+    selectedTagId && tagHasChildren(selectedTagId, allTags),
+  )
 
   const tagsForGrid = useMemo(() => {
     if (!selectedTagId) return displayTags
@@ -1059,7 +1112,9 @@ export function HomePage() {
                           {displayTagName(selectedTag.name)}
                         </span>
                         <span className="home-filter-mode-tag-desc">
-                          이 태그가 붙은 메모만
+                          {selectedTagIsParent
+                            ? '이 상위 태그·하위 태그가 붙은 메모'
+                            : '이 태그가 붙은 메모만'}
                         </span>
                       </div>
                       <div className="home-filter-mode-clear-group">
@@ -1519,6 +1574,9 @@ export function HomePage() {
         open={tagManageOpen}
         onClose={() => setTagManageOpen(false)}
         tags={allTags}
+        userId={user?.id ?? null}
+        onTagCreated={applyTagCreated}
+        onTagsAssigned={applyTagsAssigned}
         onTagUpdated={applyTagUpdated}
         onTagDeleted={applyTagDeleted}
         resolveLinkedNoteIds={resolveLinkedNoteIds}
