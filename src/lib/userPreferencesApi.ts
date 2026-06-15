@@ -22,7 +22,7 @@ export async function fetchUserAppFontId(
   return normalizeLegacyAppFontId(data.app_font_id)
 }
 
-/** 행이 없으면 삽입 후 기본 글꼴을 돌려줍니다. */
+/** 행이 없으면 삽입 후 기본 글꼴을 돌려줍니다. (사용자 설정 저장 시에만 호출) */
 export async function ensureUserAppFontRow(
   userId: string,
 ): Promise<AppFontChoiceId> {
@@ -53,19 +53,11 @@ export async function upsertUserAppFontId(
   if (error) throw error
 }
 
-/** 서버에 레거시 글꼴이 있으면 spoqa로 정리하고 화면에 고정 글꼴을 적용합니다. */
+/** 로그인 시 글꼴만 로컬 적용 — 서버 user_preferences는 읽지·쓰지 않음 */
 export async function loadAndApplyUserAppFont(userId: string): Promise<void> {
+  void userId
   applyAppFontsToDocument()
   setStoredAppFontId(DEFAULT_FONT)
-
-  try {
-    const id = await ensureUserAppFontRow(userId)
-    if (id !== DEFAULT_FONT) {
-      await upsertUserAppFontId(userId, DEFAULT_FONT)
-    }
-  } catch {
-    /* DB 미적용·마이그레이션 전 */
-  }
 }
 
 export async function loadAndApplyUserAppFontSafe(

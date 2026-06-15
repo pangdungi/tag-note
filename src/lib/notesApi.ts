@@ -219,6 +219,50 @@ export async function fetchTagParentLinks(): Promise<TagParentLink[]> {
   return (data ?? []) as TagParentLink[]
 }
 
+/** 태그별 메모 개수 (note_tags 전체 집계) */
+export async function fetchTagMemoCounts(): Promise<Record<string, number>> {
+  const { data, error } = await supabase.from('note_tags').select('tag_id')
+  if (error) throw error
+  const counts: Record<string, number> = {}
+  for (const row of data ?? []) {
+    const tagId = (row as { tag_id: string }).tag_id
+    if (!tagId) continue
+    counts[tagId] = (counts[tagId] ?? 0) + 1
+  }
+  return counts
+}
+
+/** 출처별 연결된 태그 종류 수 (source_id 있는 메모만) */
+export async function fetchSourceDistinctTagCounts(): Promise<
+  Record<string, number>
+> {
+  const { data, error } = await supabase
+    .from('notes')
+    .select('source_id, note_tags ( tag_id )')
+    .not('source_id', 'is', null)
+  if (error) throw error
+  const bySource = new Map<string, Set<string>>()
+  for (const row of data ?? []) {
+    const sid = (row as { source_id: string | null }).source_id
+    if (!sid) continue
+    const nts =
+      (row as { note_tags?: { tag_id: string }[] }).note_tags ?? []
+    let set = bySource.get(sid)
+    if (!set) {
+      set = new Set()
+      bySource.set(sid, set)
+    }
+    for (const nt of nts) {
+      if (nt.tag_id) set.add(nt.tag_id)
+    }
+  }
+  const counts: Record<string, number> = {}
+  for (const [sid, set] of bySource) {
+    counts[sid] = set.size
+  }
+  return counts
+}
+
 export async function fetchSources(): Promise<SourceRow[]> {
   const { data, error } = await supabase
     .from('sources')
@@ -1510,17 +1554,6 @@ export async function updateNoteWithTags(
     }
   }
 
-  const { data: priorRow, error: priorErr } = await supabase
-    .from('notes')
-    .select('source_id')
-    .eq('id', noteId)
-    .single()
-  if (priorErr) {
-    logNoteSaveError('update', 'notes source_id select', meta, priorErr)
-    throw priorErr
-  }
-  const priorSourceId = (priorRow as { source_id: string | null }).source_id
-
   const { data: note, error: uErr } = await supabase
     .from('notes')
     .update({
@@ -1580,37 +1613,12 @@ export async function updateNoteWithTags(
   }
 
   console.info('[태그노트] 메모 update 성공', meta)
-  const newSourceId = sourceRef?.id ?? null
-  if (priorSourceId && priorSourceId !== newSourceId) {
-    try {
-      await deleteSourceIfOrphan(priorSourceId)
-    } catch (error) {
-      console.warn('[태그노트] 고아 출처 정리 실패', { priorSourceId, noteId }, error)
-    }
-  }
   return buildNoteWithTags(noteRow, tagLinks, sourceRef)
 }
 
 export async function deleteNote(noteId: string): Promise<void> {
-  const { data: priorRow, error: priorErr } = await supabase
-    .from('notes')
-    .select('source_id')
-    .eq('id', noteId)
-    .maybeSingle()
-  if (priorErr) throw priorErr
-  const priorSourceId = (priorRow as { source_id: string | null } | null)
-    ?.source_id
-
   const { error } = await supabase.from('notes').delete().eq('id', noteId)
   if (error) throw error
-
-  if (priorSourceId) {
-    try {
-      await deleteSourceIfOrphan(priorSourceId)
-    } catch (error) {
-      console.warn('[태그노트] 고아 출처 정리 실패', { priorSourceId, noteId }, error)
-    }
-  }
 }
 
 /** 태그 이름 수정 (본인 소유 행만 RLS) */
@@ -1661,12 +1669,6 @@ export async function deleteTagAndLinkedNotes(
 
   const { error: tErr } = await supabase.from('tags').delete().eq('id', tagId)
   if (tErr) throw tErr
-
-  try {
-    await pruneAllOrphanSources()
-  } catch (error) {
-    console.warn('[태그노트] 태그 삭제 후 고아 출처 정리 실패', { tagId }, error)
-  }
 
   return { deletedTagId: tagId, deletedNoteIds: noteIds }
 }

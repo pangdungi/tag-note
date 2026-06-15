@@ -1,26 +1,20 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthProvider'
 import { useAuth } from './contexts/useAuth'
-import { useLoadingUiMountLog } from './lib/loadingUiMountLog'
+import { AppSplashScreen } from './components/AppSplashScreen'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { RecoveryPage } from './pages/RecoveryPage'
-
-function AppFullScreenLoading({ where }: { where: string }) {
-  useLoadingUiMountLog(where)
-  return (
-    <div className="app-loading" role="status">
-      불러오는 중…
-    </div>
-  )
-}
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
 
   if (loading) {
     return (
-      <AppFullScreenLoading where="App · PrivateRoute(/) · auth.loading===true" />
+      <AppSplashScreen
+        message="로그인 상태 확인 중…"
+        where="App · PrivateRoute(/) · auth.loading"
+      />
     )
   }
   if (!session) return <Navigate to="/login" replace />
@@ -32,7 +26,10 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <AppFullScreenLoading where="App · PublicOnly(/login) · auth.loading===true" />
+      <AppSplashScreen
+        message="로그인 화면 준비 중…"
+        where="App · PublicOnly(/login) · auth.loading"
+      />
     )
   }
   if (session) return <Navigate to="/" replace />

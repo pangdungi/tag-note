@@ -9,16 +9,18 @@ import { HomeBrowseNavButtons, HomeMobileBrowseFab, type HomeBrowseNavId } from 
 import { HomeSearchResultsRail } from '../components/HomeSearchResultsRail'
 import { EditNoteModal } from '../components/EditNoteModal'
 import { NoteViewModal } from '../components/NoteViewModal'
+import { AppSplashScreen } from '../components/AppSplashScreen'
 import { AddNoteModal } from '../components/AddNoteModal'
 import { TagNotesPullStatus } from '../components/TagNotesPullStatus'
 import { useAuth } from '../contexts/useAuth'
 import {
   createNoteWithTags,
-  ensureStarterTagsIfEmpty,
   fetchNoteWithTagsById,
   fetchNotesPage,
   fetchNotesForMainSearch,
   fetchSourcesInUse,
+  fetchSourceDistinctTagCounts,
+  fetchTagMemoCounts,
   fetchTags,
   fetchTagParentLinks,
   filterSourcesByQuery,
@@ -31,7 +33,6 @@ import {
   mapNotesWithRenamedSource,
   noteBodyMatchesMainSearch,
   noteSourceLabel,
-  pruneAllOrphanSources,
   supabaseErrorMessage,
   syncNotesStateAfterSourceSelectionPull,
   syncNotesStateAfterTagSelectionPull,
@@ -66,6 +67,10 @@ import { displaySourceTitle, sourceTitleKey } from '../lib/sourceUtils'
 import { useParentRailHorizontalTouch } from '../hooks/useParentRailHorizontalTouch'
 import { MemoBodyContent } from '../components/MemoBodyContent'
 import { MemoNoteEditor } from '../components/MemoNoteEditor'
+import {
+  readHomeSnapshotCache,
+  writeHomeSnapshotCache,
+} from '../lib/homeSnapshotCache'
 import { useLoadingUiMountLog } from '../lib/loadingUiMountLog'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { AccountModal } from '../components/AccountModal'
@@ -525,6 +530,12 @@ export function HomePage() {
   const [tagParentLinks, setTagParentLinks] = useState<TagParentLink[]>([])
   const [allSources, setAllSources] = useState<SourceRow[]>([])
   const [notes, setNotes] = useState<NoteWithTags[]>([])
+  const [tagMemoCountById, setTagMemoCountById] = useState<
+    Record<string, number>
+  >({})
+  const [sourceTagCountById, setSourceTagCountById] = useState<
+    Record<string, number>
+  >({})
   const [tagNotesHasMore, setTagNotesHasMore] = useState(false)
   const [sourceNotesHasMore, setSourceNotesHasMore] = useState(false)
   const [tagNotesLoadingMore, setTagNotesLoadingMore] = useState(false)
@@ -589,60 +600,79 @@ export function HomePage() {
     new Map<string, Promise<SelectionPullResult>>(),
   )
 
-  const fetchHomeSnapshot = useCallback(async (uid: string) => {
-    const [tags, links, notePage] = await Promise.all([
-      fetchTags(),
-      fetchTagParentLinks(),
-      fetchNotesPage(),
-    ])
-    const tagsAfterStarter =
-      tags.length === 0 ? await ensureStarterTagsIfEmpty(uid) : tags
-    try {
-      await pruneAllOrphanSources()
-    } catch (e) {
-      console.warn('[태그노트] 고아 출처 정리 실패', e)
-    }
+  const fetchHomeSnapshot = useCallback(async () => {
+    const [tags, links, notePage, tagMemoCounts, sourceTagCounts] =
+      await Promise.all([
+        fetchTags(),
+        fetchTagParentLinks(),
+        fetchNotesPage(),
+        fetchTagMemoCounts(),
+        fetchSourceDistinctTagCounts(),
+      ])
     const sources = await fetchSourcesInUse()
     return {
-      tags: tagsAfterStarter,
+      tags,
       tagParentLinks: links,
       sources,
       notes: notePage.notes,
+      tagMemoCounts,
+      sourceTagCounts,
     }
   }, [])
 
   const loadData = useCallback(
-    async (opts?: { showGridLoading?: boolean }) => {
+    async (opts?: { showGridLoading?: boolean; background?: boolean }) => {
       const uid = user?.id ?? null
       if (!uid) {
         setLoading(false)
         return
       }
       const showGrid =
-        opts?.showGridLoading ?? !homeDataInitialLoadDoneRef.current
+        opts?.showGridLoading ??
+        (!opts?.background && !homeDataInitialLoadDoneRef.current)
       if (showGrid) {
         setLoading(true)
       }
       try {
-        const { tags, tagParentLinks: links, sources, notes: noteRows } =
-          await fetchHomeSnapshot(uid)
+        const {
+          tags,
+          tagParentLinks: links,
+          sources,
+          notes: noteRows,
+          tagMemoCounts,
+          sourceTagCounts,
+        } = await fetchHomeSnapshot()
         setAllTags(tags)
         setTagParentLinks(links)
         setAllSources(sources)
         setNotes(noteRows)
-        setTagNotesHasMore(false)
-        setSourceNotesHasMore(false)
-        tagPullCacheRef.current.clear()
-        sourcePullCacheRef.current.clear()
+        setTagMemoCountById(tagMemoCounts)
+        setSourceTagCountById(sourceTagCounts)
+        if (!opts?.background) {
+          setTagNotesHasMore(false)
+          setSourceNotesHasMore(false)
+          tagPullCacheRef.current.clear()
+          sourcePullCacheRef.current.clear()
+        }
+        writeHomeSnapshotCache(uid, {
+          tags,
+          tagParentLinks: links,
+          sources,
+          notes: noteRows,
+          tagMemoCounts,
+          sourceTagCounts,
+        })
         setSaveError(null)
         setLoadError(null)
         setSearchError(null)
         homeDataInitialLoadDoneRef.current = true
       } catch (e) {
         console.error('[태그노트] HomePage 초기 불러오기 실패', e)
-        setLoadError(
-          supabaseErrorMessage(e, '알 수 없는 오류로 불러오지 못했습니다.'),
-        )
+        if (!opts?.background) {
+          setLoadError(
+            supabaseErrorMessage(e, '알 수 없는 오류로 불러오지 못했습니다.'),
+          )
+        }
       } finally {
         if (showGrid) {
           setLoading(false)
@@ -666,7 +696,6 @@ export function HomePage() {
 
   const refreshSourcesInUse = useCallback(async () => {
     try {
-      await pruneAllOrphanSources()
       const sources = await fetchSourcesInUse()
       setAllSources(sources)
       setSelectedSourceId((cur) =>
@@ -674,6 +703,19 @@ export function HomePage() {
       )
     } catch (e) {
       console.warn('[태그노트] 출처 목록 갱신 실패', e)
+    }
+  }, [])
+
+  const refreshHomeTagCounts = useCallback(async () => {
+    try {
+      const [tagMemoCounts, sourceTagCounts] = await Promise.all([
+        fetchTagMemoCounts(),
+        fetchSourceDistinctTagCounts(),
+      ])
+      setTagMemoCountById(tagMemoCounts)
+      setSourceTagCountById(sourceTagCounts)
+    } catch (e) {
+      console.warn('[태그노트] 태그·출처 개수 갱신 실패', e)
     }
   }, [])
 
@@ -691,31 +733,41 @@ export function HomePage() {
       sourcePullCacheRef.current.clear()
       setTagSearch('')
       setSaveError(null)
+      void refreshHomeTagCounts()
     },
-    [],
+    [refreshHomeTagCounts],
   )
 
   const applyNoteRemoved = useCallback((noteId: string) => {
     setNotes((prev) => prev.filter((n) => n.id !== noteId))
     tagPullCacheRef.current.clear()
     sourcePullCacheRef.current.clear()
-  }, [])
+    void refreshHomeTagCounts()
+  }, [refreshHomeTagCounts])
 
-  const applyNoteUpdated = useCallback((note: NoteWithTags) => {
-    setNotes((prev) => prev.map((n) => (n.id === note.id ? note : n)))
-    setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
-    setAllSources((prev) => mergeSourcesFromNoteIntoAllSources(prev, note))
-    tagPullCacheRef.current.clear()
-    sourcePullCacheRef.current.clear()
-    setSaveError(null)
-  }, [])
+  const applyNoteUpdated = useCallback(
+    (note: NoteWithTags) => {
+      setNotes((prev) => prev.map((n) => (n.id === note.id ? note : n)))
+      setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
+      setAllSources((prev) => mergeSourcesFromNoteIntoAllSources(prev, note))
+      tagPullCacheRef.current.clear()
+      sourcePullCacheRef.current.clear()
+      setSaveError(null)
+      void refreshHomeTagCounts()
+    },
+    [refreshHomeTagCounts],
+  )
 
-  const applyNoteDeleted = useCallback((noteId: string) => {
-    setNotes((prev) => prev.filter((n) => n.id !== noteId))
-    tagPullCacheRef.current.clear()
-    sourcePullCacheRef.current.clear()
-    setEditingNote((cur) => (cur?.id === noteId ? null : cur))
-  }, [])
+  const applyNoteDeleted = useCallback(
+    (noteId: string) => {
+      setNotes((prev) => prev.filter((n) => n.id !== noteId))
+      tagPullCacheRef.current.clear()
+      sourcePullCacheRef.current.clear()
+      setEditingNote((cur) => (cur?.id === noteId ? null : cur))
+      void refreshHomeTagCounts()
+    },
+    [refreshHomeTagCounts],
+  )
 
   /** 실패·동기화 시 서버 기준으로 메모 한 건만 다시 불러옴 (로컬 롤백 없음) */
   const syncNoteFromServer = useCallback(
@@ -906,13 +958,29 @@ export function HomePage() {
   )
 
   useEffect(() => {
-    homeDataInitialLoadDoneRef.current = false
-  }, [user?.id])
+    const uid = user?.id ?? null
+    if (!uid) {
+      setLoading(false)
+      return
+    }
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 초기/세션 전환 시 Supabase 페치
-    void loadData()
-  }, [loadData])
+    homeDataInitialLoadDoneRef.current = false
+    const cached = readHomeSnapshotCache(uid)
+    if (cached) {
+      setAllTags(cached.tags)
+      setTagParentLinks(cached.tagParentLinks)
+      setAllSources(cached.sources)
+      setNotes(cached.notes)
+      setTagMemoCountById(cached.tagMemoCounts)
+      setSourceTagCountById(cached.sourceTagCounts)
+      homeDataInitialLoadDoneRef.current = true
+      setLoading(false)
+      void loadData({ background: true })
+      return
+    }
+
+    void loadData({ showGridLoading: true })
+  }, [user?.id, loadData])
 
   useEffect(() => {
     if (!selectedTagId) {
@@ -1671,39 +1739,15 @@ export function HomePage() {
     return map
   }, [allTags, tagParentLinks])
 
-  const tagMemoCounts = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const note of notes) {
-      for (const nt of note.note_tags) {
-        const id = nt.tags?.id ?? nt.tag_id
-        if (!id) continue
-        map.set(id, (map.get(id) ?? 0) + 1)
-      }
-    }
-    return map
-  }, [notes])
+  const tagMemoCounts = useMemo(
+    () => new Map(Object.entries(tagMemoCountById)),
+    [tagMemoCountById],
+  )
 
-  const sourceTagCounts = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const source of allSources) {
-      const tagIds = new Set<string>()
-      for (const note of notes) {
-        const sid = note.source_id ?? note.sources?.id
-        const matches =
-          sid === source.id ||
-          (!sid &&
-            sourceTitleKey(noteSourceLabel(note)) ===
-              sourceTitleKey(source.title))
-        if (!matches) continue
-        for (const nt of note.note_tags) {
-          const id = nt.tags?.id ?? nt.tag_id
-          if (id) tagIds.add(id)
-        }
-      }
-      map.set(source.id, tagIds.size)
-    }
-    return map
-  }, [allSources, notes])
+  const sourceTagCounts = useMemo(
+    () => new Map(Object.entries(sourceTagCountById)),
+    [sourceTagCountById],
+  )
 
   const notesForLinkModeTag = useMemo(() => {
     if (homeBrowseNav !== 'links' || !selectedTagId || !selectedSourceId) {
@@ -2002,6 +2046,15 @@ export function HomePage() {
     }
     setViewingNote(null)
     setSearchOpen(false)
+  }
+
+  if (loading && !loadError) {
+    return (
+      <AppSplashScreen
+        message="태그와 메모를 불러오는 중…"
+        where="HomePage · initial-data-load"
+      />
+    )
   }
 
   return (

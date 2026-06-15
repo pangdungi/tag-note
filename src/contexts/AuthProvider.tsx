@@ -25,6 +25,7 @@ import {
 } from '../lib/subscriptionsApi'
 import { loadAndApplyUserAppFontSafe } from '../lib/userPreferencesApi'
 import { resetAppFontForSignedOut } from '../lib/appFont'
+import { clearHomeSnapshotCache } from '../lib/homeSnapshotCache'
 import { AuthContext } from './auth-context'
 
 function isLocalAppHostname(): boolean {
@@ -100,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!next?.user) {
         setSubscription(null)
         setSession(null)
+        clearHomeSnapshotCache()
         resetAppFontForSignedOut()
         return
       }
@@ -138,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         (!sub || !canAccessWithSubscription(sub))
       ) {
         await supabase.auth.signOut()
+        clearHomeSnapshotCache(next.user.id)
         if (!sub) {
           setMissingSubscriptionNotice()
         } else {
@@ -325,6 +328,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         (!sub || !canAccessWithSubscription(sub))
       ) {
         await supabase.auth.signOut()
+        clearHomeSnapshotCache(data.user.id)
         setSubscription(null)
         setSession(null)
         resetAppFontForSignedOut()
@@ -521,11 +525,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signOut = useCallback(async () => {
+    const uid = session?.user?.id
     await supabase.auth.signOut()
+    if (uid) clearHomeSnapshotCache(uid)
     setSubscription(null)
     setSession(null)
     resetAppFontForSignedOut()
-  }, [])
+  }, [session])
 
   const refreshSubscription = useCallback(async () => {
     const uid = session?.user?.id
@@ -545,6 +551,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (!sub || !canAccessWithSubscription(sub))
     ) {
       await supabase.auth.signOut()
+      clearHomeSnapshotCache(uid)
       if (!sub) setMissingSubscriptionNotice()
       else setExpiryNoticeAndSignOut()
       setSubscription(null)
