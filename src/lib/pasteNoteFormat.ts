@@ -129,11 +129,7 @@ export function applyStructuredNotePaste(
 
   const before = currentBody.slice(0, selectionStart)
   const after = currentBody.slice(selectionEnd)
-  const glueBefore = before.length > 0 && parsed.body && !before.endsWith('\n') ? '\n\n' : ''
-  const glueAfter = after.length > 0 && parsed.body && !after.startsWith('\n') ? '\n\n' : ''
-  const newBody = cleanPastedMemoText(
-    `${before}${glueBefore}${parsed.body}${glueAfter}${after}`,
-  )
+  const newBody = cleanPastedMemoText(`${before}${parsed.body}${after}`)
 
   let newSource = currentSource
   if (parsed.source) {
@@ -172,9 +168,5 @@ export function onStructuredNoteBodyPaste(
   e.preventDefault()
   const before = body.slice(0, selectionStart)
   const after = body.slice(selectionEnd)
-  const glueBefore =
-    before.length > 0 && cleaned && !before.endsWith('\n') ? '\n\n' : ''
-  const glueAfter =
-    after.length > 0 && cleaned && !after.startsWith('\n') ? '\n\n' : ''
-  setBody(cleanPastedMemoText(`${before}${glueBefore}${cleaned}${glueAfter}${after}`))
+  setBody(cleanPastedMemoText(`${before}${cleaned}${after}`))
 }

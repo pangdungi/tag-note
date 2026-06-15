@@ -15,7 +15,10 @@ import {
   memoBodyFromEditor,
   memoBodyToEditorHtml,
   normalizeMemoBodyStorage,
+  reconcileMemoEditorShortcuts,
+  serializedLengthOfMemoPrefix,
   serializedOffsetInEditor,
+  setSelectionAtSerializedOffset,
 } from '../lib/memoQuickEmojis'
 import { MemoEmojiBar } from './MemoEmojiBar'
 
@@ -54,13 +57,21 @@ export function MemoNoteEditor({
   const fallbackId = useId()
   const editorId = id ?? fallbackId
 
-  const syncEditorFromValue = useCallback((body: string) => {
-    const el = editorRef.current
-    if (!el) return
-    const normalized = applyMemoTextShortcuts(body)
-    lastSerializedRef.current = normalized
-    el.innerHTML = normalized ? memoBodyToEditorHtml(normalized) : ''
-  }, [])
+  const syncEditorFromValue = useCallback(
+    (body: string, cursorOffset?: number) => {
+      const el = editorRef.current
+      if (!el) return
+      const normalized = applyMemoTextShortcuts(body)
+      lastSerializedRef.current = normalized
+      el.innerHTML = normalized ? memoBodyToEditorHtml(normalized) : ''
+      if (cursorOffset != null) {
+        requestAnimationFrame(() => {
+          setSelectionAtSerializedOffset(el, cursorOffset)
+        })
+      }
+    },
+    [],
+  )
 
   useLayoutEffect(() => {
     if (lastSerializedRef.current === value) {
@@ -79,12 +90,44 @@ export function MemoNoteEditor({
   const emitChange = useCallback(() => {
     const el = editorRef.current
     if (!el) return
-    const next = applyMemoTextShortcuts(
-      normalizeMemoBodyStorage(memoBodyFromEditor(el)),
-    )
+    const next = reconcileMemoEditorShortcuts(el)
     lastSerializedRef.current = next
     onChange(next)
   }, [onChange])
+
+  const getEditorSelectionOffsets = useCallback((el: HTMLDivElement) => {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) {
+      const len = memoBodyFromEditor(el).length
+      return { start: len, end: len }
+    }
+    const anchor = sel.anchorNode
+    const focus = sel.focusNode
+    if (
+      !anchor ||
+      !focus ||
+      !el.contains(anchor) ||
+      !el.contains(focus)
+    ) {
+      const len = memoBodyFromEditor(el).length
+      return { start: len, end: len }
+    }
+    const anchorOffset = serializedOffsetInEditor(
+      el,
+      anchor,
+      sel.anchorOffset,
+    )
+    const focusOffset = serializedOffsetInEditor(el, focus, sel.focusOffset)
+    return {
+      start: Math.min(anchorOffset, focusOffset),
+      end: Math.max(anchorOffset, focusOffset),
+    }
+  }, [])
+
+  const normalizePastePlainText = (raw: string) =>
+    applyMemoTextShortcuts(
+      cleanPastedMemoText(raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n')),
+    )
 
   const handleInput = () => {
     if (isComposingRef.current) return
@@ -111,57 +154,44 @@ export function MemoNoteEditor({
     const pasted = e.clipboardData.getData('text/plain')
     if (!pasted) return
 
-    const currentBody = value
-    let selectionStart = currentBody.length
-    let selectionEnd = currentBody.length
+    e.preventDefault()
 
-    const sel = window.getSelection()
-    if (sel && sel.rangeCount > 0) {
-      const anchor = sel.anchorNode
-      const focus = sel.focusNode
-      if (anchor && focus && el.contains(anchor) && el.contains(focus)) {
-        const start = serializedOffsetInEditor(el, anchor, sel.anchorOffset)
-        const end = serializedOffsetInEditor(el, focus, sel.focusOffset)
-        selectionStart = Math.min(start, end)
-        selectionEnd = Math.max(start, end)
-      }
-    }
+    const currentBody = normalizeMemoBodyStorage(memoBodyFromEditor(el))
+    const { start: selectionStart, end: selectionEnd } =
+      getEditorSelectionOffsets(el)
 
-    const result = applyStructuredNotePaste(
+    const structured = applyStructuredNotePaste(
       currentBody,
       source,
       pasted,
       selectionStart,
       selectionEnd,
     )
-    if (result.handled) {
-      e.preventDefault()
-      syncEditorFromValue(result.body)
-      onChange(result.body)
-      if (result.source && onSourceChange) {
-        onSourceChange(result.source)
+    if (structured.handled) {
+      const tailLen = currentBody.length - selectionEnd
+      const normalized = applyMemoTextShortcuts(structured.body)
+      const cursorOffset = serializedLengthOfMemoPrefix(
+        structured.body.slice(0, structured.body.length - tailLen),
+      )
+      syncEditorFromValue(normalized, cursorOffset)
+      onChange(normalized)
+      if (structured.source && onSourceChange) {
+        onSourceChange(structured.source)
       }
       return
     }
 
-    const cleaned = cleanPastedMemoText(pasted)
-    if (cleaned !== pasted) {
-      e.preventDefault()
-      const before = currentBody.slice(0, selectionStart)
-      const after = currentBody.slice(selectionEnd)
-      const glueBefore =
-        before.length > 0 && cleaned && !before.endsWith('\n') ? '\n\n' : ''
-      const glueAfter =
-        after.length > 0 && cleaned && !after.startsWith('\n') ? '\n\n' : ''
-      const newBody = cleanPastedMemoText(
-        `${before}${glueBefore}${cleaned}${glueAfter}${after}`,
-      )
-      syncEditorFromValue(newBody)
-      onChange(newBody)
-      return
-    }
-
-    window.setTimeout(() => emitChange(), 0)
+    const insertText = normalizePastePlainText(pasted)
+    const pastePrefix = `${currentBody.slice(0, selectionStart)}${insertText}`
+    const newBody = normalizeMemoBodyStorage(
+      applyMemoTextShortcuts(
+        `${pastePrefix}${currentBody.slice(selectionEnd)}`,
+      ),
+    )
+    const normalized = applyMemoTextShortcuts(newBody)
+    const cursorOffset = serializedLengthOfMemoPrefix(pastePrefix)
+    syncEditorFromValue(normalized, cursorOffset)
+    onChange(normalized)
   }
 
   const boxHeight = `${Math.max(rows, 3) * 1.5 + 1.5}rem`
