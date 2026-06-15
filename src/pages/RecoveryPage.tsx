@@ -4,6 +4,7 @@ import { supabase, isSupabaseConfigured, isSupabaseAnonKeyPlausible } from '../l
 import { userFacingAuthMessage } from '../lib/authUserMessages'
 import { AUTH_SUCCESS_NOTICE_KEY } from '../lib/subscription'
 import { useAuth } from '../contexts/useAuth'
+import { AppBrand } from '../components/AppBrand'
 
 export function RecoveryPage() {
   const navigate = useNavigate()
@@ -62,7 +63,7 @@ export function RecoveryPage() {
       </div>
 
       <div className="auth-stack">
-        <span className="auth-mark">#태그노트</span>
+        <AppBrand />
         <main className="auth-card">
           <h1 className="auth-title">새 비밀번호 설정</h1>
           <p className="auth-sub">

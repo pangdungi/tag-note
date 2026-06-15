@@ -1,67 +1,50 @@
-/** UI 글꼴 선택 (localStorage + :root CSS 변수). */
+/** 앱 글꼴 — 스포카(본문·UI) + 도스고딕(태그·스파인)만 사용 */
 
 export const APP_FONT_STORAGE_KEY = 'tag-note-app-font-v1'
 
-export type AppFontChoiceId =
-  | 'system'
-  | 'leeseoyun'
-  | 'donoun_medium'
-  | 'adultkid'
-  | 'pak_yong_jun'
-
-export type AppFontOption = {
-  id: AppFontChoiceId
-  label: string
-  /** `font-family` 값 */
-  cssStack: string
-}
-
 const SYSTEM_STACK = `-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif`
 
-export const APP_FONT_OPTIONS: AppFontOption[] = [
-  {
-    id: 'system',
-    label: '시스템 기본 (Apple)',
-    cssStack: SYSTEM_STACK,
-  },
-  {
-    id: 'leeseoyun',
-    label: '이서윤체',
-    cssStack: `'TagNote LeeSeoyun', ${SYSTEM_STACK}`,
-  },
-  {
-    id: 'donoun_medium',
-    label: 'Donoun Medium',
-    cssStack: `'TagNote DonounMedium', ${SYSTEM_STACK}`,
-  },
-  {
-    id: 'adultkid',
-    label: '어른아이 (Adultkid)',
-    cssStack: `'TagNote Adultkid', ${SYSTEM_STACK}`,
-  },
-  {
-    id: 'pak_yong_jun',
-    label: '박용준 손글씨',
-    cssStack: `'TagNote PakYongJun', ${SYSTEM_STACK}`,
-  },
-]
+export const SPOQA_STACK = `'TagNote SpoqaHanSansNeo', ${SYSTEM_STACK}`
+export const DOS_GOTHIC_STACK = `'TagNote DOSGothic', ${SYSTEM_STACK}`
 
-const DEFAULT_ID: AppFontChoiceId = 'system'
+/** 레거시 localStorage·DB 값 → 스포카로 정리 */
+const LEGACY_FONT_IDS = new Set([
+  'system',
+  'leeseoyun',
+  'donoun_medium',
+  'adultkid',
+  'pak_yong_jun',
+])
 
-const VALID_IDS = new Set(APP_FONT_OPTIONS.map((o) => o.id))
+export type AppFontChoiceId = 'spoqa' | 'dos_gothic'
 
 export function isAppFontChoiceId(v: string): v is AppFontChoiceId {
-  return VALID_IDS.has(v as AppFontChoiceId)
+  return v === 'spoqa' || v === 'dos_gothic'
+}
+
+export function normalizeLegacyAppFontId(v: string | null | undefined): AppFontChoiceId {
+  if (v === 'dos_gothic') return 'dos_gothic'
+  if (v === 'spoqa') return 'spoqa'
+  if (v && LEGACY_FONT_IDS.has(v)) return 'spoqa'
+  return 'spoqa'
+}
+
+/** 본문·입력·UI = 스포카, 태그·스파인·placeholder = 도스고딕 */
+export function applyAppFontsToDocument(): void {
+  const root = document.documentElement.style
+  root.setProperty('--app-font-family', SPOQA_STACK)
+  root.setProperty('--memo-font-family', SPOQA_STACK)
+  root.setProperty('--spine-font-family', DOS_GOTHIC_STACK)
+  root.setProperty('--tag-font-family', DOS_GOTHIC_STACK)
 }
 
 export function getStoredAppFontId(): AppFontChoiceId {
   try {
     const raw = localStorage.getItem(APP_FONT_STORAGE_KEY)
-    if (raw && isAppFontChoiceId(raw)) return raw
+    return normalizeLegacyAppFontId(raw)
   } catch {
-    /* ignore */
+    return 'spoqa'
   }
-  return DEFAULT_ID
 }
 
 export function setStoredAppFontId(id: AppFontChoiceId): void {
@@ -72,24 +55,16 @@ export function setStoredAppFontId(id: AppFontChoiceId): void {
   }
 }
 
-export function getAppFontCssStack(id: AppFontChoiceId): string {
-  return APP_FONT_OPTIONS.find((o) => o.id === id)?.cssStack ?? SYSTEM_STACK
+/** @deprecated 항상 스포카·도스고딕 고정 적용 */
+export function applyAppFontToDocument(_id?: AppFontChoiceId): void {
+  applyAppFontsToDocument()
 }
 
-/** `:root`의 `--app-font-family`를 갱신해 앱 전체 기본 글꼴을 바꿉니다. */
-export function applyAppFontToDocument(id: AppFontChoiceId): void {
-  document.documentElement.style.setProperty(
-    '--app-font-family',
-    getAppFontCssStack(id),
-  )
-}
-
-/** 로그아웃 후 로그인 화면 등: 로컬 캐시를 시스템 글꼴로 맞춤 */
 export function resetAppFontForSignedOut(): void {
   try {
-    localStorage.setItem(APP_FONT_STORAGE_KEY, DEFAULT_ID)
+    localStorage.setItem(APP_FONT_STORAGE_KEY, 'spoqa')
   } catch {
     /* ignore */
   }
-  applyAppFontToDocument(DEFAULT_ID)
+  applyAppFontsToDocument()
 }

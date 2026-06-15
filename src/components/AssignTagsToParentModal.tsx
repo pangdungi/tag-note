@@ -3,23 +3,30 @@ import {
   assignTagsToParent,
   createChildTag,
   filterTagsByMainSearch,
+  type TagParentLink,
   type TagRow,
 } from '../lib/notesApi'
 import {
+  applyTagsAddedToParent,
   canAssignTagToParent,
   displayTagName,
   getChildTags,
   normalizeTagInput,
-  TAG_COLOR_COUNT,
+  type TagParentLink as TagParentLinkUtil,
 } from '../lib/tagUtils'
 
 type Props = {
   open: boolean
   parentTag: TagRow | null
   tags: TagRow[]
+  tagParentLinks: TagParentLink[]
   userId: string
   onClose: () => void
   onAssigned: (rows: TagRow[]) => void
+  onAssignedOptimistic?: (payload: {
+    tags: TagRow[]
+    links: TagParentLink[]
+  }) => void
   onError?: (message: string) => void
 }
 
@@ -27,9 +34,11 @@ export function AssignTagsToParentModal({
   open,
   parentTag,
   tags,
+  tagParentLinks,
   userId,
   onClose,
   onAssigned,
+  onAssignedOptimistic,
   onError,
 }: Props) {
   const titleId = useId()
@@ -40,12 +49,14 @@ export function AssignTagsToParentModal({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
+  const links = tagParentLinks as TagParentLinkUtil[]
+
   const assignableTags = useMemo(() => {
     if (!parentTag) return []
     return tags
-      .filter((t) => canAssignTagToParent(t, parentTag.id, tags))
+      .filter((t) => canAssignTagToParent(t, parentTag.id, tags, links))
       .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-  }, [parentTag, tags])
+  }, [parentTag, tags, links])
 
   const filteredAssignableTags = useMemo(
     () => filterTagsByMainSearch(assignableTags, pickSearch),
@@ -56,8 +67,8 @@ export function AssignTagsToParentModal({
 
   const existingChildren = useMemo(() => {
     if (!parentTag) return []
-    return getChildTags(parentTag.id, tags)
-  }, [parentTag, tags])
+    return getChildTags(parentTag.id, tags, links)
+  }, [parentTag, tags, links])
 
   useEffect(() => {
     if (!open || !parentTag) return
@@ -94,12 +105,12 @@ export function AssignTagsToParentModal({
       >
         <div className="tag-manage-head">
           <h2 id={titleId} className="tag-manage-title">
-            하위 태그 넣기
+            하위 태그 추가
           </h2>
           <button
             type="button"
             className="tag-manage-close"
-            aria-label="하위 태그 넣기 닫기"
+            aria-label="하위 태그 추가 닫기"
             onClick={() => onClose()}
           >
             ×
@@ -107,12 +118,11 @@ export function AssignTagsToParentModal({
         </div>
         <div className="edit-note-modal-body tag-manage-assign-body">
           <p className="tag-manage-hint">
-            <span
-              className={`tag-manage-pill tag-tone-${parentTag.color_index % TAG_COLOR_COUNT}`}
-            >
+            <span className="tag-manage-pill tag-manage-pill--parent">
               {displayTagName(parentTag.name)}
             </span>
-            {' '}아래에 넣을 태그를 고르거나 새로 만드세요.
+            {' '}아래에 둘 하위 태그를 고르거나 새로 만드세요. (상위·하위 2단계만
+            지원합니다.)
           </p>
 
           {existingChildren.length > 0 ? (
@@ -121,9 +131,7 @@ export function AssignTagsToParentModal({
               <ul className="tag-manage-assign-current">
                 {existingChildren.map((t) => (
                   <li key={t.id}>
-                    <span
-                      className={`tag-manage-pill tag-tone-${t.color_index % TAG_COLOR_COUNT}`}
-                    >
+                    <span className="tag-manage-pill">
                       {displayTagName(t.name)}
                     </span>
                   </li>
@@ -142,7 +150,7 @@ export function AssignTagsToParentModal({
               ) : null}
             </div>
             {assignableTags.length === 0 ? (
-              <p className="tag-manage-assign-empty">넣을 수 있는 독립 태그가 없습니다.</p>
+              <p className="tag-manage-assign-empty">넣을 수 있는 상위 미지정 태그가 없습니다.</p>
             ) : (
               <>
                 <div className="tag-manage-search-wrap tag-manage-assign-search-wrap">
@@ -193,9 +201,7 @@ export function AssignTagsToParentModal({
                               checked={checked}
                               onChange={() => toggleSelected(t.id)}
                             />
-                            <span
-                              className={`tag-manage-pill tag-tone-${t.color_index % TAG_COLOR_COUNT}`}
-                            >
+                            <span className="tag-manage-pill">
                               {displayTagName(t.name)}
                             </span>
                           </label>
@@ -239,22 +245,41 @@ export function AssignTagsToParentModal({
             onClick={() => {
               setError(null)
               setSaving(true)
+              const parentId = parentTag.id
+              const ids = [...selectedIds]
+              const childName = normalizeTagInput(newTagName)
+              const optimisticNewTag =
+                childName
+                  ? {
+                      id: `pending-child-${Date.now()}`,
+                      name: childName,
+                      color_index: 0,
+                      parent_id: parentId,
+                    }
+                  : undefined
+
+              onAssignedOptimistic?.(
+                applyTagsAddedToParent(
+                  parentId,
+                  ids,
+                  tags,
+                  links,
+                  optimisticNewTag,
+                ),
+              )
+              onClose()
               void (async () => {
                 try {
                   const updated: TagRow[] = []
-                  if (selectedIds.length > 0) {
-                    updated.push(
-                      ...(await assignTagsToParent(selectedIds, parentTag.id)),
-                    )
+                  if (ids.length > 0) {
+                    updated.push(...(await assignTagsToParent(ids, parentId)))
                   }
-                  const childName = normalizeTagInput(newTagName)
                   if (childName) {
                     updated.push(
-                      await createChildTag(newTagName, parentTag.id, userId),
+                      await createChildTag(newTagName, parentId, userId),
                     )
                   }
                   onAssigned(updated)
-                  onClose()
                 } catch (e) {
                   const message =
                     e instanceof Error

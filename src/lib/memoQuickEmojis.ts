@@ -1,11 +1,12 @@
 import arrowrightIcon from '../assets/memo-emojis/arrowright.svg'
-import bookIcon from '../assets/memo-emojis/book.svg'
 import checkIcon from '../assets/memo-emojis/check.svg'
-import lightbulbIcon from '../assets/memo-emojis/lightbulb.svg'
+import enterIcon from '../assets/memo-emojis/enter.svg'
+import faceIcon from '../assets/memo-emojis/face.svg'
 import musicIcon from '../assets/memo-emojis/music.svg'
 import noIcon from '../assets/memo-emojis/no.svg'
 import okIcon from '../assets/memo-emojis/ok.svg'
-import thinkingIcon from '../assets/memo-emojis/thinking.png'
+import startIcon from '../assets/memo-emojis/start.svg'
+import thinkingIcon from '../assets/memo-emojis/thinking.svg'
 import uncheckIcon from '../assets/memo-emojis/uncheck.svg'
 
 export type MemoQuickEmoji = {
@@ -18,9 +19,9 @@ export type MemoQuickEmoji = {
 
 export const MEMO_QUICK_EMOJIS: MemoQuickEmoji[] = [
   {
-    id: 'lightbulb',
-    label: '아이디어',
-    iconSrc: lightbulbIcon,
+    id: 'start',
+    label: '별',
+    iconSrc: startIcon,
     legacyUnicode: '💡',
   },
   {
@@ -30,10 +31,15 @@ export const MEMO_QUICK_EMOJIS: MemoQuickEmoji[] = [
     legacyUnicode: '👉🏻',
   },
   {
-    id: 'pencil',
-    label: '생각',
-    iconSrc: thinkingIcon,
-    legacyUnicode: '💭',
+    id: 'music',
+    label: '음악',
+    iconSrc: musicIcon,
+    legacyUnicode: '🎧',
+  },
+  {
+    id: 'enter',
+    label: '엔터',
+    iconSrc: enterIcon,
   },
   {
     id: 'uncheck',
@@ -47,22 +53,42 @@ export const MEMO_QUICK_EMOJIS: MemoQuickEmoji[] = [
     iconSrc: checkIcon,
     legacyUnicode: '✔️',
   },
+  {
+    id: 'ok',
+    label: '동그라미',
+    iconSrc: okIcon,
+    legacyUnicode: '⭕️',
+  },
   { id: 'no', label: '거절', iconSrc: noIcon, legacyUnicode: '❌' },
-  { id: 'ok', label: '동그라미', iconSrc: okIcon, legacyUnicode: '⭕️' },
-  { id: 'music', label: '음악', iconSrc: musicIcon, legacyUnicode: '🎧' },
-  { id: 'book', label: '책', iconSrc: bookIcon, legacyUnicode: '📘' },
+  {
+    id: 'thinking',
+    label: '생각',
+    iconSrc: thinkingIcon,
+    legacyUnicode: '💭',
+  },
+  { id: 'face', label: '얼굴', iconSrc: faceIcon },
 ]
+
+/** 예전 :m/lightbulb: 등 DB 토큰 → 새 아이콘 */
+const MEMO_EMOJI_LEGACY_IDS: Record<string, string> = {
+  lightbulb: 'start',
+  pencil: 'thinking',
+  book: 'face',
+}
 
 const MEMO_EMOJI_BY_ID = new Map(MEMO_QUICK_EMOJIS.map((e) => [e.id, e]))
 
-const MEMO_EMOJI_IDS = MEMO_QUICK_EMOJIS.map((e) => e.id).join('|')
+const MEMO_EMOJI_TOKEN_IDS = [
+  ...MEMO_QUICK_EMOJIS.map((e) => e.id),
+  ...Object.keys(MEMO_EMOJI_LEGACY_IDS),
+].join('|')
 
 /** 커서용 — 직렬화 시 제거 */
 export const MEMO_EDITOR_ZWSP = '\u200B'
 
-/** DB에 저장되는 짧은 토큰 — 예: :m/lightbulb: */
+/** DB에 저장되는 짧은 토큰 — 예: :m/start: */
 export const MEMO_EMOJI_TOKEN_RE = new RegExp(
-  `:m\\/(${MEMO_EMOJI_IDS}):`,
+  `:m\\/(${MEMO_EMOJI_TOKEN_IDS}):`,
   'g',
 )
 
@@ -85,7 +111,8 @@ export function applyMemoTextShortcuts(body: string): string {
 }
 
 export function memoEmojiById(id: string): MemoQuickEmoji | undefined {
-  return MEMO_EMOJI_BY_ID.get(id)
+  const resolved = MEMO_EMOJI_LEGACY_IDS[id] ?? id
+  return MEMO_EMOJI_BY_ID.get(resolved)
 }
 
 export type MemoBodySegment =
@@ -342,7 +369,7 @@ export function insertMemoEmojiInEditor(root: HTMLElement, id: string): boolean 
 export function normalizeMemoBodyStorage(body: string): string {
   return body
     .replace(
-      new RegExp(`(:m\\/(${MEMO_EMOJI_IDS}):)\\n+(?!\\n)`, 'g'),
+      new RegExp(`(:m\\/(${MEMO_EMOJI_TOKEN_IDS}):)\\n+(?!\\n)`, 'g'),
       '$1',
     )
     .replace(/\n{3,}/g, '\n\n')

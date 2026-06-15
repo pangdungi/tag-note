@@ -3,6 +3,7 @@ import { isSupabaseConfigured, isSupabaseAnonKeyPlausible } from '../lib/supabas
 import { userFacingAuthMessage } from '../lib/authUserMessages'
 import { AUTH_NOTICE_KEY, AUTH_SUCCESS_NOTICE_KEY } from '../lib/subscription'
 import { useAuth } from '../contexts/useAuth'
+import { AppBrand } from '../components/AppBrand'
 
 type Mode = 'login' | 'signup' | 'forgot'
 
@@ -91,14 +92,8 @@ export function LoginPage() {
 
   return (
     <div className="auth-shell">
-      <div className="auth-decor" aria-hidden>
-        <span className="tag tag-a">#아이디어</span>
-        <span className="tag tag-b">#사랑이란</span>
-        <span className="tag tag-c">#읽을거리</span>
-      </div>
-
       <div className="auth-stack">
-        <span className="auth-mark">#태그노트</span>
+        <AppBrand />
         <main className="auth-card">
           <h1 className="auth-title">
             {mode === 'login'

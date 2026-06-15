@@ -7,6 +7,7 @@ import {
   type SourceRow,
   type TagRow,
 } from '../lib/notesApi'
+import { normalizeTagInput } from '../lib/tagUtils'
 import { MemoNoteEditor } from './MemoNoteEditor'
 
 type SavedOptions = {
@@ -19,6 +20,9 @@ type Props = {
   onClose: () => void
   /** 열릴 때 태그칩에 미리 넣을 값(검색으로 새 태그 추가 등) */
   initialTags: SelectedTag[]
+  /** 상위태그 선택 중 + 로 열었을 때 — 입력 태그를 이 상위의 하위로 */
+  parentTagId?: string | null
+  parentTagName?: string | null
   allTags: TagRow[]
   allSources: SourceRow[]
   userId: string
@@ -32,6 +36,7 @@ function buildLocalPreviewNote(
   body: string,
   source: SelectedSource | null,
   tags: SelectedTag[],
+  parentTagId?: string | null,
 ): NoteWithTags {
   const srcTitle = source?.title.trim() ?? ''
   return {
@@ -49,6 +54,7 @@ function buildLocalPreviewNote(
         id: t.id ?? `pending-${t.name}`,
         name: t.name,
         color_index: t.color_index,
+        parent_id: t.id ? null : (parentTagId ?? null),
       },
     })),
   }
@@ -58,6 +64,8 @@ export function AddNoteModal({
   open,
   onClose,
   initialTags,
+  parentTagId = null,
+  parentTagName = null,
   allTags,
   allSources,
   userId,
@@ -101,6 +109,11 @@ export function AddNoteModal({
   const composerSaveReady =
     tags.length > 0 && body.trim().length > 0
 
+  const modalTitle =
+    parentTagId && parentTagName
+      ? normalizeTagInput(parentTagName)
+      : '메모 추가'
+
   return (
     <div className="tag-manage-overlay" role="presentation">
       <div className="tag-manage-backdrop" aria-hidden="true" />
@@ -112,12 +125,12 @@ export function AddNoteModal({
       >
         <div className="tag-manage-head">
           <h2 id={titleId} className="tag-manage-title">
-            메모 추가
+            {modalTitle}
           </h2>
           <button
             type="button"
             className="tag-manage-close"
-            aria-label="메모 추가 닫기"
+            aria-label={`${modalTitle} 닫기`}
             onClick={() => onClose()}
           >
             ×
@@ -204,6 +217,7 @@ export function AddNoteModal({
                   saveBody,
                   selectedSource,
                   tags,
+                  parentTagId,
                 )
                 void onSaved(preview)
                 onClose()
@@ -216,6 +230,7 @@ export function AddNoteModal({
                       [...allTags],
                       saveSource,
                       [...allSources],
+                      parentTagId ? { parentTagId } : undefined,
                     )
                     await onSaved(note, { replacingId: tempId })
                   } catch (e) {

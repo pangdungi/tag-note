@@ -4,18 +4,7 @@ import {
   accountSubscriptionLabel,
   type UserSubscriptionRow,
 } from '../lib/subscription'
-import {
-  APP_FONT_OPTIONS,
-  applyAppFontToDocument,
-  getStoredAppFontId,
-  setStoredAppFontId,
-  type AppFontChoiceId,
-} from '../lib/appFont'
 import { isSupabaseConfigured } from '../lib/supabase'
-import {
-  fetchUserAppFontId,
-  upsertUserAppFontId,
-} from '../lib/userPreferencesApi'
 import { deleteOwnAccount } from '../lib/accountApi'
 
 type Props = {
@@ -61,9 +50,6 @@ export function AccountModal({
 }: Props) {
   const titleId = useId()
   const [signingOut, setSigningOut] = useState(false)
-  const [appFontId, setAppFontId] = useState<AppFontChoiceId>(() =>
-    getStoredAppFontId(),
-  )
   const [withdrawPhase, setWithdrawPhase] = useState<'idle' | 'confirm'>('idle')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -86,26 +72,6 @@ export function AccountModal({
     setDeleteBusy(false)
     void onAfterOpen()
   }, [open, onAfterOpen])
-
-  useEffect(() => {
-    if (!open || !isSupabaseConfigured) return
-    let cancelled = false
-    void (async () => {
-      try {
-        const id = await fetchUserAppFontId(user.id)
-        if (cancelled) return
-        const resolved = id ?? getStoredAppFontId()
-        setAppFontId(resolved)
-        setStoredAppFontId(resolved)
-        applyAppFontToDocument(resolved)
-      } catch {
-        /* 마이그레이션 미적용·오프라인 등 */
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [open, user.id])
 
   if (!open) return null
 
@@ -153,49 +119,6 @@ export function AccountModal({
                 </div>
               ) : null}
             </dl>
-          </section>
-
-          <section className="tag-manage-account-section" aria-label="글꼴">
-            <h3 className="tag-manage-account-section-title">글꼴</h3>
-            <p className="tag-manage-account-font-hint">
-              선택한 글꼴은 <strong>계정에 저장</strong>되어 로그인하는 기기에서 같이
-              쓰이고, 이 브라우저에는 빠른 적용을 위해 로컬에도 맞춰 둡니다.
-            </p>
-            <ul className="tag-manage-account-font-list" role="list">
-              {APP_FONT_OPTIONS.map((opt) => (
-                <li key={opt.id}>
-                  <label className="tag-manage-account-font-option">
-                    <input
-                      type="radio"
-                      name="tag-note-app-font"
-                      value={opt.id}
-                      checked={appFontId === opt.id}
-                      onChange={() => {
-                        setAppFontId(opt.id)
-                        setStoredAppFontId(opt.id)
-                        applyAppFontToDocument(opt.id)
-                        if (isSupabaseConfigured) {
-                          void upsertUserAppFontId(user.id, opt.id).catch(
-                            () => {},
-                          )
-                        }
-                      }}
-                    />
-                    <span className="tag-manage-account-font-option-text">
-                      <span className="tag-manage-account-font-option-label">
-                        {opt.label}
-                      </span>
-                      <span
-                        className="tag-manage-account-font-preview"
-                        style={{ fontFamily: opt.cssStack }}
-                      >
-                        다람쥐 헌 쳇바퀴에 타고파 The quick brown fox
-                      </span>
-                    </span>
-                  </label>
-                </li>
-              ))}
-            </ul>
           </section>
 
           <section className="tag-manage-account-section" aria-label="구독">
@@ -253,7 +176,7 @@ export function AccountModal({
                     aria-label="회원 탈퇴 확인"
                   >
                     <p className="tag-manage-account-delete-warn">
-                      모든 메모·태그·구독·글꼴 설정이 삭제되며{' '}
+                      모든 메모·태그·구독 정보가 삭제되며{' '}
                       <strong>복구할 수 없습니다</strong>. 로그인 계정(이메일)도
                       함께 제거됩니다.
                     </p>

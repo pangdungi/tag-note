@@ -1,13 +1,12 @@
 import { supabase } from './supabase'
 import {
-  applyAppFontToDocument,
-  getStoredAppFontId,
-  isAppFontChoiceId,
+  applyAppFontsToDocument,
+  normalizeLegacyAppFontId,
   setStoredAppFontId,
   type AppFontChoiceId,
 } from './appFont'
 
-const DEFAULT_FONT: AppFontChoiceId = 'system'
+const DEFAULT_FONT: AppFontChoiceId = 'spoqa'
 
 export async function fetchUserAppFontId(
   userId: string,
@@ -19,8 +18,8 @@ export async function fetchUserAppFontId(
     .maybeSingle()
 
   if (error) throw error
-  if (!data?.app_font_id || !isAppFontChoiceId(data.app_font_id)) return null
-  return data.app_font_id
+  if (!data?.app_font_id) return null
+  return normalizeLegacyAppFontId(data.app_font_id)
 }
 
 /** 행이 없으면 삽입 후 기본 글꼴을 돌려줍니다. */
@@ -54,21 +53,28 @@ export async function upsertUserAppFontId(
   if (error) throw error
 }
 
-/** 서버 글꼴을 읽어 로컬 캐시·화면에 반영합니다. */
+/** 서버에 레거시 글꼴이 있으면 spoqa로 정리하고 화면에 고정 글꼴을 적용합니다. */
 export async function loadAndApplyUserAppFont(userId: string): Promise<void> {
-  const id = await ensureUserAppFontRow(userId)
-  const resolved = isAppFontChoiceId(id) ? id : DEFAULT_FONT
-  setStoredAppFontId(resolved)
-  applyAppFontToDocument(resolved)
+  applyAppFontsToDocument()
+  setStoredAppFontId(DEFAULT_FONT)
+
+  try {
+    const id = await ensureUserAppFontRow(userId)
+    if (id !== DEFAULT_FONT) {
+      await upsertUserAppFontId(userId, DEFAULT_FONT)
+    }
+  } catch {
+    /* DB 미적용·마이그레이션 전 */
+  }
 }
 
-/** DB 마이그레이션 전·네트워크 오류 시 로컬 캐시로 폴백 */
 export async function loadAndApplyUserAppFontSafe(
   userId: string,
 ): Promise<void> {
   try {
     await loadAndApplyUserAppFont(userId)
   } catch {
-    applyAppFontToDocument(getStoredAppFontId())
+    applyAppFontsToDocument()
+    setStoredAppFontId(DEFAULT_FONT)
   }
 }

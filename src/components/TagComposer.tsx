@@ -1,6 +1,6 @@
 import { useId, useRef, useState, type ReactNode } from 'react'
 import type { TagRow } from '../lib/notesApi'
-import { displayTagName, normalizeTagInput, pickColorIndex, TAG_COLOR_COUNT } from '../lib/tagUtils'
+import { displayTagName, normalizeTagInput } from '../lib/tagUtils'
 import { filterTagsByQuery } from '../lib/notesApi'
 
 /** 한글 등 IME 조합 중에는 Enter·화살표를 앱 로직에서 무시 */
@@ -69,12 +69,7 @@ export function TagComposer({ allTags, selected, onChange, hint }: Props) {
           },
         ])
       } else {
-        const used = [
-          ...allTags.map((t) => ({ name: t.name, color_index: t.color_index })),
-          ...selected.map((s) => ({ name: s.name, color_index: s.color_index })),
-        ]
-        const color_index = pickColorIndex(label, used)
-        onChange([...selected, { name: label, color_index }])
+        onChange([...selected, { name: label, color_index: 0 }])
       }
     }
     setDraft('')
@@ -187,7 +182,6 @@ export function TagComposer({ allTags, selected, onChange, hint }: Props) {
                     onMouseDown={(ev) => ev.preventDefault()}
                     onClick={() => addTag(t.name, t)}
                   >
-                    <span className={`tag-dot tag-tone-${t.color_index % TAG_COLOR_COUNT}`} />
                     {displayTagName(t.name)}
                   </button>
                 </li>
@@ -212,7 +206,7 @@ export function TagComposer({ allTags, selected, onChange, hint }: Props) {
         {selected.map((t, i) => (
           <span
             key={`${t.name}-${i}`}
-            className={`tag-chip tag-tone-${t.color_index % TAG_COLOR_COUNT}`}
+            className="tag-chip"
             role="listitem"
           >
             {displayTagName(t.name)}
