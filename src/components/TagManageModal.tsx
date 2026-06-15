@@ -27,7 +27,6 @@ type Props = {
   onTagUpdated: (row: TagRow) => void
   onTagsPromoted?: (result: PromoteTagToParentResult) => void
   onTagDeleted: (payload: { tagId: string; deletedNoteIds: string[] }) => void
-  resolveLinkedNoteIds?: (tagId: string) => string[]
   onTagError?: (message: string) => void
   onSyncFromServer?: () => void | Promise<void>
   onSourcesChanged?: () => void | Promise<void>
@@ -53,7 +52,6 @@ export function TagManageModal({
   onTagUpdated,
   onTagsPromoted,
   onTagDeleted,
-  resolveLinkedNoteIds,
   onTagError,
   onSyncFromServer,
   onSourcesChanged,
@@ -65,8 +63,14 @@ export function TagManageModal({
   const [assignParentTag, setAssignParentTag] = useState<TagRow | null>(null)
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null)
 
-  const parentTagsWithChildren = useMemo(() => getParentTags(tags), [tags])
-  const independentTags = useMemo(() => getIndependentTags(tags), [tags])
+  const parentTagsWithChildren = useMemo(
+    () => getParentTags(tags, tagParentLinks),
+    [tags, tagParentLinks],
+  )
+  const independentTags = useMemo(
+    () => getIndependentTags(tags, tagParentLinks),
+    [tags, tagParentLinks],
+  )
 
   const menuParents = useMemo(() => {
     const map = new Map<string, TagRow>()
@@ -390,7 +394,6 @@ export function TagManageModal({
         onTagUpdated={onTagUpdated}
         onTagDeleted={onTagDeleted}
         onTagsPromoted={onTagsPromoted}
-        resolveLinkedNoteIds={resolveLinkedNoteIds}
         onTagError={onTagError}
         onSyncFromServer={onSyncFromServer}
         onSourcesChanged={onSourcesChanged}

@@ -33,9 +33,10 @@ import {
   mapNotesWithRenamedSource,
   noteBodyMatchesMainSearch,
   noteSourceLabel,
+  NOTES_LIST_PAGE_SIZE,
+  pullAllTagNotesForTagIds,
   supabaseErrorMessage,
   syncNotesStateAfterSourceSelectionPull,
-  syncNotesStateAfterTagSelectionPull,
   tagMainSearchScore,
   type PromoteTagToParentResult,
   type NoteWithTags,
@@ -47,11 +48,13 @@ import {
   displayTagName,
   getChildTags,
   getParentTags,
+  getTagsForTagViewRail,
   isBooksRailParentTag,
   isParentTagRailActive,
+  isTagChildOfParent,
   normalizeTagInput,
-  resolveTagFilterIds,
   formatSpineLabel,
+  formatTagViewSpineLabel,
   formatSpineText,
   tagHasChildren,
   TAG_RAIL_INDEX_KO,
@@ -60,7 +63,13 @@ import {
   tagRailIndexHasTags,
   tagRailIndexLabel,
   firstTagIdForRailIndexKey,
+  noteHasNoTagViewTags,
+  TAG_VIEW_NONE_ID,
   resolveAddNoteParentTagId,
+  resolveBooksRailExpandedParentForTag,
+  resolveBooksTagFilterTagIds,
+  filterNotesForAllTagIds,
+  filterNotesForParentOnlyUnderParent,
   type TagRailIndexKey,
 } from '../lib/tagUtils'
 import { displaySourceTitle, sourceTitleKey } from '../lib/sourceUtils'
@@ -113,6 +122,7 @@ function NoteBoardCard({
   onSourceFilter,
   onTagFilter,
   excludeTagId,
+  hideTagIds,
   sourceLink = true,
 }: {
   note: NoteWithTags
@@ -121,6 +131,8 @@ function NoteBoardCard({
   onTagFilter?: (tagId: string) => void
   /** 클릭한 태그 화면 — 해당 태그 pill 숨김, 다른 태그만 표시 */
   excludeTagId?: string | null
+  /** 추가로 숨길 태그 pill (책 뷰 상위 spine 등) */
+  hideTagIds?: string[]
   /** false면 출처를 링크 없이 표시 (태그 뷰) */
   sourceLink?: boolean
 }) {
@@ -131,9 +143,11 @@ function NoteBoardCard({
   const sorted = [...tagLinks].sort((a, b) =>
     a.name.localeCompare(b.name, 'ko'),
   )
-  const visibleTags = excludeTagId
-    ? sorted.filter((tg) => tg.id !== excludeTagId)
-    : sorted
+  const hidden = new Set(
+    hideTagIds?.filter(Boolean) ?? [],
+  )
+  if (excludeTagId) hidden.add(excludeTagId)
+  const visibleTags = sorted.filter((tg) => !hidden.has(tg.id))
 
   const src = noteSourceLabel(note)
   const srcId = note.source_id ?? note.sources?.id ?? null
@@ -216,11 +230,9 @@ type InlineRailNotesPanelProps = {
   tagId: string
   notes: NoteWithTags[]
   loading: boolean
-  hasMore: boolean
-  loadingMore: boolean
-  onLoadMore: () => void
   onView: (note: NoteWithTags, contextTagId?: string | null) => void
   onTagFilter?: (tagId: string) => void
+  hideTagIds?: string[]
 }
 
 function InlineRailNotesPanel({
@@ -228,11 +240,9 @@ function InlineRailNotesPanel({
   tagId,
   notes,
   loading,
-  hasMore,
-  loadingMore,
-  onLoadMore,
   onView,
   onTagFilter,
+  hideTagIds,
 }: InlineRailNotesPanelProps) {
   return (
     <div
@@ -246,7 +256,9 @@ function InlineRailNotesPanel({
       />
       {!loading && notes.length === 0 ? (
         <p className="notes-hint parent-tag-child-notes-empty">
-          이 태그가 달린 메모가 아직 없습니다.
+          {tagId === TAG_VIEW_NONE_ID
+            ? '태그가 없는 메모가 아직 없습니다.'
+            : '이 태그가 달린 메모가 아직 없습니다.'}
         </p>
       ) : notes.length > 0 ? (
         <ul className="note-board-list parent-tag-child-note-list">
@@ -255,6 +267,7 @@ function InlineRailNotesPanel({
               <NoteBoardCard
                 note={note}
                 excludeTagId={tagId}
+                hideTagIds={hideTagIds}
                 onView={onView}
                 onTagFilter={onTagFilter}
                 sourceLink={false}
@@ -262,16 +275,6 @@ function InlineRailNotesPanel({
             </li>
           ))}
         </ul>
-      ) : null}
-      {hasMore && notes.length > 0 ? (
-        <button
-          type="button"
-          className="btn note-board-load-more parent-tag-child-load-more"
-          disabled={loadingMore || loading}
-          onClick={onLoadMore}
-        >
-          {loadingMore ? '불러오는 중…' : '이 태그 메모 더 보기'}
-        </button>
       ) : null}
     </div>
   )
@@ -456,42 +459,59 @@ function HomeQuickActionButtons({
   )
 }
 
-type SelectionPullCacheMeta = { hasMore: boolean }
-type SelectionPullResult = { notes: NoteWithTags[]; hasMore: boolean }
+type SelectionPullCacheEntry = { hasMore: boolean; notes: NoteWithTags[] }
+type SelectionPullResult = SelectionPullCacheEntry
 
-function tagPullCacheKey(
-  tagId: string,
-  nav: HomeBrowseNavId,
-  allTags: TagRow[],
-  tagParentLinks: TagParentLink[],
-): string {
-  const filterIds =
-    nav === 'books'
-      ? resolveTagFilterIds(tagId, allTags, tagParentLinks)
-      : [tagId]
-  return `${nav}:${tagId}:${[...filterIds].sort().join(',')}:full-tags-v1`
+function tagFilterIdsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  const set = new Set(b)
+  return a.every((id) => set.has(id))
 }
 
-function filterLocalNotesForTagPull(
+function tagPullCacheKey(filterTagIds: string[], nav: HomeBrowseNavId): string {
+  if (
+    filterTagIds.length === 1 &&
+    filterTagIds[0] === TAG_VIEW_NONE_ID
+  ) {
+    return 'tags:none:v4'
+  }
+  return `${nav}:${filterTagIds.join('+')}:v4`
+}
+
+function readLocalNotesForTagFilter(
+  filterTagIds: string[],
   prev: NoteWithTags[],
-  tagId: string,
-  nav: HomeBrowseNavId,
-  tags: TagRow[],
-  tagParentLinks: TagParentLink[],
 ): NoteWithTags[] {
-  const tagIds = new Set(
-    nav === 'books'
-      ? resolveTagFilterIds(tagId, tags, tagParentLinks)
-      : [tagId],
-  )
-  return prev
+  if (
+    filterTagIds.length === 1 &&
+    filterTagIds[0] === TAG_VIEW_NONE_ID
+  ) {
+    return filterLocalNotesForTagViewNone(prev)
+  }
+  return filterNotesForAllTagIds(prev, filterTagIds)
+}
+
+function filterNotesForSingleTagId(
+  notes: NoteWithTags[],
+  tagId: string,
+): NoteWithTags[] {
+  return notes
     .filter((n) =>
       n.note_tags.some(
-        (nt) =>
-          tagIds.has(nt.tag_id) ||
-          (nt.tags?.id != null && tagIds.has(nt.tags.id)),
+        (nt) => (nt.tags?.id ?? nt.tag_id) === tagId,
       ),
     )
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )
+}
+
+function filterLocalNotesForTagViewNone(
+  prev: NoteWithTags[],
+): NoteWithTags[] {
+  return prev
+    .filter((n) => noteHasNoTagViewTags(n))
     .sort(
       (a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
@@ -536,9 +556,15 @@ export function HomePage() {
   const [sourceTagCountById, setSourceTagCountById] = useState<
     Record<string, number>
   >({})
-  const [tagNotesHasMore, setTagNotesHasMore] = useState(false)
+  const tagMemoCountByIdRef = useRef(tagMemoCountById)
+  const sourceTagCountByIdRef = useRef(sourceTagCountById)
+  useEffect(() => {
+    tagMemoCountByIdRef.current = tagMemoCountById
+  }, [tagMemoCountById])
+  useEffect(() => {
+    sourceTagCountByIdRef.current = sourceTagCountById
+  }, [sourceTagCountById])
   const [sourceNotesHasMore, setSourceNotesHasMore] = useState(false)
-  const [tagNotesLoadingMore, setTagNotesLoadingMore] = useState(false)
   const [sourceNotesLoadingMore, setSourceNotesLoadingMore] = useState(false)
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null)
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
@@ -546,10 +572,10 @@ export function HomePage() {
   const [booksRailExpandedParentId, setBooksRailExpandedParentId] = useState<
     string | null
   >(null)
-  /** 태그 모드 — 메모만 닫아도 펼친 스파인·검은 배경 유지 */
-  const [tagsRailExpandedTagId, setTagsRailExpandedTagId] = useState<
-    string | null
-  >(null)
+  const booksRailExpandedParentIdRef = useRef(booksRailExpandedParentId)
+  useEffect(() => {
+    booksRailExpandedParentIdRef.current = booksRailExpandedParentId
+  }, [booksRailExpandedParentId])
   const [saveError, setSaveError] = useState<string | null>(null)
   const [bootstrapSaving, setBootstrapSaving] = useState(false)
   /** 첫 작성 카드: 저장 검증 안내 */
@@ -588,35 +614,125 @@ export function HomePage() {
 
   /** 태그 클릭 시 `syncNotes…`에 넘길 최신 `notes` (비동기 완료 시점 참고용) */
   const notesRef = useRef(notes)
+  const allTagsRef = useRef(allTags)
+  const tagParentLinksRef = useRef(tagParentLinks)
+  const allSourcesRef = useRef(allSources)
   useEffect(() => {
     notesRef.current = notes
   }, [notes])
+  useEffect(() => {
+    allTagsRef.current = allTags
+  }, [allTags])
+  useEffect(() => {
+    tagParentLinksRef.current = tagParentLinks
+  }, [tagParentLinks])
+  useEffect(() => {
+    allSourcesRef.current = allSources
+  }, [allSources])
 
-  /** 태그·출처 선택 풀 — 세션 내 재선택 시 서버 재요청 없이 캐시 표시 */
-  const tagPullCacheRef = useRef(new Map<string, SelectionPullCacheMeta>())
-  const sourcePullCacheRef = useRef(new Map<string, SelectionPullCacheMeta>())
-  const tagPullInFlightRef = useRef(new Map<string, Promise<SelectionPullResult>>())
+  /** 태그 클릭 풀 — 목록+hasMore 캐시 (재클릭 시 네트워크 없음) */
+  const tagPullCacheRef = useRef(new Map<string, SelectionPullCacheEntry>())
+  const sourcePullCacheRef = useRef(
+    new Map<string, { hasMore: boolean }>(),
+  )
+  const tagPullInFlightRef = useRef(
+    new Map<string, Promise<SelectionPullResult>>(),
+  )
   const sourcePullInFlightRef = useRef(
     new Map<string, Promise<SelectionPullResult>>(),
   )
+  /** 삭제·저장 후 늦게 도착한 태그 pull 응답 무시 */
+  const tagPullGenerationRef = useRef(0)
+  const selectedTagIdRef = useRef(selectedTagId)
+  const homeBrowseNavRef = useRef(homeBrowseNav)
+  useEffect(() => {
+    selectedTagIdRef.current = selectedTagId
+  }, [selectedTagId])
+  useEffect(() => {
+    homeBrowseNavRef.current = homeBrowseNav
+  }, [homeBrowseNav])
 
-  const fetchHomeSnapshot = useCallback(async () => {
-    const [tags, links, notePage, tagMemoCounts, sourceTagCounts] =
-      await Promise.all([
-        fetchTags(),
-        fetchTagParentLinks(),
-        fetchNotesPage(),
-        fetchTagMemoCounts(),
-        fetchSourceDistinctTagCounts(),
-      ])
+  const invalidateTagPullRequests = useCallback(() => {
+    tagPullGenerationRef.current += 1
+    tagPullInFlightRef.current.clear()
+  }, [])
+
+  const reconcileTagPullForNotes = useCallback((notesList: NoteWithTags[]) => {
+    const tagId = selectedTagIdRef.current
+    if (!tagId) {
+      setTagPullEntry(null)
+      return
+    }
+    const nav = homeBrowseNavRef.current
+    const filterTagIds = resolveBooksTagFilterTagIds(
+      nav,
+      tagId,
+      booksRailExpandedParentIdRef.current,
+      allTagsRef.current,
+      tagParentLinksRef.current,
+    )
+    const fresh = readLocalNotesForTagFilter(filterTagIds, notesList)
+    const key = tagPullCacheKey(filterTagIds, nav)
+    tagPullCacheRef.current.set(key, { notes: fresh, hasMore: false })
+    setTagPullEntry({ tagId, filterTagIds, nav, notes: fresh })
+    setTagPullLoading(false)
+  }, [])
+
+  const clearTagPullCache = useCallback((tagId?: string) => {
+    invalidateTagPullRequests()
+    if (!tagId) {
+      tagPullCacheRef.current.clear()
+      tagPullInFlightRef.current.clear()
+      setTagPullEntry(null)
+      return
+    }
+    for (const key of tagPullCacheRef.current.keys()) {
+      if (
+        (tagId === TAG_VIEW_NONE_ID && key === 'tags:none:v4') ||
+        key.includes(tagId)
+      ) {
+        tagPullCacheRef.current.delete(key)
+        tagPullInFlightRef.current.delete(key)
+      }
+    }
+    setTagPullEntry((cur) =>
+      cur && cur.filterTagIds.includes(tagId) ? null : cur,
+    )
+  }, [invalidateTagPullRequests])
+
+  const fetchHomeSnapshotEssential = useCallback(async () => {
+    const [tags, links, notePage] = await Promise.all([
+      fetchTags(),
+      fetchTagParentLinks(),
+      fetchNotesPage(),
+    ])
     const sources = await fetchSourcesInUse()
     return {
       tags,
       tagParentLinks: links,
       sources,
       notes: notePage.notes,
-      tagMemoCounts,
-      sourceTagCounts,
+    }
+  }, [])
+
+  const refreshHomeCountMaps = useCallback(async (uid: string) => {
+    try {
+      const [tagMemoCounts, sourceTagCounts] = await Promise.all([
+        fetchTagMemoCounts(),
+        fetchSourceDistinctTagCounts(),
+      ])
+      setTagMemoCountById(tagMemoCounts)
+      setSourceTagCountById(sourceTagCounts)
+      writeHomeSnapshotCache(uid, {
+        tags: allTagsRef.current,
+        tagParentLinks: tagParentLinksRef.current,
+        sources: allSourcesRef.current,
+        notes: notesRef.current,
+        tagMemoCounts,
+        sourceTagCounts,
+      })
+    } catch (e) {
+      console.warn('[태그노트] 태그·출처 개수 갱신 실패', e)
     }
   }, [])
 
@@ -639,33 +755,36 @@ export function HomePage() {
           tagParentLinks: links,
           sources,
           notes: noteRows,
-          tagMemoCounts,
-          sourceTagCounts,
-        } = await fetchHomeSnapshot()
+        } = await fetchHomeSnapshotEssential()
         setAllTags(tags)
         setTagParentLinks(links)
         setAllSources(sources)
-        setNotes(noteRows)
-        setTagMemoCountById(tagMemoCounts)
-        setSourceTagCountById(sourceTagCounts)
+        if (opts?.background) {
+          setNotes((prev) => mergeNotesById(prev, noteRows))
+        } else {
+          setNotes(noteRows)
+        }
         if (!opts?.background) {
-          setTagNotesHasMore(false)
           setSourceNotesHasMore(false)
-          tagPullCacheRef.current.clear()
+          clearTagPullCache()
           sourcePullCacheRef.current.clear()
         }
-        writeHomeSnapshotCache(uid, {
-          tags,
-          tagParentLinks: links,
-          sources,
-          notes: noteRows,
-          tagMemoCounts,
-          sourceTagCounts,
-        })
         setSaveError(null)
         setLoadError(null)
         setSearchError(null)
         homeDataInitialLoadDoneRef.current = true
+        const mergedNotes = opts?.background
+          ? mergeNotesById(notesRef.current, noteRows)
+          : noteRows
+        writeHomeSnapshotCache(uid, {
+          tags,
+          tagParentLinks: links,
+          sources,
+          notes: mergedNotes,
+          tagMemoCounts: tagMemoCountByIdRef.current,
+          sourceTagCounts: sourceTagCountByIdRef.current,
+        })
+        void refreshHomeCountMaps(uid)
       } catch (e) {
         console.error('[태그노트] HomePage 초기 불러오기 실패', e)
         if (!opts?.background) {
@@ -679,11 +798,17 @@ export function HomePage() {
         }
       }
     },
-    [user?.id, fetchHomeSnapshot],
+    [user?.id, fetchHomeSnapshotEssential, refreshHomeCountMaps, clearTagPullCache],
   )
 
   /** 태그 동기화 UI — 초기 스냅샷(loadData 성공) 이후 탭 바꿀 때는 표시 안 함 */
   const [tagPullLoading, setTagPullLoading] = useState(false)
+  const [tagPullEntry, setTagPullEntry] = useState<{
+    tagId: string
+    filterTagIds: string[]
+    nav: HomeBrowseNavId
+    notes: NoteWithTags[]
+  } | null>(null)
   const [sourcePullLoading, setSourcePullLoading] = useState(false)
 
   /** 메모 검색 — 서버 조회 결과 (검색어·hasMore와 함께 보관) */
@@ -707,66 +832,108 @@ export function HomePage() {
   }, [])
 
   const refreshHomeTagCounts = useCallback(async () => {
+    const uid = user?.id
+    if (!uid) return
+    await refreshHomeCountMaps(uid)
+  }, [user?.id, refreshHomeCountMaps])
+
+  const refreshTagsAndLinks = useCallback(async () => {
     try {
-      const [tagMemoCounts, sourceTagCounts] = await Promise.all([
-        fetchTagMemoCounts(),
-        fetchSourceDistinctTagCounts(),
+      const [tags, links] = await Promise.all([
+        fetchTags(),
+        fetchTagParentLinks(),
       ])
-      setTagMemoCountById(tagMemoCounts)
-      setSourceTagCountById(sourceTagCounts)
+      setAllTags(tags)
+      setTagParentLinks(links)
     } catch (e) {
-      console.warn('[태그노트] 태그·출처 개수 갱신 실패', e)
+      console.warn('[태그노트] 태그·상위 링크 갱신 실패', e)
     }
   }, [])
 
   const applyNoteCreated = useCallback(
     (note: NoteWithTags, opts?: { replacingId?: string }) => {
-      setNotes((prev) => [
-        note,
-        ...prev.filter(
-          (n) => n.id !== note.id && n.id !== opts?.replacingId,
-        ),
-      ])
+      invalidateTagPullRequests()
+      setNotes((prev) => {
+        const next = [
+          note,
+          ...prev.filter(
+            (n) => n.id !== note.id && n.id !== opts?.replacingId,
+          ),
+        ]
+        reconcileTagPullForNotes(next)
+        return next
+      })
       setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
       setAllSources((prev) => mergeSourcesFromNoteIntoAllSources(prev, note))
-      tagPullCacheRef.current.clear()
-      sourcePullCacheRef.current.clear()
       setTagSearch('')
       setSaveError(null)
       void refreshHomeTagCounts()
+      void (async () => {
+        await refreshTagsAndLinks()
+        reconcileTagPullForNotes(notesRef.current)
+      })()
     },
-    [refreshHomeTagCounts],
+    [
+      invalidateTagPullRequests,
+      reconcileTagPullForNotes,
+      refreshHomeTagCounts,
+      refreshTagsAndLinks,
+    ],
   )
 
   const applyNoteRemoved = useCallback((noteId: string) => {
-    setNotes((prev) => prev.filter((n) => n.id !== noteId))
-    tagPullCacheRef.current.clear()
+    invalidateTagPullRequests()
+    setNotes((prev) => {
+      const next = prev.filter((n) => n.id !== noteId)
+      reconcileTagPullForNotes(next)
+      return next
+    })
     sourcePullCacheRef.current.clear()
     void refreshHomeTagCounts()
-  }, [refreshHomeTagCounts])
+  }, [
+    invalidateTagPullRequests,
+    reconcileTagPullForNotes,
+    refreshHomeTagCounts,
+  ])
 
   const applyNoteUpdated = useCallback(
     (note: NoteWithTags) => {
-      setNotes((prev) => prev.map((n) => (n.id === note.id ? note : n)))
+      invalidateTagPullRequests()
+      setNotes((prev) => {
+        const next = prev.map((n) => (n.id === note.id ? note : n))
+        reconcileTagPullForNotes(next)
+        return next
+      })
       setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
       setAllSources((prev) => mergeSourcesFromNoteIntoAllSources(prev, note))
-      tagPullCacheRef.current.clear()
-      sourcePullCacheRef.current.clear()
       setSaveError(null)
       void refreshHomeTagCounts()
     },
-    [refreshHomeTagCounts],
+    [invalidateTagPullRequests, reconcileTagPullForNotes, refreshHomeTagCounts],
   )
 
   const applyNoteDeleted = useCallback(
     (noteId: string) => {
-      setNotes((prev) => prev.filter((n) => n.id !== noteId))
-      tagPullCacheRef.current.clear()
+      invalidateTagPullRequests()
+      setNotes((prev) => {
+        const next = prev.filter((n) => n.id !== noteId)
+        reconcileTagPullForNotes(next)
+        return next
+      })
       sourcePullCacheRef.current.clear()
       setEditingNote((cur) => (cur?.id === noteId ? null : cur))
+      setViewingNote((cur) => (cur?.id === noteId ? null : cur))
+      setViewingNoteContextTagId((ctx) =>
+        viewingNote?.id === noteId ? null : ctx,
+      )
       void refreshHomeTagCounts()
     },
-    [refreshHomeTagCounts],
+    [
+      invalidateTagPullRequests,
+      reconcileTagPullForNotes,
+      refreshHomeTagCounts,
+      viewingNote,
+    ],
   )
 
   /** 실패·동기화 시 서버 기준으로 메모 한 건만 다시 불러옴 (로컬 롤백 없음) */
@@ -784,18 +951,11 @@ export function HomePage() {
   )
 
   const syncAllFromServer = useCallback(async () => {
-    void loadData({ showGridLoading: false })
-  }, [loadData])
-
-  const resolveLinkedNoteIds = useCallback((tagId: string) => {
-    return notesRef.current
-      .filter((n) =>
-        n.note_tags.some(
-          (nt) => nt.tag_id === tagId || nt.tags?.id === tagId,
-        ),
-      )
-      .map((n) => n.id)
-  }, [])
+    clearTagPullCache()
+    sourcePullCacheRef.current.clear()
+    sourcePullInFlightRef.current.clear()
+    await loadData({ showGridLoading: false })
+  }, [loadData, clearTagPullCache])
 
   const applyTagUpdated = useCallback((row: TagRow) => {
     setAllTags((prev) => {
@@ -841,10 +1001,10 @@ export function HomePage() {
           }
           return next
         })
-        tagPullCacheRef.current.clear()
+        clearTagPullCache()
       }
     },
-    [],
+    [clearTagPullCache],
   )
 
   const applyChildrenSynced = useCallback(
@@ -853,35 +1013,34 @@ export function HomePage() {
         [...payload.tags].sort((a, b) => a.name.localeCompare(b.name, 'ko')),
       )
       setTagParentLinks(payload.links)
-      tagPullCacheRef.current.clear()
+      clearTagPullCache()
     },
-    [],
+    [clearTagPullCache],
   )
 
   const applyTagPromoted = useCallback(
     (result: PromoteTagToParentResult) => {
       applyTagUpdated(result.parent)
-      applyTagsAssigned(result.assignedChildren)
-      tagPullCacheRef.current.clear()
+      applyTagsAssigned(result.assignedChildren, result.parent.id)
+      clearTagPullCache()
 
       const parentId = result.parent.id
       setHomeBrowseNav('books')
       setMobileBrowseFabOpen(false)
-      setTagsRailExpandedTagId(null)
-      setSelectedTagId(null)
       setSelectedSourceId(null)
-      setTagNotesHasMore(false)
       setSourceNotesHasMore(false)
       setBooksRailExpandedParentId(parentId)
+      setSelectedTagId(parentId)
       setViewingNote(null)
       setRailEditingTag(null)
     },
-    [applyTagUpdated, applyTagsAssigned],
+    [applyTagUpdated, applyTagsAssigned, clearTagPullCache],
   )
 
   const applyTagDeleted = useCallback(
     (payload: { tagId: string; deletedNoteIds: string[] }) => {
-      const { tagId, deletedNoteIds } = payload
+      const { tagId } = payload
+      invalidateTagPullRequests()
       setSelectedTagId((s) => (s === tagId ? null : s))
       setBooksRailExpandedParentId((s) => (s === tagId ? null : s))
       setAllTags((prev) =>
@@ -897,17 +1056,15 @@ export function HomePage() {
         ),
       )
       setNotes((prev) => {
-        if (deletedNoteIds.length > 0) {
-          return prev.filter((n) => !deletedNoteIds.includes(n.id))
-        }
-        return prev.map((n) => ({
+        const next = prev.map((n) => ({
           ...n,
           note_tags: n.note_tags.filter(
             (nt) => (nt.tags?.id ?? nt.tag_id) !== tagId,
           ),
         }))
+        reconcileTagPullForNotes(next)
+        return next
       })
-      tagPullCacheRef.current.clear()
       sourcePullCacheRef.current.clear()
       const unlinkTagFromNote = (note: NoteWithTags): NoteWithTags => ({
         ...note,
@@ -917,18 +1074,21 @@ export function HomePage() {
       })
       setEditingNote((cur) => {
         if (!cur) return null
-        if (deletedNoteIds.includes(cur.id)) return null
-        if (deletedNoteIds.length === 0) return unlinkTagFromNote(cur)
-        return cur
+        return unlinkTagFromNote(cur)
       })
       setViewingNote((cur) => {
         if (!cur) return null
-        if (deletedNoteIds.includes(cur.id)) return null
-        if (deletedNoteIds.length === 0) return unlinkTagFromNote(cur)
-        return cur
+        return unlinkTagFromNote(cur)
       })
+      void refreshHomeTagCounts()
+      void refreshTagsAndLinks()
     },
-    [],
+    [
+      invalidateTagPullRequests,
+      reconcileTagPullForNotes,
+      refreshHomeTagCounts,
+      refreshTagsAndLinks,
+    ],
   )
 
   const applySourceUpdated = useCallback((row: SourceRow) => {
@@ -952,9 +1112,9 @@ export function HomePage() {
         mapNotesWithClearedSource(prev, sourceId, titleKey),
       )
       sourcePullCacheRef.current.clear()
-      tagPullCacheRef.current.clear()
+      clearTagPullCache()
     },
-    [allSources],
+    [allSources, clearTagPullCache],
   )
 
   useEffect(() => {
@@ -982,70 +1142,114 @@ export function HomePage() {
     void loadData({ showGridLoading: true })
   }, [user?.id, loadData])
 
+  const tagPullFilterKey = useMemo(() => {
+    if (!selectedTagId) return ''
+    const filterTagIds = resolveBooksTagFilterTagIds(
+      homeBrowseNav,
+      selectedTagId,
+      booksRailExpandedParentId,
+      allTags,
+      tagParentLinks,
+    )
+    return tagPullCacheKey(filterTagIds, homeBrowseNav)
+  }, [
+    selectedTagId,
+    homeBrowseNav,
+    booksRailExpandedParentId,
+    allTags,
+    tagParentLinks,
+  ])
+
   useEffect(() => {
-    if (!selectedTagId) {
-      return
-    }
-    if (
-      homeBrowseNav === 'books' &&
-      tagHasChildren(selectedTagId, allTags, tagParentLinks) &&
-      normalizeTagInput(tagSearch).length === 0 &&
-      !selectedSourceId &&
-      getParentTags(allTags).length > 0
-    ) {
+    const pullTagId = selectedTagIdRef.current
+    if (!pullTagId || !tagPullFilterKey) {
+      setTagPullEntry(null)
+      setTagPullLoading(false)
       return
     }
     const uid = user?.id
     if (!uid) {
       return
     }
-    const tagIds =
-      homeBrowseNav === 'books'
-        ? resolveTagFilterIds(selectedTagId, allTags, tagParentLinks)
-        : [selectedTagId]
-    const cacheKey = tagPullCacheKey(
-      selectedTagId,
-      homeBrowseNav,
-      allTags,
-      tagParentLinks,
+    const pullNav = homeBrowseNavRef.current
+    const filterTagIds = resolveBooksTagFilterTagIds(
+      pullNav,
+      pullTagId,
+      booksRailExpandedParentIdRef.current,
+      allTagsRef.current,
+      tagParentLinksRef.current,
     )
+    const cacheKey = tagPullCacheKey(filterTagIds, pullNav)
     const cached = tagPullCacheRef.current.get(cacheKey)
     if (cached) {
-      setTagNotesHasMore(cached.hasMore)
+      const merged = readLocalNotesForTagFilter(
+        filterTagIds,
+        mergeNotesById(notesRef.current, cached.notes),
+      )
+      tagPullCacheRef.current.set(cacheKey, {
+        notes: merged,
+        hasMore: false,
+      })
+      setTagPullEntry({
+        tagId: pullTagId,
+        filterTagIds,
+        nav: pullNav,
+        notes: merged,
+      })
       setTagPullLoading(false)
       return
     }
-    const localNotes = filterLocalNotesForTagPull(
+
+    const localNotes = readLocalNotesForTagFilter(
+      filterTagIds,
       notesRef.current,
-      selectedTagId,
-      homeBrowseNav,
-      allTags,
-      tagParentLinks,
     )
+    setTagPullEntry({
+      tagId: pullTagId,
+      filterTagIds,
+      nav: pullNav,
+      notes: localNotes,
+    })
     setTagPullLoading(localNotes.length === 0)
+
+    const pullGen = tagPullGenerationRef.current
     let cancelled = false
     let inFlight = tagPullInFlightRef.current.get(cacheKey)
     if (!inFlight) {
-      inFlight = syncNotesStateAfterTagSelectionPull(
-        notesRef.current,
-        selectedTagId,
-        { tagIds },
-      ).finally(() => {
-        if (tagPullInFlightRef.current.get(cacheKey) === inFlight) {
-          tagPullInFlightRef.current.delete(cacheKey)
-        }
-      })
+      inFlight = pullAllTagNotesForTagIds(filterTagIds)
+        .then((page) => ({ notes: page.notes, hasMore: false }))
+        .finally(() => {
+          if (tagPullInFlightRef.current.get(cacheKey) === inFlight) {
+            tagPullInFlightRef.current.delete(cacheKey)
+          }
+        })
       tagPullInFlightRef.current.set(cacheKey, inFlight)
     }
     void (async () => {
       try {
-        const next = await inFlight!
-        if (cancelled) {
+        const page = await inFlight!
+        if (
+          cancelled ||
+          pullGen !== tagPullGenerationRef.current
+        ) {
           return
         }
-        setNotes(next.notes)
-        setTagNotesHasMore(next.hasMore)
-        tagPullCacheRef.current.set(cacheKey, { hasMore: next.hasMore })
+        const mergedNotes = readLocalNotesForTagFilter(
+          filterTagIds,
+          mergeNotesById(notesRef.current, page.notes),
+        )
+        const entry: SelectionPullCacheEntry = {
+          notes: mergedNotes,
+          hasMore: false,
+        }
+        tagPullCacheRef.current.set(cacheKey, entry)
+        setTagPullEntry({
+          tagId: pullTagId,
+          filterTagIds,
+          nav: pullNav,
+          notes: mergedNotes,
+        })
+        setNotes((prev) => mergeNotesById(prev, page.notes))
         setLoadError(null)
       } catch (e) {
         if (!cancelled) {
@@ -1065,15 +1269,7 @@ export function HomePage() {
       cancelled = true
       setTagPullLoading(false)
     }
-  }, [
-    selectedTagId,
-    user?.id,
-    allTags,
-    tagParentLinks,
-    tagSearch,
-    selectedSourceId,
-    homeBrowseNav,
-  ])
+  }, [tagPullFilterKey, user?.id])
 
   useEffect(() => {
     if (!selectedSourceId) {
@@ -1089,13 +1285,17 @@ export function HomePage() {
       setSourcePullLoading(false)
       return
     }
-    const source = allSources.find((s) => s.id === selectedSourceId)
+    const source = allSourcesRef.current.find((s) => s.id === selectedSourceId)
     const localNotes = filterLocalNotesForSourcePull(
       notesRef.current,
       selectedSourceId,
       source?.title,
     )
-    setSourcePullLoading(localNotes.length === 0)
+    const showPullLoading = localNotes.length === 0
+    setSourcePullLoading(showPullLoading)
+    if (localNotes.length > 0) {
+      setSourceNotesHasMore(localNotes.length >= NOTES_LIST_PAGE_SIZE)
+    }
     let cancelled = false
     let inFlight = sourcePullInFlightRef.current.get(selectedSourceId)
     if (!inFlight) {
@@ -1115,7 +1315,7 @@ export function HomePage() {
         if (cancelled) {
           return
         }
-        setNotes(next.notes)
+        setNotes((prev) => mergeNotesById(prev, next.notes))
         setSourceNotesHasMore(next.hasMore)
         sourcePullCacheRef.current.set(selectedSourceId, {
           hasMore: next.hasMore,
@@ -1139,7 +1339,7 @@ export function HomePage() {
       cancelled = true
       setSourcePullLoading(false)
     }
-  }, [selectedSourceId, user?.id, allSources])
+  }, [selectedSourceId, user?.id])
 
   const visibleTags = useMemo(
     () => filterTagsByMainSearch(allTags, tagSearch),
@@ -1174,10 +1374,10 @@ export function HomePage() {
 
   const searchParentTagSpines = useMemo(() => {
     if (!hasActiveSearch) return []
-    return getParentTags(allTags)
+    return getParentTags(allTags, tagParentLinks)
       .filter((t) => tagMainSearchScore(t.name, tagSearch) >= 0)
       .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-  }, [hasActiveSearch, allTags, tagSearch])
+  }, [hasActiveSearch, allTags, tagParentLinks, tagSearch])
 
   const searchTagSpines = useMemo(() => {
     if (!hasActiveSearch) return []
@@ -1216,22 +1416,30 @@ export function HomePage() {
 
   const notesForSelectedTag = useMemo(() => {
     if (!selectedTagId) return []
-    const tagIds = new Set(
-      resolveTagFilterIds(selectedTagId, allTags, tagParentLinks),
+    const filterTagIds = resolveBooksTagFilterTagIds(
+      homeBrowseNav,
+      selectedTagId,
+      booksRailExpandedParentId,
+      allTags,
+      tagParentLinks,
     )
-    return notes
-      .filter((n) =>
-        n.note_tags.some(
-          (nt) =>
-            tagIds.has(nt.tag_id) ||
-            (nt.tags?.id != null && tagIds.has(nt.tags.id)),
-        ),
-      )
-      .sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      )
-  }, [notes, selectedTagId, allTags, tagParentLinks])
+    if (
+      tagPullEntry?.tagId === selectedTagId &&
+      tagPullEntry.nav === homeBrowseNav &&
+      tagFilterIdsEqual(tagPullEntry.filterTagIds, filterTagIds)
+    ) {
+      return tagPullEntry.notes
+    }
+    return readLocalNotesForTagFilter(filterTagIds, notes)
+  }, [
+    selectedTagId,
+    homeBrowseNav,
+    booksRailExpandedParentId,
+    allTags,
+    tagParentLinks,
+    tagPullEntry,
+    notes,
+  ])
 
   const selectedSource = useMemo(() => {
     if (!selectedSourceId) return null
@@ -1289,15 +1497,13 @@ export function HomePage() {
     setSearchNotesResult(null)
     setSearchError(null)
     setSelectedTagId(null)
-    setTagNotesHasMore(false)
     setSearchOpen(false)
   }
 
   function clearTagFilter() {
     setSelectedTagId(null)
-    setTagNotesHasMore(false)
     setBooksRailExpandedParentId(null)
-    setTagsRailExpandedTagId(null)
+    setTagPullEntry(null)
   }
 
   function clearSourceFilter() {
@@ -1308,62 +1514,129 @@ export function HomePage() {
   function selectBrowseNav(id: HomeBrowseNavId) {
     setHomeBrowseNav(id)
     setMobileBrowseFabOpen(false)
-    clearTagFilter()
     clearSourceFilter()
     clearMainSearch()
+    if (id === 'tags') {
+      setBooksRailExpandedParentId(null)
+      setTagPullEntry(null)
+      setSelectedTagId((cur) => {
+        if (!cur || cur === TAG_VIEW_NONE_ID) return cur
+        const tag = allTags.find((t) => t.id === cur)
+        if (tag && isBooksRailParentTag(tag, allTags, tagParentLinks)) return null
+        return cur
+      })
+    } else {
+      clearTagFilter()
+    }
   }
 
   function toggleMobileBrowseFab() {
     setMobileBrowseFabOpen((open) => !open)
   }
 
-  function toggleTagSelect(tagId: string) {
+  function syncTagPullEntryForSelection(
+    tagId: string | null,
+    explicitFilterTagIds?: string[],
+  ) {
+    if (!tagId) {
+      setTagPullEntry(null)
+      return
+    }
+    const filterTagIds =
+      explicitFilterTagIds ??
+      resolveBooksTagFilterTagIds(
+        homeBrowseNav,
+        tagId,
+        booksRailExpandedParentIdRef.current,
+        allTagsRef.current,
+        tagParentLinksRef.current,
+      )
+    setTagPullEntry({
+      tagId,
+      filterTagIds,
+      nav: homeBrowseNav,
+      notes: readLocalNotesForTagFilter(filterTagIds, notesRef.current),
+    })
+  }
+
+  function toggleTagSelect(
+    tagId: string,
+    options?: { childOfParentId?: string },
+  ) {
     const tag = allTags.find((t) => t.id === tagId)
+    const childOfParentId = options?.childOfParentId
+    const linkedAsChildUnderParent =
+      childOfParentId != null &&
+      isTagChildOfParent(tagId, childOfParentId, allTags, tagParentLinks)
     const isBooksParent =
       homeBrowseNav === 'books' &&
-      Boolean(tag && isBooksRailParentTag(tag, allTags))
+      Boolean(
+        tag &&
+          isBooksRailParentTag(tag, allTags, tagParentLinks) &&
+          !linkedAsChildUnderParent,
+      )
 
     if (isBooksParent) {
       if (booksRailExpandedParentId === tagId) {
         setBooksRailExpandedParentId(null)
         setSelectedTagId(null)
-        setTagNotesHasMore(false)
+        syncTagPullEntryForSelection(null)
       } else {
+        const children = getChildTags(tagId, allTags, tagParentLinks)
         setBooksRailExpandedParentId(tagId)
-        setSelectedTagId((cur) => {
-          if (!cur) return null
-          const curTag = allTags.find((t) => t.id === cur)
-          if (curTag?.parent_id === tagId) return cur
-          return null
-        })
+        if (children.length === 0) {
+          setSelectedTagId(tagId)
+          syncTagPullEntryForSelection(tagId, [tagId])
+        } else {
+          setSelectedTagId(null)
+          syncTagPullEntryForSelection(null)
+        }
       }
       setViewingNote(null)
       return
     }
 
-    if (homeBrowseNav === 'books' && tag?.parent_id) {
-      setBooksRailExpandedParentId(tag.parent_id)
+    let booksFilterParentId = booksRailExpandedParentId
+    if (homeBrowseNav === 'books' && tag) {
+      const parentId = resolveBooksRailExpandedParentForTag(
+        tagId,
+        allTags,
+        tagParentLinks,
+        childOfParentId ?? booksRailExpandedParentId,
+      )
+      if (parentId) {
+        booksFilterParentId = parentId
+        setBooksRailExpandedParentId(parentId)
+      }
     }
 
     if (homeBrowseNav === 'tags') {
-      if (selectedTagId === tagId || tagsRailExpandedTagId === tagId) {
-        setTagsRailExpandedTagId(null)
+      if (selectedTagId === tagId) {
         setSelectedTagId(null)
-        setTagNotesHasMore(false)
+        syncTagPullEntryForSelection(null)
         setViewingNote(null)
         return
       }
-      setTagsRailExpandedTagId(tagId)
     }
 
-    setSelectedTagId((cur) => {
-      const next = cur === tagId ? null : tagId
-      if (next !== null && homeBrowseNav !== 'links') {
-        setSelectedSourceId(null)
-        setSourceNotesHasMore(false)
-      }
-      return next
-    })
+    const next = selectedTagId === tagId ? null : tagId
+    if (next !== null && homeBrowseNav !== 'links') {
+      setSelectedSourceId(null)
+      setSourceNotesHasMore(false)
+    }
+    if (next === null) {
+      syncTagPullEntryForSelection(null)
+    } else {
+      const filterTagIds = resolveBooksTagFilterTagIds(
+        homeBrowseNav,
+        next,
+        booksFilterParentId,
+        allTags,
+        tagParentLinks,
+      )
+      syncTagPullEntryForSelection(next, filterTagIds)
+    }
+    setSelectedTagId(next)
     setViewingNote(null)
   }
 
@@ -1375,7 +1648,6 @@ export function HomePage() {
         setSearchNotesResult(null)
         setSearchError(null)
         setSelectedTagId(null)
-        setTagNotesHasMore(false)
         setSearchOpen(false)
       }
       return next
@@ -1389,9 +1661,7 @@ export function HomePage() {
     setMobileBrowseFabOpen(false)
     setSelectedSourceId(sourceId)
     setSelectedTagId(null)
-    setTagNotesHasMore(false)
     setBooksRailExpandedParentId(null)
-    setTagsRailExpandedTagId(null)
     setTagSearch('')
     setSearchNotesResult(null)
     setSearchError(null)
@@ -1402,13 +1672,9 @@ export function HomePage() {
   }
 
   function openTagViewFromNote(tagId: string) {
-    setHomeBrowseNav('tags')
     setMobileBrowseFabOpen(false)
     setSelectedSourceId(null)
     setSourceNotesHasMore(false)
-    setBooksRailExpandedParentId(null)
-    setTagsRailExpandedTagId(tagId)
-    setSelectedTagId(tagId)
     setTagSearch('')
     setSearchNotesResult(null)
     setSearchError(null)
@@ -1416,12 +1682,56 @@ export function HomePage() {
     setViewingNote(null)
     setViewingNoteContextTagId(null)
     setViewNoteLoading(false)
+
+    if (homeBrowseNav === 'books') {
+      const tag = allTags.find((t) => t.id === tagId)
+      const parentId = resolveBooksRailExpandedParentForTag(
+        tagId,
+        allTags,
+        tagParentLinks,
+        booksRailExpandedParentId,
+      )
+      const resolvedParent = parentId ?? booksRailExpandedParentId
+      if (parentId) {
+        setBooksRailExpandedParentId(parentId)
+      }
+
+      if (
+        tag &&
+        isBooksRailParentTag(tag, allTags, tagParentLinks) &&
+        getChildTags(tag.id, allTags, tagParentLinks).length > 0
+      ) {
+        setSelectedTagId(null)
+        syncTagPullEntryForSelection(null)
+        return
+      }
+
+      const filterTagIds = resolveBooksTagFilterTagIds(
+        'books',
+        tagId,
+        resolvedParent,
+        allTags,
+        tagParentLinks,
+      )
+      syncTagPullEntryForSelection(tagId, filterTagIds)
+      setSelectedTagId(tagId)
+      return
+    }
+
+    if (homeBrowseNav === 'links') {
+      syncTagPullEntryForSelection(tagId, [tagId])
+      setSelectedTagId(tagId)
+      return
+    }
+
+    setHomeBrowseNav('tags')
+    syncTagPullEntryForSelection(tagId, [tagId])
+    setSelectedTagId(tagId)
   }
 
   function filterBySourceFromCard(sourceId: string) {
     setSelectedSourceId(sourceId)
     setSelectedTagId(null)
-    setTagNotesHasMore(false)
     setTagSearch('')
     setSearchNotesResult(null)
     setSearchError(null)
@@ -1441,44 +1751,6 @@ export function HomePage() {
     setViewingNote(null)
     setViewingNoteContextTagId(null)
     setEditingNote(note)
-  }
-
-  async function loadMoreTagNotes() {
-    if (!selectedTagId || tagNotesLoadingMore || !tagNotesHasMore) return
-    const tagNotes = notesForSelectedTag
-    const before = tagNotes[tagNotes.length - 1]?.created_at
-    if (!before) return
-    setTagNotesLoadingMore(true)
-    try {
-      const result = await syncNotesStateAfterTagSelectionPull(
-        notesRef.current,
-        selectedTagId,
-        {
-          before,
-        tagIds:
-          homeBrowseNav === 'books'
-            ? resolveTagFilterIds(selectedTagId, allTags, tagParentLinks)
-            : [selectedTagId],
-        },
-      )
-      setNotes(result.notes)
-      setTagNotesHasMore(result.hasMore)
-      tagPullCacheRef.current.set(
-        tagPullCacheKey(
-          selectedTagId,
-          homeBrowseNav,
-          allTags,
-          tagParentLinks,
-        ),
-        { hasMore: result.hasMore },
-      )
-    } catch (e) {
-      setLoadError(
-        supabaseErrorMessage(e, '알 수 없는 오류로 불러오지 못했습니다.'),
-      )
-    } finally {
-      setTagNotesLoadingMore(false)
-    }
   }
 
   async function loadMoreSourceNotes() {
@@ -1512,8 +1784,15 @@ export function HomePage() {
     return allTags.find((x) => x.id === selectedTagId) ?? null
   }, [allTags, selectedTagId])
 
+  const tagViewNoneMemoCount = useMemo(
+    () => notes.filter((n) => noteHasNoTagViewTags(n)).length,
+    [notes, allTags],
+  )
+
   const selectedTagIsParent = Boolean(
-    selectedTagId && tagHasChildren(selectedTagId, allTags, tagParentLinks),
+    selectedTagId &&
+      selectedTagId !== TAG_VIEW_NONE_ID &&
+      tagHasChildren(selectedTagId, allTags, tagParentLinks),
   )
 
   const tagsForGrid = useMemo(() => {
@@ -1544,6 +1823,16 @@ export function HomePage() {
   const selectedSourceBtnRef = useRef<HTMLButtonElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
+  const tagsForGridScrollKey = useMemo(
+    () => tagsForGrid.map((t) => t.id).join('\0'),
+    [tagsForGrid],
+  )
+
+  const visibleTagIdsKey = useMemo(
+    () => visibleTags.map((t) => t.id).join('\0'),
+    [visibleTags],
+  )
+
   useEffect(() => {
     if (!selectedTagId) return
     selectedTagBtnRef.current?.scrollIntoView({
@@ -1551,7 +1840,12 @@ export function HomePage() {
       block: 'nearest',
       behavior: 'smooth',
     })
-  }, [selectedTagId, tagsForGrid])
+  }, [selectedTagId, tagsForGridScrollKey])
+
+  const sourcesForGridScrollKey = useMemo(
+    () => sourcesForGrid.map((s) => s.id).join('\0'),
+    [sourcesForGrid],
+  )
 
   useEffect(() => {
     if (!selectedSourceId) return
@@ -1560,7 +1854,7 @@ export function HomePage() {
       block: 'nearest',
       behavior: 'smooth',
     })
-  }, [selectedSourceId, sourcesForGrid])
+  }, [selectedSourceId, sourcesForGridScrollKey])
 
   useEffect(() => {
     if (!hasActiveSearch || selectedTagId || selectedSourceId || !user?.id) {
@@ -1610,12 +1904,12 @@ export function HomePage() {
     selectedSourceId,
     searchNormalized,
     tagSearch,
-    visibleTags,
+    visibleTagIdsKey,
     user?.id,
   ])
 
   useEffect(() => {
-    if (!selectedTagId) return
+    if (!selectedTagId || selectedTagId === TAG_VIEW_NONE_ID) return
     if (!allTags.some((t) => t.id === selectedTagId)) {
       setSelectedTagId(null)
     }
@@ -1685,13 +1979,13 @@ export function HomePage() {
   const canUseCompose = !showBootstrap && !loading && !loadError
 
   const parentTagsForRail = useMemo(
-    () => getParentTags(allTags),
-    [allTags],
+    () => getParentTags(allTags, tagParentLinks),
+    [allTags, tagParentLinks],
   )
 
   const tagsForTagModeRail = useMemo(
-    () => [...allTags].sort((a, b) => a.name.localeCompare(b.name, 'ko')),
-    [allTags],
+    () => getTagsForTagViewRail(allTags, tagParentLinks),
+    [allTags, tagParentLinks],
   )
 
   const sourcesForLinkModeRail = useMemo(
@@ -1776,7 +2070,7 @@ export function HomePage() {
     (homeBrowseNav === 'books'
       ? true
       : homeBrowseNav === 'tags'
-        ? tagsForTagModeRail.length > 0
+        ? tagsForTagModeRail.length > 0 || tagViewNoneMemoCount > 0
         : sourcesForLinkModeRail.length > 0)
 
   const showRailViewport =
@@ -1835,6 +2129,7 @@ export function HomePage() {
       selectedTagId,
       booksRailExpandedParentId,
       allTags,
+      tagParentLinks,
     ) === null
 
   const selectedOpenSpineId = useMemo(() => {
@@ -1857,7 +2152,25 @@ export function HomePage() {
     if (homeBrowseNav === 'books') {
       if (selectedTagId) {
         const tag = allTags.find((t) => t.id === selectedTagId)
-        if (tag) return { kind: 'tag', tag }
+        if (tag) {
+          const expandedParent = booksRailExpandedParentId
+          if (
+            expandedParent &&
+            selectedTagId !== expandedParent &&
+            isTagChildOfParent(
+              selectedTagId,
+              expandedParent,
+              allTags,
+              tagParentLinks,
+            )
+          ) {
+            return { kind: 'tag', tag }
+          }
+          if (isBooksRailParentTag(tag, allTags, tagParentLinks)) {
+            return { kind: 'parent', tag }
+          }
+          return { kind: 'tag', tag }
+        }
       }
       if (booksRailExpandedParentId) {
         const parent = allTags.find((t) => t.id === booksRailExpandedParentId)
@@ -1867,9 +2180,13 @@ export function HomePage() {
     }
 
     if (homeBrowseNav === 'tags') {
-      const tagId = selectedTagId ?? tagsRailExpandedTagId
-      if (!tagId) return null
-      const tag = allTags.find((t) => t.id === tagId)
+      if (
+        !selectedTagId ||
+        selectedTagId === TAG_VIEW_NONE_ID
+      ) {
+        return null
+      }
+      const tag = allTags.find((t) => t.id === selectedTagId)
       return tag ? { kind: 'tag', tag } : null
     }
 
@@ -1891,11 +2208,11 @@ export function HomePage() {
     hasActiveSearch,
     homeBrowseNav,
     selectedTagId,
-    tagsRailExpandedTagId,
     booksRailExpandedParentId,
     selectedSourceId,
     allTags,
     allSources,
+    tagParentLinks,
   ])
 
   const railSettingsLabel = useMemo(() => {
@@ -1907,6 +2224,9 @@ export function HomePage() {
 
   const openRailSettings = useCallback(() => {
     if (!railEditContext) return
+    setRailEditingParentTag(null)
+    setRailEditingTag(null)
+    setRailEditingSource(null)
     if (railEditContext.kind === 'parent') {
       setRailEditingParentTag(railEditContext.tag)
     } else if (railEditContext.kind === 'tag') {
@@ -1988,6 +2308,7 @@ export function HomePage() {
         selectedTagId,
         booksRailExpandedParentId,
         allTags,
+        tagParentLinks,
       ),
     )
     setAddNoteOpen(true)
@@ -2032,18 +2353,35 @@ export function HomePage() {
     setSearchError(null)
     setSelectedSourceId(null)
     setSourceNotesHasMore(false)
-    setSelectedTagId(tagId)
     const tag = allTags.find((t) => t.id === tagId)
+    const isParentSpine = Boolean(
+      tag && isBooksRailParentTag(tag, allTags, tagParentLinks),
+    )
+    if (isParentSpine) {
+      setHomeBrowseNav('books')
+      setMobileBrowseFabOpen(false)
+    }
+    let expandedParent: string | null = null
     if (tag?.parent_id) {
-      setBooksRailExpandedParentId(tag.parent_id)
-    } else if (tagHasChildren(tagId, allTags, tagParentLinks)) {
-      setBooksRailExpandedParentId(tagId)
+      expandedParent = tag.parent_id
     } else {
-      setBooksRailExpandedParentId(null)
+      const link = tagParentLinks.find((l) => l.tag_id === tagId)
+      if (link) {
+        expandedParent = link.parent_tag_id
+      } else if (tagHasChildren(tagId, allTags, tagParentLinks)) {
+        expandedParent = tagId
+      }
     }
-    if (homeBrowseNav === 'tags') {
-      setTagsRailExpandedTagId(tagId)
-    }
+    setBooksRailExpandedParentId(expandedParent)
+    const filterTagIds = resolveBooksTagFilterTagIds(
+      isParentSpine ? 'books' : homeBrowseNav,
+      tagId,
+      expandedParent,
+      allTags,
+      tagParentLinks,
+    )
+    syncTagPullEntryForSelection(tagId, filterTagIds)
+    setSelectedTagId(tagId)
     setViewingNote(null)
     setSearchOpen(false)
   }
@@ -2266,7 +2604,11 @@ export function HomePage() {
                   selectedSourceId ? '이 출처 메모의 태그' : '내 태그'
                 }
               >
-                {loading || (selectedSourceId && sourcePullLoading) ? (
+                {loading && !homeDataInitialLoadDoneRef.current ? (
+                  <HomeTagGridLoadingHint />
+                ) : selectedSourceId &&
+                  sourcePullLoading &&
+                  notesForSelectedSource.length === 0 ? (
                   <HomeTagGridLoadingHint />
                 ) : displayTags.length === 0 ? (
                   <p className="notes-hint">
@@ -2589,6 +2931,41 @@ export function HomePage() {
                         ? getChildTags(t.id, allTags, tagParentLinks)
                         : []
                       const childCount = parentChildCounts.get(t.id) ?? 0
+                      const parentMemoCount = tagMemoCounts.get(t.id) ?? 0
+                      const spineStatValue =
+                        childCount > 0 ? childCount : parentMemoCount
+                      const spineStatAria =
+                        childCount > 0
+                          ? `하위 태그 ${childCount}개`
+                          : `메모 ${parentMemoCount}개`
+                      const parentPullKey = tagPullCacheKey([t.id], 'books')
+                      const parentCached = tagPullCacheRef.current.get(
+                        parentPullKey,
+                      )
+                      const parentNotesSource =
+                        tagPullEntry?.tagId === t.id &&
+                        tagPullEntry.nav === 'books'
+                          ? tagPullEntry.notes
+                          : mergeNotesById(
+                              notes,
+                              parentCached?.notes ?? [],
+                            )
+                      const parentDirectNotes =
+                        children.length > 0
+                          ? filterNotesForParentOnlyUnderParent(
+                              parentNotesSource,
+                              t.id,
+                              allTags,
+                              tagParentLinks,
+                            )
+                          : filterNotesForSingleTagId(parentNotesSource, t.id)
+                      const showParentDirectNotes =
+                        isOpen &&
+                        (children.length === 0
+                          ? parentMemoCount > 0 ||
+                            parentDirectNotes.length > 0 ||
+                            selectedTagId === t.id
+                          : parentDirectNotes.length > 0)
                       return (
                         <li
                           key={t.id}
@@ -2618,76 +2995,97 @@ export function HomePage() {
                                 </span>
                               </button>
                               <ParentTagSpineStat
-                                value={childCount}
-                                ariaLabel={`하위 태그 ${childCount}개`}
+                                value={spineStatValue}
+                                ariaLabel={spineStatAria}
                               />
                             </div>
                             {isOpen ? (
                               <div
                                 ref={openTracksRef}
                                 className="parent-tag-inline-tracks"
-                                aria-label={`${displayTagName(t.name)} 하위 태그`}
+                                aria-label={`${displayTagName(t.name)} 메모·하위 태그`}
                               >
                                 {children.length > 0 ? (
-                                  <ul className="parent-tag-child-list">
-                                    {children.map((child) => {
-                                      const childActive =
-                                        selectedTagId === child.id
-                                      const showChildNotes =
-                                        childActive &&
-                                        !tagHasChildren(
-                                          child.id,
-                                          allTags,
-                                          tagParentLinks,
-                                        )
-                                      return (
-                                        <li
-                                          key={child.id}
-                                          className="parent-tag-child-block"
-                                        >
-                                          <button
-                                            type="button"
-                                            className={`parent-tag-child-item${
-                                              childActive
-                                                ? ' parent-tag-child-item--selected'
-                                                : ''
-                                            }`}
-                                            aria-pressed={childActive}
-                                            aria-expanded={showChildNotes}
-                                            onClick={() =>
-                                              toggleTagSelect(child.id)
-                                            }
+                                  <>
+                                    <ul
+                                      className="parent-tag-child-list parent-tag-child-list--nav"
+                                      aria-label={`${displayTagName(t.name)} 하위 태그`}
+                                    >
+                                      {children.map((child) => {
+                                        const childActive =
+                                          selectedTagId === child.id
+                                        return (
+                                          <li
+                                            key={child.id}
+                                            className="parent-tag-child-block"
                                           >
-                                            <span className="parent-tag-child-label">
-                                              {displayTagName(child.name)}
-                                            </span>
-                                          </button>
-                                          {showChildNotes ? (
-                                            <InlineRailNotesPanel
-                                              tagLabel={displayTagName(
-                                                child.name,
-                                              )}
-                                              tagId={child.id}
-                                              notes={notesForSelectedTag}
-                                              loading={tagPullLoading}
-                                              hasMore={tagNotesHasMore}
-                                              loadingMore={tagNotesLoadingMore}
-                                              onLoadMore={() =>
-                                                void loadMoreTagNotes()
+                                            <button
+                                              type="button"
+                                              className={`parent-tag-child-item${
+                                                childActive
+                                                  ? ' parent-tag-child-item--selected'
+                                                  : ''
+                                              }`}
+                                              aria-pressed={childActive}
+                                              onClick={() =>
+                                                toggleTagSelect(child.id, {
+                                                  childOfParentId: t.id,
+                                                })
                                               }
-                                              onView={openViewNote}
-                                              onTagFilter={openTagViewFromNote}
-                                            />
-                                          ) : null}
-                                        </li>
-                                      )
-                                    })}
-                                  </ul>
-                                ) : (
-                                  <p className="parent-tag-child-empty">
-                                    하위 태그가 없습니다.
-                                  </p>
-                                )}
+                                            >
+                                              <span className="parent-tag-child-label">
+                                                {displayTagName(child.name)}
+                                              </span>
+                                            </button>
+                                          </li>
+                                        )
+                                      })}
+                                    </ul>
+                                    {selectedTagId &&
+                                    children.some(
+                                      (c) => c.id === selectedTagId,
+                                    ) ? (
+                                      <InlineRailNotesPanel
+                                        tagLabel={displayTagName(
+                                          children.find(
+                                            (c) => c.id === selectedTagId,
+                                          )!.name,
+                                        )}
+                                        tagId={selectedTagId}
+                                        notes={notesForSelectedTag}
+                                        loading={tagPullLoading}
+                                        onView={openViewNote}
+                                        onTagFilter={openTagViewFromNote}
+                                      />
+                                    ) : showParentDirectNotes ? (
+                                      <InlineRailNotesPanel
+                                        tagLabel={displayTagName(t.name)}
+                                        tagId={t.id}
+                                        notes={parentDirectNotes}
+                                        loading={false}
+                                        onView={openViewNote}
+                                        onTagFilter={openTagViewFromNote}
+                                      />
+                                    ) : null}
+                                  </>
+                                ) : showParentDirectNotes ? (
+                                  <InlineRailNotesPanel
+                                    tagLabel={displayTagName(t.name)}
+                                    tagId={t.id}
+                                    notes={
+                                      selectedTagId === t.id
+                                        ? notesForSelectedTag
+                                        : parentDirectNotes
+                                    }
+                                    loading={
+                                      selectedTagId === t.id &&
+                                      tagPullLoading &&
+                                      parentDirectNotes.length === 0
+                                    }
+                                    onView={openViewNote}
+                                    onTagFilter={openTagViewFromNote}
+                                  />
+                                ) : null}
                               </div>
                             ) : null}
                           </div>
@@ -2695,8 +3093,77 @@ export function HomePage() {
                       )
                     })
                   : null}
-                {homeBrowseNav === 'tags'
-                  ? tagsForTagModeRail.map((t) => {
+                {homeBrowseNav === 'tags' ? (
+                  <>
+                    <li
+                      key={TAG_VIEW_NONE_ID}
+                      ref={(el) => {
+                        if (el) tagSpineSlotRefs.current.set(TAG_VIEW_NONE_ID, el)
+                        else tagSpineSlotRefs.current.delete(TAG_VIEW_NONE_ID)
+                        if (selectedTagId === TAG_VIEW_NONE_ID) {
+                          openParentSpineRef.current = el
+                        }
+                      }}
+                      className={`parent-tag-spine-slot${
+                        selectedTagId === TAG_VIEW_NONE_ID
+                          ? ' parent-tag-spine-slot--open'
+                          : ''
+                      }`}
+                    >
+                      <div className="parent-tag-spine-group">
+                        <div
+                          className={`parent-tag-card${
+                            selectedTagId === TAG_VIEW_NONE_ID
+                              ? ' parent-tag-card--selected'
+                              : ''
+                          }${
+                            selectedTagId === TAG_VIEW_NONE_ID
+                              ? ' parent-tag-card--expanded'
+                              : ''
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            className="parent-tag-card-body"
+                            aria-pressed={selectedTagId === TAG_VIEW_NONE_ID}
+                            aria-current={
+                              selectedTagId === TAG_VIEW_NONE_ID
+                                ? 'true'
+                                : undefined
+                            }
+                            aria-expanded={selectedTagId === TAG_VIEW_NONE_ID}
+                            aria-label="태그 없음"
+                            title="태그 없음"
+                            onClick={() => toggleTagSelect(TAG_VIEW_NONE_ID)}
+                          >
+                            <span className="parent-tag-card-label">
+                              태그 없음
+                            </span>
+                          </button>
+                          <ParentTagSpineStat
+                            value={tagViewNoneMemoCount}
+                            ariaLabel={`메모 ${tagViewNoneMemoCount}개`}
+                          />
+                        </div>
+                        {selectedTagId === TAG_VIEW_NONE_ID ? (
+                          <div
+                            ref={openTracksRef}
+                            className="parent-tag-inline-tracks"
+                            aria-label="태그 없음 메모"
+                          >
+                            <InlineRailNotesPanel
+                              tagLabel="태그 없음"
+                              tagId={TAG_VIEW_NONE_ID}
+                              notes={notesForSelectedTag}
+                              loading={tagPullLoading}
+                              onView={(note) => openViewNote(note, null)}
+                              onTagFilter={openTagViewFromNote}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    </li>
+                    {tagsForTagModeRail.map((t) => {
                       const isOpen = selectedTagId === t.id
                       const showNotes = isOpen
                       const memoCount = tagMemoCounts.get(t.id) ?? 0
@@ -2729,7 +3196,7 @@ export function HomePage() {
                                 onClick={() => toggleTagSelect(t.id)}
                               >
                                 <span className="parent-tag-card-label">
-                                  {formatSpineLabel(t.name)}
+                                  {formatTagViewSpineLabel(t.name)}
                                 </span>
                               </button>
                               <ParentTagSpineStat
@@ -2749,9 +3216,6 @@ export function HomePage() {
                                     tagId={t.id}
                                     notes={notesForSelectedTag}
                                     loading={tagPullLoading}
-                                    hasMore={tagNotesHasMore}
-                                    loadingMore={tagNotesLoadingMore}
-                                    onLoadMore={() => void loadMoreTagNotes()}
                                     onView={openViewNote}
                                     onTagFilter={openTagViewFromNote}
                                   />
@@ -2761,8 +3225,9 @@ export function HomePage() {
                           </div>
                         </li>
                       )
-                    })
-                  : null}
+                    })}
+                  </>
+                ) : null}
                 {homeBrowseNav === 'links'
                   ? sourcesForLinkModeRail.map((s) => {
                       const isOpen = selectedSourceId === s.id
@@ -2845,11 +3310,6 @@ export function HomePage() {
                                               tagId={tag.id}
                                               notes={notesForLinkModeTag}
                                               loading={tagPullLoading}
-                                              hasMore={tagNotesHasMore}
-                                              loadingMore={tagNotesLoadingMore}
-                                              onLoadMore={() =>
-                                                void loadMoreTagNotes()
-                                              }
                                               onView={openViewNote}
                                               onTagFilter={openTagViewFromNote}
                                             />
@@ -2918,16 +3378,6 @@ export function HomePage() {
                   ))}
                 </ul>
               )}
-              {tagNotesHasMore && notesForSelectedTag.length > 0 ? (
-                <button
-                  type="button"
-                  className="btn note-board-load-more"
-                  disabled={tagNotesLoadingMore || tagPullLoading}
-                  onClick={() => void loadMoreTagNotes()}
-                >
-                  {tagNotesLoadingMore ? '불러오는 중…' : '이 태그 메모 더 보기'}
-                </button>
-              ) : null}
             </section>
           ) : null}
 
@@ -3009,7 +3459,6 @@ export function HomePage() {
         onTagUpdated={applyTagUpdated}
         onTagDeleted={applyTagDeleted}
         onTagsPromoted={applyTagPromoted}
-        resolveLinkedNoteIds={resolveLinkedNoteIds}
         onTagError={(message) => setSaveError(message)}
         onSyncFromServer={syncAllFromServer}
         onSourcesChanged={refreshSourcesInUse}

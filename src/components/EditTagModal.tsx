@@ -2,9 +2,10 @@ import { useEffect, useId, useMemo, useState, startTransition } from 'react'
 import { ConfirmModal } from './ConfirmModal'
 import { ModalSelect } from './ModalSelect'
 import {
-  deleteTagAndLinkedNotes,
+  deleteTag,
   deleteParentTag,
   promoteTagToParent,
+  supabaseErrorMessage,
   updateTag,
   updateTagParent,
   type PromoteTagToParentResult,
@@ -27,8 +28,6 @@ type Props = {
   onTagDeleted: (payload: { tagId: string; deletedNoteIds: string[] }) => void
   /** 상위태그 승격 후 하위로 편입된 태그 */
   onTagsPromoted?: (result: PromoteTagToParentResult) => void
-  /** 태그 삭제 시 로컬에서 함께 지울 메모 id (화면 즉시 반영용) */
-  resolveLinkedNoteIds?: (tagId: string) => string[]
   onTagError?: (message: string) => void
   /** 저장·삭제 실패 시 서버 기준으로 다시 불러옴 */
   onSyncFromServer?: () => void | Promise<void>
@@ -43,7 +42,6 @@ export function EditTagModal({
   onTagUpdated,
   onTagDeleted,
   onTagsPromoted,
-  resolveLinkedNoteIds,
   onTagError,
   onSyncFromServer,
   onSourcesChanged,
@@ -83,7 +81,7 @@ export function EditTagModal({
     [parentCandidates],
   )
 
-  const canPickParent = Boolean(tag && !tagHasChildren(tag.id, tags))
+  const canPickParent = parentCandidates.length > 0
 
   if (!open || !tag) return null
 
@@ -97,7 +95,7 @@ export function EditTagModal({
   const isParentTag = tagHasChildren(tag.id, tags)
   const deleteConfirmMessage = isParentTag
     ? `「${displayTagName(tag.name)}」 상위태그를 삭제할까요? 하위 태그는 삭제되지 않고 미분류(상위 미지정) 태그로 남습니다. 메모는 삭제되지 않고, 이 상위태그와의 연결만 제거됩니다. 삭제 후에는 다시 복구할 수 없습니다.`
-    : `「${displayTagName(tag.name)}」 태그를 삭제할까요? 이 태그가 붙어 있는 메모는 모두 함께 삭제됩니다. 다른 태그가 함께 붙어 있어도 메모 전체가 지워집니다. 삭제 후에는 다시 복구할 수 없습니다.`
+    : `「${displayTagName(tag.name)}」 태그를 삭제할까요? 메모는 삭제되지 않습니다. 이 태그 연결만 제거되고, 태그가 하나도 없는 메모는 「태그 없음」에 보입니다. 삭제 후에는 다시 복구할 수 없습니다.`
 
   return (
     <>
@@ -152,23 +150,10 @@ export function EditTagModal({
                     emptyLabel="없음 (상위 미지정)"
                     onChange={setParentId}
                   />
-                  <p className="tag-manage-hint edit-tag-parent-hint">
-                    상위태그만 선택할 수 있습니다. 상위태그는 「상위태그 추가」로
-                    만든 태그입니다.
-                  </p>
                 </div>
-              ) : (
-                <p className="tag-manage-hint">
-                  「{displayTagName(tag.name)}」는 상위태그입니다. 아래에 하위
-                  태그가 있어 다른 상위 아래로 옮길 수 없습니다.
-                </p>
-              )}
+              ) : null}
               {canPromote ? (
                 <div className="composer-field">
-                  <p className="tag-manage-hint edit-tag-promote-hint">
-                    상위태그(책)로 만들면 이 태그가 붙은 메모는 그대로 두고, 같은
-                    메모에 함께 붙은 다른 태그들이 자동으로 하위 태그가 됩니다.
-                  </p>
                   <button
                     type="button"
                     className="btn btn--block edit-tag-promote-btn"
@@ -244,37 +229,39 @@ export function EditTagModal({
       <ConfirmModal
         open={promoteConfirmOpen}
         title="상위태그로 변경"
-        message={`「${displayTagName(tag.name)}」을(를) 상위태그(책)로 바꿀까요? 이 태그가 붙은 메모는 그대로 유지되고, 같은 메모에 함께 붙은 다른 태그들은 하위 태그로 들어갑니다. 이미 하위 태그가 있는 태그는 자동 편입되지 않습니다.`}
+        message={`「${displayTagName(tag.name)}」을(를) 상위태그(책)로 바꿀까요? 이 태그가 붙은 메모는 그대로 유지되고, 같은 메모에 함께 붙은 다른 태그들이 이 상위태그의 하위로 연결됩니다.`}
         cancelLabel="취소"
-        confirmLabel="변경"
-        onCancel={() => setPromoteConfirmOpen(false)}
-        onConfirm={() => {
-          setError(null)
+        confirmLabel={saving ? '변경 중…' : '변경'}
+        busy={saving}
+        onCancel={() => {
+          if (saving) return
           setPromoteConfirmOpen(false)
+        }}
+        onConfirm={() => {
+          if (saving) return
+          setError(null)
           const tagId = tag.id
-          onTagUpdated({ ...tag, is_parent: true, parent_id: null })
-          onClose()
           void (async () => {
             setSaving(true)
             try {
               const result = await promoteTagToParent(tagId)
+              setPromoteConfirmOpen(false)
               onTagsPromoted?.(result)
               onTagUpdated(result.parent)
-              if (result.skippedTagIds.length > 0) {
-                onTagError?.(
-                  `하위 태그가 있어 ${result.skippedTagIds.length}개 태그는 자동 편입하지 못했습니다.`,
-                )
-              }
+              onClose()
             } catch (e) {
+              const message = supabaseErrorMessage(
+                e,
+                '상위태그로 변경하지 못했습니다.',
+              )
               console.error('[태그노트] EditTagModal 상위태그 승격 실패', {
                 tagId,
-              }, e)
+                message,
+                error: e,
+              })
+              setPromoteConfirmOpen(false)
               await onSyncFromServer?.()
-              onTagError?.(
-                e instanceof Error
-                  ? e.message
-                  : '상위태그로 변경하지 못했습니다.',
-              )
+              onTagError?.(message)
             } finally {
               setSaving(false)
             }
@@ -293,10 +280,7 @@ export function EditTagModal({
         onConfirm={() => {
           setError(null)
           const tagId = tag.id
-          const deletedNoteIds = isParentTag
-            ? []
-            : (resolveLinkedNoteIds?.(tagId) ?? [])
-          onTagDeleted({ tagId, deletedNoteIds })
+          onTagDeleted({ tagId, deletedNoteIds: [] })
           setDeleteConfirmOpen(false)
           onClose()
           void (async () => {
@@ -304,7 +288,7 @@ export function EditTagModal({
               if (isParentTag) {
                 await deleteParentTag(tagId)
               } else {
-                await deleteTagAndLinkedNotes(tagId)
+                await deleteTag(tagId)
                 await onSourcesChanged?.()
               }
             } catch (e) {

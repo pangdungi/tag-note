@@ -1925,6 +1925,15 @@ body:has(.home-main--parent-rail-hero) {
   font-size: 0.82rem;
 }
 
+.edit-parent-tag-child-pick {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.edit-parent-tag-children--add {
+  margin-top: 1rem;
+}
+
 .edit-parent-tag-children-hint {
   margin: 0 0 0.65rem;
 }
@@ -1968,6 +1977,18 @@ body:has(.home-main--parent-rail-hero) {
   max-width: 100%;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+/* 책 뷰 — 하위 태그 네비(상단), 메모는 아래 영역 */
+.parent-tag-child-list--nav {
+  flex: 0 0 auto;
+  overflow-y: auto;
+  max-height: min(40vh, 12rem);
+  border-bottom: 1px solid var(--border);
+}
+
+.parent-tag-child-list--nav .parent-tag-child-block + .parent-tag-child-block {
+  border-top: 1px solid var(--border);
 }
 
 .parent-tag-child-block {

@@ -101,12 +101,33 @@ const MEMO_TEXT_SHORTCUTS: { pattern: RegExp; id: string }[] = [
   { pattern: /->/g, id: 'arrowright' },
 ]
 
+/** 줄 시작 글머리(`- `, `•` 등) → 빈 칸(네모) 아이콘 */
+const MEMO_BULLET_LINE_PREFIX_RE = /(^|\n)(?:[-*]|•|·)\s/g
+
+const MEMO_IN_EDITOR_SHORTCUTS: {
+  suffix: string
+  id: string
+  lineStartOnly?: boolean
+}[] = [
+  { suffix: '->', id: 'arrowright' },
+  { suffix: '- ', id: 'uncheck', lineStartOnly: true },
+  { suffix: '* ', id: 'uncheck', lineStartOnly: true },
+  { suffix: '• ', id: 'uncheck', lineStartOnly: true },
+  { suffix: '· ', id: 'uncheck', lineStartOnly: true },
+  { suffix: '•', id: 'uncheck', lineStartOnly: true },
+  { suffix: '·', id: 'uncheck', lineStartOnly: true },
+]
+
 export function applyMemoTextShortcuts(body: string): string {
   let result = body
   for (const { pattern, id } of MEMO_TEXT_SHORTCUTS) {
     pattern.lastIndex = 0
     result = result.replace(pattern, memoEmojiToken(id))
   }
+  result = result.replace(
+    MEMO_BULLET_LINE_PREFIX_RE,
+    (_, lineBreak) => `${lineBreak}${memoEmojiToken('uncheck')} `,
+  )
   return result
 }
 
@@ -290,7 +311,49 @@ export function serializedOffsetInEditor(
   return memoBodyFromEditor(tmp).length
 }
 
-/** `->` 입력 직후 커서 앞 문자열을 화살표 아이콘으로 치환 */
+function getLinePrefixBeforeCursor(root: HTMLElement, range: Range): string {
+  const lineRange = document.createRange()
+  lineRange.selectNodeContents(root)
+  lineRange.setEnd(range.startContainer, range.startOffset)
+  const tmp = document.createElement('div')
+  tmp.appendChild(lineRange.cloneContents())
+  const serialized = memoBodyFromEditor(tmp)
+  const lastBreak = serialized.lastIndexOf('\n')
+  return lastBreak === -1 ? serialized : serialized.slice(lastBreak + 1)
+}
+
+function deleteStrippedCharsBeforeCursor(
+  range: Range,
+  count: number,
+): Range | null {
+  if (range.startContainer.nodeType !== Node.TEXT_NODE) {
+    return null
+  }
+  const textNode = range.startContainer as Text
+  const raw = textNode.textContent ?? ''
+  let offset = range.startOffset
+  let deleted = 0
+  while (offset > 0 && deleted < count) {
+    offset -= 1
+    if (raw[offset] === MEMO_EDITOR_ZWSP) {
+      continue
+    }
+    deleted += 1
+  }
+  if (deleted < count) {
+    return null
+  }
+  const deleteRange = document.createRange()
+  deleteRange.setStart(textNode, offset)
+  deleteRange.setEnd(textNode, range.startOffset)
+  deleteRange.deleteContents()
+  const collapsed = document.createRange()
+  collapsed.setStart(textNode, offset)
+  collapsed.collapse(true)
+  return collapsed
+}
+
+/** `->`, 줄 시작 `- `·`•` 등을 고정 아이콘으로 치환 */
 export function applyMemoTextShortcutsInEditor(root: HTMLElement): boolean {
   const sel = window.getSelection()
   if (!sel || sel.rangeCount === 0) {
@@ -302,26 +365,30 @@ export function applyMemoTextShortcutsInEditor(root: HTMLElement): boolean {
     return false
   }
 
-  const { startContainer, startOffset } = range
-  if (startContainer.nodeType !== Node.TEXT_NODE) {
-    return false
+  const linePrefix = getLinePrefixBeforeCursor(root, range)
+  const shortcuts = [...MEMO_IN_EDITOR_SHORTCUTS].sort(
+    (a, b) => b.suffix.length - a.suffix.length,
+  )
+
+  for (const { suffix, id, lineStartOnly } of shortcuts) {
+    if (!linePrefix.endsWith(suffix)) {
+      continue
+    }
+    if (lineStartOnly && linePrefix !== suffix) {
+      continue
+    }
+
+    const collapsed = deleteStrippedCharsBeforeCursor(range, suffix.length)
+    if (!collapsed) {
+      continue
+    }
+
+    sel.removeAllRanges()
+    sel.addRange(collapsed)
+    return insertMemoEmojiInEditor(root, id)
   }
 
-  const textNode = startContainer as Text
-  const raw = textNode.textContent ?? ''
-  if (startOffset < 2 || raw.slice(startOffset - 2, startOffset) !== '->') {
-    return false
-  }
-
-  const deleteRange = document.createRange()
-  deleteRange.setStart(textNode, startOffset - 2)
-  deleteRange.setEnd(textNode, startOffset)
-  deleteRange.deleteContents()
-
-  sel.removeAllRanges()
-  sel.addRange(deleteRange)
-
-  return insertMemoEmojiInEditor(root, 'arrowright')
+  return false
 }
 
 export function insertMemoEmojiInEditor(root: HTMLElement, id: string): boolean {

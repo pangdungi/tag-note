@@ -117,14 +117,6 @@ export function AssignTagsToParentModal({
           </button>
         </div>
         <div className="edit-note-modal-body tag-manage-assign-body">
-          <p className="tag-manage-hint">
-            <span className="tag-manage-pill tag-manage-pill--parent">
-              {displayTagName(parentTag.name)}
-            </span>
-            {' '}아래에 둘 하위 태그를 고르거나 새로 만드세요. (상위·하위 2단계만
-            지원합니다.)
-          </p>
-
           {existingChildren.length > 0 ? (
             <div className="tag-manage-assign-section">
               <p className="tag-manage-assign-label">이미 들어 있는 태그</p>
@@ -150,7 +142,7 @@ export function AssignTagsToParentModal({
               ) : null}
             </div>
             {assignableTags.length === 0 ? (
-              <p className="tag-manage-assign-empty">넣을 수 있는 상위 미지정 태그가 없습니다.</p>
+              <p className="tag-manage-assign-empty">없음</p>
             ) : (
               <>
                 <div className="tag-manage-search-wrap tag-manage-assign-search-wrap">

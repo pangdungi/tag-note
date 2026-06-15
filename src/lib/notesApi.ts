@@ -1,6 +1,14 @@
 import { supabase } from './supabase'
 import { normalizeSourceTitle, sourceTitleKey } from './sourceUtils'
-import { normalizeTagInput, pickColorIndex, isPersistedTagId, tagHasChildren } from './tagUtils'
+import {
+  normalizeTagInput,
+  pickColorIndex,
+  isPersistedTagId,
+  noteHasNoTagViewTags,
+  tagHasChildren,
+  TAG_VIEW_NONE_ID,
+  filterNotesForAllTagIds,
+} from './tagUtils'
 
 /** Supabase/PostgREST 오류에서 사람이 읽을 메시지 추출 */
 export function supabaseErrorMessage(error: unknown, fallback: string): string {
@@ -145,26 +153,6 @@ function mapNoteRowFromDb(row: NoteRowDb): NoteWithTags {
 
 function countNoteTagLinks(note: NoteWithTags): number {
   return note.note_tags.filter((nt) => nt.tags?.id ?? nt.tag_id).length
-}
-
-/** tag 필터 조회(!inner)는 매칭 태그만 담김 — 카드에 다른 태그 표시하려면 전체 태그로 보강 */
-async function hydrateNotesWithAllTags(
-  notes: NoteWithTags[],
-): Promise<NoteWithTags[]> {
-  if (notes.length === 0) return notes
-  const ids = notes.map((n) => n.id)
-  const { data, error } = await supabase
-    .from('notes')
-    .select(NOTE_WITH_TAGS_SELECT)
-    .in('id', ids)
-  if (error) throw error
-  const fullById = new Map(
-    ((data ?? []) as unknown as NoteRowDb[]).map((row) => [
-      row.id,
-      toListPreviewNote(mapNoteRowFromDb(row)),
-    ]),
-  )
-  return notes.map((n) => fullById.get(n.id) ?? n)
 }
 
 function mergeNotePreferringFullTags(
@@ -479,6 +467,20 @@ const NOTE_WITH_TAGS_SELECT = `
       )
     `
 
+/** 태그 필터 조회 — 해당 태그가 붙은 메모만 (inner join) */
+const NOTE_WITH_TAG_FILTER_SELECT = `
+      id,
+      body,
+      source,
+      source_id,
+      created_at,
+      sources ( id, title ),
+      note_tags!inner (
+        tag_id,
+        tags ( id, name, color_index )
+      )
+    `
+
 /** @deprecated 초기 전체 로드 대신 fetchNotesPage 사용 */
 export async function fetchNotesWithTags(): Promise<NoteWithTags[]> {
   const page = await fetchNotesPage()
@@ -510,6 +512,32 @@ export async function fetchNotesPage(opts?: {
   }
 }
 
+/** 태그가 전혀 없는 메모 — note_tags 행이 없는 notes만 (1회 조회) */
+export async function fetchNotesPageWithNoTags(opts?: {
+  limit?: number
+  before?: string
+}): Promise<NotesPageResult> {
+  const limit = opts?.limit ?? NOTES_LIST_PAGE_SIZE
+  let q = supabase
+    .from('notes')
+    .select(NOTE_WITH_TAGS_SELECT)
+    .is('note_tags', null)
+    .order('created_at', { ascending: false })
+    .limit(limit + 1)
+  if (opts?.before) {
+    q = q.lt('created_at', opts.before)
+  }
+  const { data, error } = await q
+  if (error) throw error
+  const rows = (data ?? []) as unknown as NoteRowDb[]
+  const hasMore = rows.length > limit
+  const slice = hasMore ? rows.slice(0, limit) : rows
+  return {
+    notes: slice.map((r) => toListPreviewNote(mapNoteRowFromDb(r))),
+    hasMore,
+  }
+}
+
 /** 서버에 반영된 한 건만 조회(전체 목록 갈아끼우기 대신 국소 갱신용). */
 export async function fetchNoteWithTagsById(
   noteId: string,
@@ -523,7 +551,7 @@ export async function fetchNoteWithTagsById(
   return mapNoteRowFromDb(data as unknown as NoteRowDb)
 }
 
-/** 특정 태그 메모 — 최신순 페이지 */
+/** 특정 태그 메모 — 최신순 페이지 (전체 note_tags 포함, 1회 조회) */
 export async function fetchNotesPageForTag(
   tagId: string,
   opts?: { limit?: number; before?: string },
@@ -531,20 +559,7 @@ export async function fetchNotesPageForTag(
   const limit = opts?.limit ?? NOTES_LIST_PAGE_SIZE
   let q = supabase
     .from('notes')
-    .select(
-      `
-      id,
-      body,
-      source,
-      source_id,
-      created_at,
-      sources ( id, title ),
-      note_tags!inner (
-        tag_id,
-        tags ( id, name, color_index )
-      )
-    `,
-    )
+    .select(NOTE_WITH_TAG_FILTER_SELECT)
     .eq('note_tags.tag_id', tagId)
     .order('created_at', { ascending: false })
     .limit(limit + 1)
@@ -556,27 +571,65 @@ export async function fetchNotesPageForTag(
   const rows = (data ?? []) as unknown as NoteRowDb[]
   const hasMore = rows.length > limit
   const slice = hasMore ? rows.slice(0, limit) : rows
-  const notes = await hydrateNotesWithAllTags(
-    slice.map((r) => toListPreviewNote(mapNoteRowFromDb(r))),
-  )
   return {
-    notes,
+    notes: slice.map((r) => toListPreviewNote(mapNoteRowFromDb(r))),
     hasMore,
   }
 }
 
-const NOTE_TAG_PAGE_SELECT = `
-  id,
-  body,
-  source,
-  source_id,
-  created_at,
-  sources ( id, title ),
-  note_tags!inner (
-    tag_id,
-    tags ( id, name, color_index )
-  )
-`
+/** 태그(또는 태그 없음) 클릭 시 — 해당 목록 1페이지만 조회 */
+export async function pullTagNotesPage(
+  tagId: string,
+  opts?: { before?: string },
+): Promise<NotesPageResult> {
+  if (tagId === TAG_VIEW_NONE_ID) {
+    return fetchNotesPageWithNoTags(opts)
+  }
+  return fetchNotesPageForTag(tagId, opts)
+}
+
+/** 태그 선택 시 — 해당 태그 메모 전부 조회 (더 보기 버튼 없음) */
+export async function pullAllTagNotes(tagId: string): Promise<NotesPageResult> {
+  const map = new Map<string, NoteWithTags>()
+  let before: string | undefined
+  let hasMore = true
+  let pages = 0
+  const maxPages = 80
+
+  while (hasMore && pages < maxPages) {
+    pages++
+    const page = await pullTagNotesPage(tagId, { before })
+    for (const note of page.notes) {
+      map.set(note.id, note)
+    }
+    hasMore = page.hasMore
+    if (page.notes.length === 0) break
+    before = page.notes[page.notes.length - 1]?.created_at
+  }
+
+  return {
+    notes: sortNotesNewestFirst([...map.values()]),
+    hasMore: false,
+  }
+}
+
+/** 여러 태그가 모두 붙은 메모 전량 조회 (교집합) */
+export async function pullAllTagNotesForTagIds(
+  tagIds: string[],
+): Promise<NotesPageResult> {
+  const ids = [...new Set(tagIds.filter(Boolean))]
+  if (ids.length === 0) {
+    return { notes: [], hasMore: false }
+  }
+  if (ids.length === 1) {
+    return pullAllTagNotes(ids[0]!)
+  }
+  const page = await pullAllTagNotes(ids[ids.length - 1]!)
+  return {
+    notes: filterNotesForAllTagIds(page.notes, ids),
+    hasMore: false,
+  }
+}
 
 function dedupeNoteRows(rows: NoteRowDb[]): NoteRowDb[] {
   const seen = new Set<string>()
@@ -605,7 +658,7 @@ export async function fetchNotesPageForTagIds(
   const limit = opts?.limit ?? NOTES_LIST_PAGE_SIZE
   let q = supabase
     .from('notes')
-    .select(NOTE_TAG_PAGE_SELECT)
+    .select(NOTE_WITH_TAG_FILTER_SELECT)
     .in('note_tags.tag_id', ids)
     .order('created_at', { ascending: false })
     .limit(limit + 1)
@@ -617,11 +670,8 @@ export async function fetchNotesPageForTagIds(
   const rows = dedupeNoteRows((data ?? []) as unknown as NoteRowDb[])
   const hasMore = rows.length > limit
   const slice = hasMore ? rows.slice(0, limit) : rows
-  const notes = await hydrateNotesWithAllTags(
-    slice.map((r) => toListPreviewNote(mapNoteRowFromDb(r))),
-  )
   return {
-    notes,
+    notes: slice.map((r) => toListPreviewNote(mapNoteRowFromDb(r))),
     hasMore,
   }
 }
@@ -684,16 +734,6 @@ export async function syncNotesStateAfterSourceSelectionPull(
     .filter((n) => noteHasSourceId(n, sourceId) && !freshIds.has(n.id))
     .map((n) => n.id)
 
-  const staleRows = await Promise.all(
-    staleIds.map(async (id) => {
-      try {
-        return await fetchNoteWithTagsById(id)
-      } catch {
-        return null
-      }
-    }),
-  )
-
   const map = new Map(prev.map((n) => [n.id, n]))
   for (const id of staleIds) {
     map.delete(id)
@@ -701,10 +741,45 @@ export async function syncNotesStateAfterSourceSelectionPull(
   for (const n of fresh) {
     map.set(n.id, n)
   }
-  for (const row of staleRows) {
-    if (row) {
-      map.set(row.id, row)
+  return {
+    notes: sortNotesNewestFirst(Array.from(map.values())),
+    hasMore: false,
+  }
+}
+
+/** 태그 뷰 「태그 없음」 — 서버에서 태그 없는 메모만 페이지 조회 */
+export async function syncNotesStateAfterTagViewNonePull(
+  prev: NoteWithTags[],
+  opts?: { before?: string },
+): Promise<TagNotesSyncResult> {
+  const page = await fetchNotesPageWithNoTags({ before: opts?.before })
+  const fresh = page.notes
+
+  if (opts?.before) {
+    return {
+      notes: mergeNotesById(prev, fresh),
+      hasMore: page.hasMore,
     }
+  }
+
+  if (page.hasMore) {
+    return {
+      notes: mergeNotesById(prev, fresh),
+      hasMore: true,
+    }
+  }
+
+  const freshIds = new Set(fresh.map((n) => n.id))
+  const staleIds = prev
+    .filter((n) => noteHasNoTagViewTags(n) && !freshIds.has(n.id))
+    .map((n) => n.id)
+
+  const map = new Map(prev.map((n) => [n.id, n]))
+  for (const id of staleIds) {
+    map.delete(id)
+  }
+  for (const n of fresh) {
+    map.set(n.id, n)
   }
   return {
     notes: sortNotesNewestFirst(Array.from(map.values())),
@@ -770,27 +845,12 @@ export async function syncNotesStateAfterTagSelectionPull(
     .filter((n) => noteHasAnyTagId(n, filterIdSet) && !freshIds.has(n.id))
     .map((n) => n.id)
 
-  const staleRows = await Promise.all(
-    staleIds.map(async (id) => {
-      try {
-        return await fetchNoteWithTagsById(id)
-      } catch {
-        return null
-      }
-    }),
-  )
-
   const map = new Map(prev.map((n) => [n.id, n]))
   for (const id of staleIds) {
     map.delete(id)
   }
   for (const n of fresh) {
-    map.set(n.id, n)
-  }
-  for (const row of staleRows) {
-    if (row) {
-      map.set(row.id, row)
-    }
+    map.set(n.id, mergeNotePreferringFullTags(map.get(n.id) ?? n, n))
   }
   return {
     notes: sortNotesNewestFirst(Array.from(map.values())),
@@ -882,7 +942,6 @@ async function resolveTagIdsForNames(
   names: string[],
   userId: string,
   cache: TagRow[],
-  parentTagId?: string | null,
 ): Promise<
   { tag_id: string; name: string; color_index: number; parent_id?: string | null }[]
 > {
@@ -894,7 +953,6 @@ async function resolveTagIdsForNames(
         label,
         userId,
         cache,
-        parentTagId,
       )
       return { tag_id: id, name: label, color_index, parent_id }
     }),
@@ -906,7 +964,6 @@ async function ensureTagId(
   name: string,
   userId: string,
   cache: TagRow[],
-  parentTagId?: string | null,
 ): Promise<{ id: string; color_index: number; parent_id?: string | null }> {
   const label = normalizeTagInput(name)
   if (!label) throw new Error('태그 이름이 비었습니다.')
@@ -915,30 +972,6 @@ async function ensureTagId(
     (t) => t.name.toLowerCase() === label.toLowerCase() || t.name === label,
   )
   if (hit) {
-    if (
-      parentTagId &&
-      hit.id !== parentTagId &&
-      !hit.parent_id &&
-      !tagHasChildren(hit.id, cache) &&
-      !hit.is_parent
-    ) {
-      const { data, error } = await supabase
-        .from('tags')
-        .update({ parent_id: parentTagId, is_parent: false })
-        .eq('id', hit.id)
-        .select('id, name, color_index, parent_id, is_parent, created_at')
-        .single()
-      if (error) throw error
-      const updated = data as TagRow
-      const cacheIdx = cache.findIndex((t) => t.id === hit.id)
-      if (cacheIdx >= 0) cache[cacheIdx] = updated
-      else cache.push(updated)
-      return {
-        id: updated.id,
-        color_index: updated.color_index,
-        parent_id: updated.parent_id ?? null,
-      }
-    }
     return {
       id: hit.id,
       color_index: hit.color_index,
@@ -948,20 +981,13 @@ async function ensureTagId(
 
   const color_index = pickColorIndex(label, cache)
 
-  const insertRow: {
-    user_id: string
-    name: string
-    color_index: number
-    parent_id?: string
-  } = { user_id: userId, name: label, color_index }
-  if (parentTagId) {
-    await assertValidParentTag(parentTagId)
-    insertRow.parent_id = parentTagId
-  }
-
   const { data, error } = await supabase
     .from('tags')
-    .insert(insertRow)
+    .insert({
+      user_id: userId,
+      name: label,
+      color_index,
+    })
     .select('id, color_index, parent_id')
     .single()
 
@@ -1001,12 +1027,12 @@ async function ensureTagId(
     id: created.id,
     name: label,
     color_index: created.color_index,
-    parent_id: created.parent_id ?? parentTagId ?? null,
+    parent_id: created.parent_id ?? null,
   })
   return {
     id: created.id,
     color_index: created.color_index,
-    parent_id: created.parent_id ?? parentTagId ?? null,
+    parent_id: created.parent_id ?? null,
   }
 }
 
@@ -1030,6 +1056,7 @@ export async function ensureStarterTagsIfEmpty(
 
 async function assertValidParentTag(parentId: string): Promise<TagRow> {
   const tags = await fetchTags()
+  const links = await fetchTagParentLinks()
   const parent = tags.find((t) => t.id === parentId)
   if (!parent) {
     throw new Error('상위 태그를 찾을 수 없습니다.')
@@ -1037,7 +1064,22 @@ async function assertValidParentTag(parentId: string): Promise<TagRow> {
   if (parent.parent_id) {
     throw new Error('상위 태그만 하위를 둘 수 있습니다.')
   }
+  if (!parent.is_parent && !tagHasChildren(parent.id, tags, links)) {
+    throw new Error('상위 태그만 하위를 둘 수 있습니다.')
+  }
   return parent
+}
+
+/** tags.parent_id 컬럼에 넣을 수 있는 태그만 (DB 트리거·다중 상위는 링크 테이블) */
+function canSetTagPrimaryParentId(
+  tag: TagRow,
+  tags: TagRow[],
+  links: TagParentLink[],
+): boolean {
+  if (tag.parent_id) return false
+  if (tag.is_parent) return false
+  if (tagHasChildren(tag.id, tags, links)) return false
+  return true
 }
 
 /** 상위 태그 추가 (parent_id 없음, is_parent=true) */
@@ -1134,6 +1176,7 @@ export async function assignTagsToParent(
 ): Promise<TagRow[]> {
   await assertValidParentTag(parentId)
   const tags = await fetchTags()
+  const links = await fetchTagParentLinks()
   const uniqueIds = [...new Set(tagIds.filter(Boolean))]
   if (uniqueIds.length === 0) {
     throw new Error('넣을 태그를 선택하세요.')
@@ -1151,9 +1194,6 @@ export async function assignTagsToParent(
     }
     if (tagId === parentId) {
       throw new Error('상위 태그 자신은 넣을 수 없습니다.')
-    }
-    if (tags.some((t) => t.parent_id === tagId)) {
-      throw new Error('하위 태그가 있는 태그는 넣을 수 없습니다.')
     }
   }
 
@@ -1176,14 +1216,21 @@ export async function assignTagsToParent(
 
   const idsNeedParentId = uniqueIds.filter((tagId) => {
     const tag = tags.find((t) => t.id === tagId)
-    return tag && !tag.parent_id
+    return tag != null && canSetTagPrimaryParentId(tag, tags, links)
   })
   if (idsNeedParentId.length > 0) {
     const { error } = await supabase
       .from('tags')
       .update({ parent_id: parentId })
       .in('id', idsNeedParentId)
-    if (error) throw error
+    if (error) {
+      throw new Error(
+        supabaseErrorMessage(
+          error,
+          '하위 태그를 연결하지 못했습니다. Supabase에 012_tag_parent_links 마이그레이션이 적용되었는지 확인하세요.',
+        ),
+      )
+    }
   }
 
   const { data, error } = await supabase
@@ -1296,27 +1343,13 @@ export async function updateTagParent(
   if (parentId === null) {
     return unassignTagFromParent(tagId)
   }
-  await assertValidParentTag(parentId)
+  await assignTagsToParent([tagId], parentId)
   const tags = await fetchTags()
   const tag = tags.find((t) => t.id === tagId)
   if (!tag) {
     throw new Error('태그를 찾을 수 없습니다.')
   }
-  if (tagId === parentId) {
-    throw new Error('자기 자신을 상위 태그로 둘 수 없습니다.')
-  }
-  if (tags.some((t) => t.parent_id === tagId)) {
-    throw new Error('하위 태그가 있는 태그는 다른 상위 아래에 둘 수 없습니다.')
-  }
-
-  const { data, error } = await supabase
-    .from('tags')
-    .update({ parent_id: parentId })
-    .eq('id', tagId)
-    .select('id, name, color_index, parent_id, created_at')
-    .single()
-  if (error) throw error
-  return data as TagRow
+  return tag
 }
 
 const TAG_ROW_SELECT =
@@ -1325,14 +1358,12 @@ const TAG_ROW_SELECT =
 export type PromoteTagToParentResult = {
   parent: TagRow
   assignedChildren: TagRow[]
-  /** 하위 태그가 있어 편입하지 못한 co-tag id */
-  skippedTagIds: string[]
 }
 
 /**
  * 독립 태그를 상위태그(책)로 승격.
- * - 이 태그가 붙은 메모는 그대로 유지(상위태그가 직접 붙은 메모)
- * - 같은 메모에 함께 붙은 다른 태그는 하위 태그(parent_id)로 편입
+ * - 이 태그가 붙은 메모는 그대로 유지
+ * - 멀티태그는 자동 하위 편입하지 않음 (하위는 설정에서만 지정)
  */
 export async function promoteTagToParent(
   tagId: string,
@@ -1342,47 +1373,8 @@ export async function promoteTagToParent(
   if (!tag) {
     throw new Error('태그를 찾을 수 없습니다.')
   }
-  if (tags.some((t) => t.parent_id === tagId)) {
-    throw new Error('이미 하위 태그가 있는 태그입니다.')
-  }
   if (tag.is_parent) {
     throw new Error('이미 상위태그입니다.')
-  }
-
-  const { data: noteLinks, error: noteLinkErr } = await supabase
-    .from('note_tags')
-    .select('note_id')
-    .eq('tag_id', tagId)
-  if (noteLinkErr) throw noteLinkErr
-
-  const noteIds = [
-    ...new Set(
-      (noteLinks ?? []).map((r: { note_id: string }) => r.note_id),
-    ),
-  ]
-
-  let coTagIds: string[] = []
-  if (noteIds.length > 0) {
-    const { data: coLinks, error: coErr } = await supabase
-      .from('note_tags')
-      .select('tag_id')
-      .in('note_id', noteIds)
-      .neq('tag_id', tagId)
-    if (coErr) throw coErr
-    coTagIds = [
-      ...new Set((coLinks ?? []).map((r: { tag_id: string }) => r.tag_id)),
-    ]
-  }
-
-  const assignableIds: string[] = []
-  const skippedTagIds: string[] = []
-  for (const coId of coTagIds) {
-    if (coId === tagId) continue
-    if (tags.some((t) => t.parent_id === coId)) {
-      skippedTagIds.push(coId)
-      continue
-    }
-    assignableIds.push(coId)
   }
 
   if (tag.parent_id) {
@@ -1393,29 +1385,24 @@ export async function promoteTagToParent(
     if (detachErr) throw detachErr
   }
 
-  let assignedChildren: TagRow[] = []
-  if (assignableIds.length > 0) {
-    const { data, error: assignErr } = await supabase
-      .from('tags')
-      .update({ parent_id: tagId, is_parent: false })
-      .in('id', assignableIds)
-      .select(TAG_ROW_SELECT)
-    if (assignErr) throw assignErr
-    assignedChildren = (data ?? []) as TagRow[]
-  }
-
   const { data: parent, error: parentErr } = await supabase
     .from('tags')
     .update({ is_parent: true, parent_id: null })
     .eq('id', tagId)
     .select(TAG_ROW_SELECT)
     .single()
-  if (parentErr) throw parentErr
+  if (parentErr) {
+    throw new Error(
+      supabaseErrorMessage(
+        parentErr,
+        '상위태그로 표시하지 못했습니다. Supabase에 011_tag_is_parent 마이그레이션이 적용되었는지 확인하세요.',
+      ),
+    )
+  }
 
   return {
     parent: parent as TagRow,
-    assignedChildren,
-    skippedTagIds,
+    assignedChildren: [],
   }
 }
 
@@ -1441,7 +1428,6 @@ export async function createNoteWithTags(
   tagCache: TagRow[],
   source?: string,
   sourceCache: SourceRow[] = [],
-  options?: { parentTagId?: string | null },
 ): Promise<NoteWithTags> {
   const trimmed = body.trim()
   const sourceTrim = (source ?? '').trim()
@@ -1466,7 +1452,6 @@ export async function createNoteWithTags(
       labels,
       userId,
       tagCache,
-      options?.parentTagId,
     )
   } catch (error) {
     logNoteSaveError('create', '태그 ID 해석', { userId, ...meta }, error)
@@ -1617,6 +1602,7 @@ export async function updateNoteWithTags(
 }
 
 export async function deleteNote(noteId: string): Promise<void> {
+  /** 메모 삭제는 EditNoteModal에서만 호출 */
   const { error } = await supabase.from('notes').delete().eq('id', noteId)
   if (error) throw error
 }
@@ -1640,38 +1626,43 @@ export async function updateTag(tagId: string, rawName: string): Promise<TagRow>
   return data as TagRow
 }
 
-/**
- * 태그 삭제 전: 이 태그가 붙은 모든 메모를 먼저 삭제한 뒤 태그 삭제.
- * (메모에 다른 태그가 있어도 해당 메모 행 전체가 삭제됩니다.)
- */
 export type TagDeleteResult = {
   deletedTagId: string
   deletedNoteIds: string[]
 }
 
-export async function deleteTagAndLinkedNotes(
-  tagId: string,
-): Promise<TagDeleteResult> {
-  const { data: links, error: qErr } = await supabase
+/**
+ * 태그 삭제 — 메모는 유지하고 note_tags·상위 연결만 제거.
+ * 메모 삭제는 EditNoteModal의 deleteNote만 사용합니다.
+ */
+export async function deleteTag(tagId: string): Promise<TagDeleteResult> {
+  const { error: noteLinkErr } = await supabase
     .from('note_tags')
-    .select('note_id')
+    .delete()
     .eq('tag_id', tagId)
-  if (qErr) throw qErr
+  if (noteLinkErr) throw noteLinkErr
 
-  const noteIds = [
-    ...new Set((links ?? []).map((r: { note_id: string }) => r.note_id)),
-  ]
-
-  if (noteIds.length > 0) {
-    const { error: nErr } = await supabase.from('notes').delete().in('id', noteIds)
-    if (nErr) throw nErr
+  const { error: parentLinkErr } = await supabase
+    .from('tag_parent_links')
+    .delete()
+    .or(`tag_id.eq.${tagId},parent_tag_id.eq.${tagId}`)
+  if (
+    parentLinkErr &&
+    parentLinkErr.code !== 'PGRST205' &&
+    parentLinkErr.code !== '42P01' &&
+    !parentLinkErr.message.includes('tag_parent_links')
+  ) {
+    throw parentLinkErr
   }
 
   const { error: tErr } = await supabase.from('tags').delete().eq('id', tagId)
   if (tErr) throw tErr
 
-  return { deletedTagId: tagId, deletedNoteIds: noteIds }
+  return { deletedTagId: tagId, deletedNoteIds: [] }
 }
+
+/** @deprecated deleteTag 사용 — 메모는 삭제하지 않습니다 */
+export const deleteTagAndLinkedNotes = deleteTag
 
 /** 상위태그 삭제 — 메모는 유지, note_tags·하위 parent_id만 DB cascade/set null */
 export async function deleteParentTag(tagId: string): Promise<TagDeleteResult> {

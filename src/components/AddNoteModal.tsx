@@ -31,12 +31,57 @@ type Props = {
   onSaveError?: (message: string) => void
 }
 
+function buildSeedTags(
+  initialTags: SelectedTag[],
+  parentTagId: string | null | undefined,
+  parentTagName: string | null | undefined,
+  allTags: TagRow[],
+): SelectedTag[] {
+  const seed = initialTags.map((t) => ({ ...t }))
+  if (!parentTagId || !parentTagName) return seed
+  const name = normalizeTagInput(parentTagName)
+  if (!name) return seed
+  const already = seed.some(
+    (t) =>
+      t.id === parentTagId ||
+      normalizeTagInput(t.name).toLowerCase() === name.toLowerCase(),
+  )
+  if (already) return seed
+  const parent = allTags.find((t) => t.id === parentTagId)
+  seed.unshift({
+    id: parentTagId,
+    name,
+    color_index: parent?.color_index ?? 0,
+  })
+  return seed
+}
+
+function resolveSaveTagNames(
+  tags: SelectedTag[],
+  parentTagId: string | null | undefined,
+  parentTagName: string | null | undefined,
+): string[] {
+  const names = tags
+    .map((t) => normalizeTagInput(t.name))
+    .filter(Boolean)
+  if (parentTagId && parentTagName) {
+    const parentName = normalizeTagInput(parentTagName)
+    if (
+      parentName &&
+      !names.some((n) => n.toLowerCase() === parentName.toLowerCase())
+    ) {
+      names.unshift(parentName)
+    }
+  }
+  return names
+}
+
 function buildLocalPreviewNote(
   tempId: string,
   body: string,
   source: SelectedSource | null,
   tags: SelectedTag[],
-  parentTagId?: string | null,
+  allTags: TagRow[],
 ): NoteWithTags {
   const srcTitle = source?.title.trim() ?? ''
   return {
@@ -48,15 +93,19 @@ function buildLocalPreviewNote(
       ? { id: source.id, title: srcTitle }
       : null,
     created_at: new Date().toISOString(),
-    note_tags: tags.map((t) => ({
-      tag_id: t.id ?? `pending-${t.name}`,
-      tags: {
-        id: t.id ?? `pending-${t.name}`,
-        name: t.name,
-        color_index: t.color_index,
-        parent_id: t.id ? null : (parentTagId ?? null),
-      },
-    })),
+    note_tags: tags.map((t) => {
+      const tagId = t.id ?? `pending-${t.name}`
+      const persisted = allTags.find((row) => row.id === t.id)
+      return {
+        tag_id: tagId,
+        tags: {
+          id: tagId,
+          name: t.name,
+          color_index: t.color_index,
+          parent_id: persisted?.parent_id ?? null,
+        },
+      }
+    }),
   }
 }
 
@@ -84,6 +133,10 @@ export function AddNoteModal({
   /** 저장 클릭 시 검증: 태그 영역 또는 메모 아래 안내 */
   const [fieldHint, setFieldHint] = useState<'tags' | 'body' | null>(null)
   const wasOpenRef = useRef(false)
+  const allTagsRef = useRef(allTags)
+  const initialTagsRef = useRef(initialTags)
+  allTagsRef.current = allTags
+  initialTagsRef.current = initialTags
 
   useEffect(() => {
     if (!open) {
@@ -94,20 +147,26 @@ export function AddNoteModal({
       return
     }
     wasOpenRef.current = true
-    const seed = initialTags
+    const seed = buildSeedTags(
+      initialTagsRef.current,
+      parentTagId,
+      parentTagName,
+      allTagsRef.current,
+    )
     startTransition(() => {
-      setTags(seed.map((t) => ({ ...t })))
+      setTags(seed)
       setBody('')
       setSelectedSource(null)
       setError(null)
       setFieldHint(null)
     })
-  }, [open, initialTags])
+  }, [open, parentTagId, parentTagName])
 
   if (!open) return null
 
   const composerSaveReady =
-    tags.length > 0 && body.trim().length > 0
+    body.trim().length > 0 &&
+    (tags.length > 0 || Boolean(parentTagId && parentTagName))
 
   const modalTitle =
     parentTagId && parentTagName
@@ -199,7 +258,12 @@ export function AddNoteModal({
             }`}
             onClick={() => {
                 setError(null)
-                if (tags.length === 0) {
+                const saveTags = resolveSaveTagNames(
+                  tags,
+                  parentTagId,
+                  parentTagName,
+                )
+                if (saveTags.length === 0) {
                   setFieldHint('tags')
                   return
                 }
@@ -209,15 +273,25 @@ export function AddNoteModal({
                 }
                 setFieldHint(null)
                 const saveBody = body
-                const saveTags = tags.map((t) => t.name)
                 const saveSource = selectedSource?.title ?? ''
                 const tempId = crypto.randomUUID()
+                const previewTags: SelectedTag[] = saveTags.map((name) => {
+                  const hit = allTags.find(
+                    (t) =>
+                      t.name.toLowerCase() === name.toLowerCase() || t.name === name,
+                  )
+                  return {
+                    id: hit?.id,
+                    name,
+                    color_index: hit?.color_index ?? 0,
+                  }
+                })
                 const preview = buildLocalPreviewNote(
                   tempId,
                   saveBody,
                   selectedSource,
-                  tags,
-                  parentTagId,
+                  previewTags,
+                  allTags,
                 )
                 void onSaved(preview)
                 onClose()
@@ -230,7 +304,6 @@ export function AddNoteModal({
                       [...allTags],
                       saveSource,
                       [...allSources],
-                      parentTagId ? { parentTagId } : undefined,
                     )
                     await onSaved(note, { replacingId: tempId })
                   } catch (e) {

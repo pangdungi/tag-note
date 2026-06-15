@@ -56,9 +56,6 @@ export function AddParentTagModal({
           </button>
         </div>
         <div className="edit-note-modal-body">
-          <p className="tag-manage-hint">
-            상위태그를 만든 뒤, 하위에 넣을 태그를 지정할 수 있습니다.
-          </p>
           <div className="composer-stack">
             <div className="composer-field">
               <label className="composer-label" htmlFor="add-parent-tag-name">

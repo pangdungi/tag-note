@@ -69,12 +69,22 @@ export function EditParentTagModal({
     return getChildTagPickCandidates(tag.id, tags, links)
   }, [tag, tags, links])
 
-  const filteredPickCandidates = useMemo(
-    () => filterTagsByMainSearch(pickCandidates, pickSearch),
-    [pickCandidates, pickSearch],
-  )
+  const currentChildren = useMemo(() => {
+    const selected = new Set(selectedChildIds)
+    return tags
+      .filter((t) => selected.has(t.id))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  }, [selectedChildIds, tags])
 
-  const pickSearchActive = normalizeTagInput(pickSearch).length > 0
+  const addCandidates = useMemo(() => {
+    const selected = new Set(selectedChildIds)
+    return pickCandidates.filter((t) => !selected.has(t.id))
+  }, [pickCandidates, selectedChildIds])
+
+  const filteredAddCandidates = useMemo(
+    () => filterTagsByMainSearch(addCandidates, pickSearch),
+    [addCandidates, pickSearch],
+  )
 
   useEffect(() => {
     if (!open || !tag) return
@@ -88,7 +98,7 @@ export function EditParentTagModal({
       setDeleteConfirmOpen(false)
       setSaving(false)
     })
-  }, [open, tag, tags, links])
+  }, [open, tag, tags, tagParentLinks])
 
   if (!open || !tag) return null
 
@@ -148,28 +158,66 @@ export function EditParentTagModal({
               </div>
             </div>
 
-            <section className="edit-parent-tag-children" aria-label="하위 태그">
+            <section
+              className="edit-parent-tag-children"
+              aria-label="현재 하위 태그"
+            >
               <div className="tag-manage-assign-label-row">
-                <h3 className="edit-parent-tag-children-title">하위 태그</h3>
-                {selectedChildIds.length > 0 ? (
+                <h3 className="edit-parent-tag-children-title">현재 하위 태그</h3>
+                {currentChildren.length > 0 ? (
                   <span className="tag-manage-assign-selected-count">
-                    {selectedChildIds.length}개 선택
+                    {currentChildren.length}개
                   </span>
                 ) : null}
               </div>
-              <p className="tag-manage-hint edit-parent-tag-children-hint">
-                기존 태그에서 고르세요. 같은 태그를 여러 상위태그 아래에 둘 수
-                있습니다.
-              </p>
 
-              {pickCandidates.length === 0 ? (
+              {currentChildren.length === 0 ? (
                 <p className="tag-manage-hint edit-parent-tag-children-empty">
-                  넣을 수 있는 태그가 없습니다.
+                  하위 태그 없음
+                </p>
+              ) : (
+                <ul className="edit-parent-tag-child-list">
+                  {currentChildren.map((child) => (
+                    <li key={child.id} className="edit-parent-tag-child-row">
+                      <label className="tag-manage-assign-pick edit-parent-tag-child-pick">
+                        <input
+                          type="checkbox"
+                          checked
+                          onChange={() => toggleChild(child.id)}
+                          disabled={saving}
+                          aria-label={`${displayTagName(child.name)} 선택 해제`}
+                        />
+                        <span className="tag-manage-pill edit-parent-tag-child-name">
+                          {displayTagName(child.name)}
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section
+              className="edit-parent-tag-children edit-parent-tag-children--add"
+              aria-label="하위 태그 추가"
+            >
+              <div className="tag-manage-assign-label-row">
+                <h3 className="edit-parent-tag-children-title">하위 태그 추가</h3>
+                {addCandidates.length > 0 && filteredAddCandidates.length > 0 ? (
+                  <span className="tag-manage-assign-selected-count">
+                    {addCandidates.length}개 후보
+                  </span>
+                ) : null}
+              </div>
+
+              {addCandidates.length === 0 ? (
+                <p className="tag-manage-hint edit-parent-tag-children-empty">
+                  없음
                 </p>
               ) : (
                 <>
                   <div className="tag-manage-search-wrap tag-manage-assign-search-wrap">
-                    <span className="sr-only">하위 태그 검색</span>
+                    <span className="sr-only">추가할 하위 태그 검색</span>
                     <svg
                       className="home-search-icon"
                       xmlns="http://www.w3.org/2000/svg"
@@ -197,32 +245,25 @@ export function EditParentTagModal({
                       spellCheck={false}
                     />
                   </div>
-                  {filteredPickCandidates.length === 0 ? (
-                    <p className="tag-manage-assign-empty">
-                      {pickSearchActive
-                        ? '검색 결과가 없습니다.'
-                        : '표시할 태그가 없습니다.'}
-                    </p>
+                  {filteredAddCandidates.length === 0 ? (
+                    <p className="tag-manage-assign-empty">없음</p>
                   ) : (
                     <ul className="tag-manage-assign-pick-list edit-parent-tag-pick-list">
-                      {filteredPickCandidates.map((child) => {
-                        const checked = selectedChildIds.includes(child.id)
-                        return (
-                          <li key={child.id}>
-                            <label className="tag-manage-assign-pick">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleChild(child.id)}
-                                disabled={saving}
-                              />
-                              <span className="tag-manage-pill">
-                                {displayTagName(child.name)}
-                              </span>
-                            </label>
-                          </li>
-                        )
-                      })}
+                      {filteredAddCandidates.map((child) => (
+                        <li key={child.id}>
+                          <label className="tag-manage-assign-pick">
+                            <input
+                              type="checkbox"
+                              checked={false}
+                              onChange={() => toggleChild(child.id)}
+                              disabled={saving}
+                            />
+                            <span className="tag-manage-pill">
+                              {displayTagName(child.name)}
+                            </span>
+                          </label>
+                        </li>
+                      ))}
                     </ul>
                   )}
                 </>
