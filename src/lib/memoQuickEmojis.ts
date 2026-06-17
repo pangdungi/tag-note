@@ -7,6 +7,7 @@ import okIcon from '../assets/memo-emojis/ok.svg'
 import startIcon from '../assets/memo-emojis/start.svg'
 import thinkingIcon from '../assets/memo-emojis/thinking.svg'
 import uncheckIcon from '../assets/memo-emojis/uncheck.svg'
+import { cleanPastedMemoText } from './pasteNoteFormat'
 
 export type MemoQuickEmoji = {
   id: string
@@ -572,6 +573,110 @@ export function applyMemoTextShortcutsInEditor(root: HTMLElement): boolean {
   return false
 }
 
+function isNodeInsideMemoEditor(root: HTMLElement, node: Node): boolean {
+  return root === node || root.contains(node)
+}
+
+export function isRangeInsideMemoEditor(root: HTMLElement, range: Range): boolean {
+  return (
+    isNodeInsideMemoEditor(root, range.startContainer) &&
+    isNodeInsideMemoEditor(root, range.endContainer)
+  )
+}
+
+/** Range 기준 직렬화 선택 구간 — anchor/focus보다 붙여넣기에 정확 */
+export function getMemoEditorSelectionOffsets(
+  root: HTMLElement,
+  range?: Range | null,
+): { start: number; end: number } {
+  const fallbackLen = memoBodyFromEditor(root).length
+
+  let r = range
+  if (!r) {
+    const sel = window.getSelection()
+    if (sel && sel.rangeCount > 0) {
+      r = sel.getRangeAt(0)
+    }
+  }
+
+  if (!r || !isRangeInsideMemoEditor(root, r)) {
+    return { start: fallbackLen, end: fallbackLen }
+  }
+
+  const start = serializedOffsetInEditor(
+    root,
+    r.startContainer,
+    r.startOffset,
+  )
+  const end = serializedOffsetInEditor(root, r.endContainer, r.endOffset)
+  return {
+    start: Math.min(start, end),
+    end: Math.max(start, end),
+  }
+}
+
+/** 커서·선택 위치에 평문 붙여넣기 (DOM 직접 삽입) */
+export function insertPlainTextInMemoEditor(
+  root: HTMLElement,
+  range: Range,
+  rawText: string,
+): void {
+  root.focus()
+
+  const insert = applyMemoTextShortcuts(
+    cleanPastedMemoText(
+      rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n'),
+    ),
+  )
+
+  const r = range.cloneRange()
+  r.deleteContents()
+
+  if (!insert) {
+    const sel = window.getSelection()
+    if (sel) {
+      sel.removeAllRanges()
+      sel.addRange(r)
+    }
+    return
+  }
+
+  const holder = document.createElement('div')
+  holder.innerHTML = memoBodyToEditorHtml(insert)
+
+  const frag = document.createDocumentFragment()
+  let lastInserted: Node | null = null
+  while (holder.firstChild) {
+    lastInserted = holder.firstChild
+    frag.appendChild(lastInserted)
+  }
+
+  r.insertNode(frag)
+
+  const sel = window.getSelection()
+  if (!sel) return
+
+  const caret = document.createRange()
+  if (lastInserted) {
+    if (lastInserted.nodeType === Node.TEXT_NODE) {
+      caret.setStart(lastInserted, (lastInserted as Text).length)
+    } else if (
+      lastInserted.nodeType === Node.ELEMENT_NODE &&
+      (lastInserted as HTMLElement).tagName === 'BR'
+    ) {
+      const parent = lastInserted.parentNode!
+      caret.setStart(parent, domChildIndex(lastInserted) + 1)
+    } else {
+      caret.setStartAfter(lastInserted)
+    }
+  } else {
+    caret.setStart(r.startContainer, r.startOffset)
+  }
+  caret.collapse(true)
+  sel.removeAllRanges()
+  sel.addRange(caret)
+}
+
 export function insertMemoEmojiInEditor(root: HTMLElement, id: string): boolean {
   const emoji = memoEmojiById(id)
   if (!emoji) {
@@ -585,7 +690,11 @@ export function insertMemoEmojiInEditor(root: HTMLElement, id: string): boolean 
   }
 
   let range: Range
-  if (sel.rangeCount === 0 || !root.contains(sel.anchorNode)) {
+  if (
+    sel.rangeCount === 0 ||
+    !sel.anchorNode ||
+    !isRangeInsideMemoEditor(root, sel.getRangeAt(0))
+  ) {
     range = document.createRange()
     range.selectNodeContents(root)
     range.collapse(false)

@@ -5,6 +5,7 @@ import { normalizeTagInput } from '../lib/tagUtils'
 type Props = {
   open: boolean
   userId: string
+  allTags: TagRow[]
   onClose: () => void
   onCreated: (row: TagRow) => void
   onError?: (message: string) => void
@@ -13,6 +14,7 @@ type Props = {
 export function AddParentTagModal({
   open,
   userId,
+  allTags,
   onClose,
   onCreated,
   onError,
@@ -89,7 +91,9 @@ export function AddParentTagModal({
               setSaving(true)
               void (async () => {
                 try {
-                  const row = await createParentTag(name, userId)
+                  const row = await createParentTag(name, userId, {
+                    existingTags: allTags,
+                  })
                   onCreated(row)
                   onClose()
                 } catch (e) {

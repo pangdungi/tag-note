@@ -2,13 +2,20 @@ import { useId, useLayoutEffect, useState } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
 import { SourceComposer, type SelectedSource } from './SourceComposer'
 import { ConfirmModal } from './ConfirmModal'
+import { MemoParentTagSelect } from './MemoParentTagSelect'
 import {
+  assignTagsToParent,
   deleteNote,
   updateNoteWithTags,
   type NoteWithTags,
   type SourceRow,
   type TagRow,
 } from '../lib/notesApi'
+import {
+  inferParentTagIdFromTagIds,
+  tagIdsForParentAssignment,
+  type TagParentLink,
+} from '../lib/tagUtils'
 import { MemoNoteEditor } from './MemoNoteEditor'
 
 function noteToSelectedTags(note: NoteWithTags): SelectedTag[] {
@@ -64,24 +71,27 @@ type Props = {
   open: boolean
   onClose: () => void
   note: NoteWithTags | null
+  /** 상위태그 spine 클릭 맥락 — 상위 선택 UI 숨김 */
+  lockedParentTagId?: string | null
   allTags: TagRow[]
+  tagParentLinks?: TagParentLink[]
   allSources: SourceRow[]
   userId: string
-  /** 화면 즉시 반영(로컬) — 서버 응답 후 한 번 더 호출되어 맞춤 */
   onNoteUpdated: (note: NoteWithTags) => void | Promise<void>
   onUpdateError?: (message: string) => void
-  /** 실패 시 서버 기준으로 해당 메모만 다시 불러옴 */
   onSyncNoteFromServer?: (noteId: string) => void | Promise<void>
   onNoteDeleted: (noteId: string) => void | Promise<void>
-  /** 출처 변경·삭제 후 고아 출처 목록 갱신 */
   onSourcesChanged?: () => void | Promise<void>
+  onTagsAssignedToParent?: (rows: TagRow[], parentId: string) => void
 }
 
 export function EditNoteModal({
   open,
   onClose,
   note,
+  lockedParentTagId = null,
   allTags,
+  tagParentLinks,
   allSources,
   userId,
   onNoteUpdated,
@@ -89,26 +99,37 @@ export function EditNoteModal({
   onSyncNoteFromServer,
   onNoteDeleted,
   onSourcesChanged,
+  onTagsAssignedToParent,
 }: Props) {
   const titleId = useId()
   const [tags, setTags] = useState<SelectedTag[]>([])
+  const [parentTagId, setParentTagId] = useState('')
   const [body, setBody] = useState('')
   const [selectedSource, setSelectedSource] = useState<SelectedSource | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
 
+  const showParentPicker = !lockedParentTagId
+
   useLayoutEffect(() => {
     if (!open || !note) {
       return
     }
-    setTags(noteToSelectedTags(note))
+    const noteTags = noteToSelectedTags(note)
+    const tagIds = noteTags.map((t) => t.id).filter(Boolean) as string[]
+    setTags(noteTags)
+    setParentTagId(
+      inferParentTagIdFromTagIds(tagIds, allTags, tagParentLinks),
+    )
     setBody(note.body ?? '')
     setSelectedSource(noteToSelectedSource(note))
     setError(null)
     setDeleteConfirmOpen(false)
-  }, [open, note?.id, note?.body])
+  }, [open, note?.id, note?.body, allTags, tagParentLinks])
 
   if (!open || !note) return null
+
+  const effectiveParentId = lockedParentTagId ?? (parentTagId || '')
 
   return (
     <>
@@ -136,6 +157,14 @@ export function EditNoteModal({
         <div className="edit-note-modal-body">
           <div className="composer-stack">
             <TagComposer allTags={allTags} selected={tags} onChange={setTags} />
+            {showParentPicker ? (
+              <MemoParentTagSelect
+                allTags={allTags}
+                tagParentLinks={tagParentLinks}
+                value={parentTagId}
+                onChange={setParentTagId}
+              />
+            ) : null}
             <div className="composer-field">
               <label className="composer-label" htmlFor="edit-note-body">
                 메모
@@ -207,6 +236,23 @@ export function EditNoteModal({
                       saveSource,
                       [...allSources],
                     )
+                    if (effectiveParentId) {
+                      const assignIds = tagIdsForParentAssignment(
+                        updated.note_tags.map(
+                          (nt) => nt.tags?.id ?? nt.tag_id,
+                        ),
+                        effectiveParentId,
+                        allTags,
+                        tagParentLinks,
+                      )
+                      if (assignIds.length > 0) {
+                        const assigned = await assignTagsToParent(
+                          assignIds,
+                          effectiveParentId,
+                        )
+                        onTagsAssignedToParent?.(assigned, effectiveParentId)
+                      }
+                    }
                     await onNoteUpdated(updated)
                     await onSourcesChanged?.()
                   } catch (e) {

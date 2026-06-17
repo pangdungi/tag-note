@@ -1,13 +1,20 @@
 import { useEffect, useId, useRef, useState, startTransition } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
 import { SourceComposer, type SelectedSource } from './SourceComposer'
+import { MemoParentTagSelect } from './MemoParentTagSelect'
 import {
+  assignTagsToParent,
   createNoteWithTags,
   type NoteWithTags,
   type SourceRow,
   type TagRow,
 } from '../lib/notesApi'
-import { normalizeTagInput } from '../lib/tagUtils'
+import {
+  inferParentTagIdFromTagIds,
+  normalizeTagInput,
+  tagIdsForParentAssignment,
+  type TagParentLink,
+} from '../lib/tagUtils'
 import { MemoNoteEditor } from './MemoNoteEditor'
 
 type SavedOptions = {
@@ -18,38 +25,40 @@ type SavedOptions = {
 type Props = {
   open: boolean
   onClose: () => void
-  /** 열릴 때 태그칩에 미리 넣을 값(검색으로 새 태그 추가 등) */
+  /** 열릴 때 태그칩에 미리 넣을 값 */
   initialTags: SelectedTag[]
-  /** 상위태그 선택 중 + 로 열었을 때 — 입력 태그를 이 상위의 하위로 */
-  parentTagId?: string | null
-  parentTagName?: string | null
+  /** 상위태그 spine 클릭 맥락 — 상위태그 칩·제목 고정, 상위 선택 UI 숨김 */
+  lockedParentTagId?: string | null
+  /** 상위 아래 하위 a 선택 후 + — a만 태그, 상위 지정 UI 숨김 */
+  childTagCompose?: boolean
   allTags: TagRow[]
+  tagParentLinks?: TagParentLink[]
   allSources: SourceRow[]
   userId: string
   onSaved: (note: NoteWithTags, options?: SavedOptions) => void | Promise<void>
   onSaveFailed?: (tempId: string) => void | Promise<void>
   onSaveError?: (message: string) => void
+  onTagsAssignedToParent?: (rows: TagRow[], parentId: string) => void
 }
 
 function buildSeedTags(
   initialTags: SelectedTag[],
-  parentTagId: string | null | undefined,
-  parentTagName: string | null | undefined,
+  lockedParentTagId: string | null | undefined,
   allTags: TagRow[],
 ): SelectedTag[] {
   const seed = initialTags.map((t) => ({ ...t }))
-  if (!parentTagId || !parentTagName) return seed
-  const name = normalizeTagInput(parentTagName)
+  if (!lockedParentTagId) return seed
+  const parent = allTags.find((t) => t.id === lockedParentTagId)
+  const name = normalizeTagInput(parent?.name ?? '')
   if (!name) return seed
   const already = seed.some(
     (t) =>
-      t.id === parentTagId ||
+      t.id === lockedParentTagId ||
       normalizeTagInput(t.name).toLowerCase() === name.toLowerCase(),
   )
   if (already) return seed
-  const parent = allTags.find((t) => t.id === parentTagId)
   seed.unshift({
-    id: parentTagId,
+    id: lockedParentTagId,
     name,
     color_index: parent?.color_index ?? 0,
   })
@@ -58,20 +67,18 @@ function buildSeedTags(
 
 function resolveSaveTagNames(
   tags: SelectedTag[],
-  parentTagId: string | null | undefined,
-  parentTagName: string | null | undefined,
+  lockedParentTagId: string | null | undefined,
+  allTags: TagRow[],
 ): string[] {
-  const names = tags
-    .map((t) => normalizeTagInput(t.name))
-    .filter(Boolean)
-  if (parentTagId && parentTagName) {
-    const parentName = normalizeTagInput(parentTagName)
-    if (
-      parentName &&
-      !names.some((n) => n.toLowerCase() === parentName.toLowerCase())
-    ) {
-      names.unshift(parentName)
-    }
+  const names = tags.map((t) => normalizeTagInput(t.name)).filter(Boolean)
+  if (!lockedParentTagId) return names
+  const parent = allTags.find((t) => t.id === lockedParentTagId)
+  const parentName = normalizeTagInput(parent?.name ?? '')
+  if (
+    parentName &&
+    !names.some((n) => n.toLowerCase() === parentName.toLowerCase())
+  ) {
+    names.unshift(parentName)
   }
   return names
 }
@@ -113,30 +120,42 @@ export function AddNoteModal({
   open,
   onClose,
   initialTags,
-  parentTagId = null,
-  parentTagName = null,
+  lockedParentTagId = null,
+  childTagCompose = false,
   allTags,
+  tagParentLinks,
   allSources,
   userId,
   onSaved,
   onSaveFailed,
   onSaveError,
+  onTagsAssignedToParent,
 }: Props) {
   const titleId = useId()
   const idBase = useId()
   const bodyId = `${idBase}-body`
 
   const [tags, setTags] = useState<SelectedTag[]>([])
+  const [parentTagId, setParentTagId] = useState('')
   const [body, setBody] = useState('')
   const [selectedSource, setSelectedSource] = useState<SelectedSource | null>(null)
   const [error, setError] = useState<string | null>(null)
-  /** 저장 클릭 시 검증: 태그 영역 또는 메모 아래 안내 */
   const [fieldHint, setFieldHint] = useState<'tags' | 'body' | null>(null)
   const wasOpenRef = useRef(false)
   const allTagsRef = useRef(allTags)
   const initialTagsRef = useRef(initialTags)
+  const tagParentLinksRef = useRef(tagParentLinks)
   allTagsRef.current = allTags
   initialTagsRef.current = initialTags
+  tagParentLinksRef.current = tagParentLinks
+
+  const showParentPicker = !lockedParentTagId && !childTagCompose
+  const lockedParent = lockedParentTagId
+    ? allTags.find((t) => t.id === lockedParentTagId)
+    : null
+  const lockedParentName = lockedParent
+    ? normalizeTagInput(lockedParent.name)
+    : ''
 
   useEffect(() => {
     if (!open) {
@@ -149,29 +168,39 @@ export function AddNoteModal({
     wasOpenRef.current = true
     const seed = buildSeedTags(
       initialTagsRef.current,
-      parentTagId,
-      parentTagName,
+      lockedParentTagId,
       allTagsRef.current,
     )
+    const seedIds = seed.map((t) => t.id).filter(Boolean) as string[]
     startTransition(() => {
       setTags(seed)
+      setParentTagId(
+        lockedParentTagId
+          ? lockedParentTagId
+          : childTagCompose
+            ? ''
+            : inferParentTagIdFromTagIds(
+                seedIds,
+                allTagsRef.current,
+                tagParentLinksRef.current,
+              ),
+      )
       setBody('')
       setSelectedSource(null)
       setError(null)
       setFieldHint(null)
     })
-  }, [open, parentTagId, parentTagName])
+  }, [open, lockedParentTagId, childTagCompose])
 
   if (!open) return null
 
   const composerSaveReady =
     body.trim().length > 0 &&
-    (tags.length > 0 || Boolean(parentTagId && parentTagName))
+    (tags.length > 0 || Boolean(lockedParentTagId && lockedParentName))
 
-  const modalTitle =
-    parentTagId && parentTagName
-      ? normalizeTagInput(parentTagName)
-      : '메모 추가'
+  const modalTitle = lockedParentName || '메모 추가'
+
+  const effectiveParentId = lockedParentTagId ?? (parentTagId || '')
 
   return (
     <div className="tag-manage-overlay" role="presentation">
@@ -212,6 +241,14 @@ export function AddNoteModal({
                 ) : undefined
               }
             />
+            {showParentPicker ? (
+              <MemoParentTagSelect
+                allTags={allTags}
+                tagParentLinks={tagParentLinks}
+                value={parentTagId}
+                onChange={setParentTagId}
+              />
+            ) : null}
             <div className="composer-field">
               <label className="composer-label" htmlFor={bodyId}>
                 메모
@@ -260,8 +297,8 @@ export function AddNoteModal({
                 setError(null)
                 const saveTags = resolveSaveTagNames(
                   tags,
-                  parentTagId,
-                  parentTagName,
+                  lockedParentTagId,
+                  allTags,
                 )
                 if (saveTags.length === 0) {
                   setFieldHint('tags')
@@ -305,6 +342,23 @@ export function AddNoteModal({
                       saveSource,
                       [...allSources],
                     )
+                    if (effectiveParentId && !childTagCompose) {
+                      const assignIds = tagIdsForParentAssignment(
+                        note.note_tags.map(
+                          (nt) => nt.tags?.id ?? nt.tag_id,
+                        ),
+                        effectiveParentId,
+                        allTags,
+                        tagParentLinks,
+                      )
+                      if (assignIds.length > 0) {
+                        const assigned = await assignTagsToParent(
+                          assignIds,
+                          effectiveParentId,
+                        )
+                        onTagsAssignedToParent?.(assigned, effectiveParentId)
+                      }
+                    }
                     await onSaved(note, { replacingId: tempId })
                   } catch (e) {
                     console.error('[태그노트] AddNoteModal 저장 실패', {

@@ -1,6 +1,6 @@
 import { useEffect, type RefObject } from 'react'
 
-/** 하위 태그 패널 위 가로 스와이프 → 레일 가로 스크롤 (세로는 목록 스크롤) */
+/** 하위 태그 패널 위 가로 스와이프 → 레일 가로 스크롤 (세로는 트랙 패널 스크롤) */
 export function useParentRailHorizontalTouch(
   sectionRef: RefObject<HTMLElement | null>,
   tracksRef: RefObject<HTMLElement | null>,

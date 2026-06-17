@@ -66,6 +66,8 @@ import {
   noteHasNoTagViewTags,
   TAG_VIEW_NONE_ID,
   resolveAddNoteParentTagId,
+  resolveAddNoteComposeState,
+  resolveLockedParentTagIdForNoteModal,
   resolveBooksRailExpandedParentForTag,
   resolveBooksTagFilterTagIds,
   filterNotesForAllTagIds,
@@ -86,8 +88,6 @@ import { AccountModal } from '../components/AccountModal'
 import tagIconUrl from '../assets/tag-icon.png'
 import addBookIconUrl from '../assets/addbook.png'
 import userCircleIconUrl from '../assets/user-circle-icon.png'
-
-const EMPTY_MODAL_SEED_TAGS: SelectedTag[] = []
 
 function ParentTagSpineStat({
   value,
@@ -572,6 +572,10 @@ export function HomePage() {
   const [booksRailExpandedParentId, setBooksRailExpandedParentId] = useState<
     string | null
   >(null)
+  /** 책 뷰 + 메모 — 상위 spine vs 하위 태그 중 마지막 클릭 */
+  const [booksMemoComposeTarget, setBooksMemoComposeTarget] = useState<
+    'parent' | 'child' | null
+  >(null)
   const booksRailExpandedParentIdRef = useRef(booksRailExpandedParentId)
   useEffect(() => {
     booksRailExpandedParentIdRef.current = booksRailExpandedParentId
@@ -587,9 +591,6 @@ export function HomePage() {
   const [loading, setLoading] = useState(true)
 
   const [addNoteOpen, setAddNoteOpen] = useState(false)
-  const [addNoteParentTagId, setAddNoteParentTagId] = useState<string | null>(
-    null,
-  )
   const [searchOpen, setSearchOpen] = useState(false)
   const [homeBrowseNav, setHomeBrowseNav] = useState<HomeBrowseNavId>('tags')
   const [mobileBrowseFabOpen, setMobileBrowseFabOpen] = useState(false)
@@ -603,6 +604,8 @@ export function HomePage() {
   )
   const [accountModalOpen, setAccountModalOpen] = useState(false)
   const [editingNote, setEditingNote] = useState<NoteWithTags | null>(null)
+  const [editingNoteLockedParentTagId, setEditingNoteLockedParentTagId] =
+    useState<string | null>(null)
   const [viewingNote, setViewingNote] = useState<NoteWithTags | null>(null)
   const [viewingNoteContextTagId, setViewingNoteContextTagId] = useState<
     string | null
@@ -1030,6 +1033,7 @@ export function HomePage() {
       setSelectedSourceId(null)
       setSourceNotesHasMore(false)
       setBooksRailExpandedParentId(parentId)
+      setBooksMemoComposeTarget('parent')
       setSelectedTagId(parentId)
       setViewingNote(null)
       setRailEditingTag(null)
@@ -1043,6 +1047,7 @@ export function HomePage() {
       invalidateTagPullRequests()
       setSelectedTagId((s) => (s === tagId ? null : s))
       setBooksRailExpandedParentId((s) => (s === tagId ? null : s))
+      setBooksMemoComposeTarget(null)
       setAllTags((prev) =>
         prev
           .filter((t) => t.id !== tagId)
@@ -1503,6 +1508,7 @@ export function HomePage() {
   function clearTagFilter() {
     setSelectedTagId(null)
     setBooksRailExpandedParentId(null)
+    setBooksMemoComposeTarget(null)
     setTagPullEntry(null)
   }
 
@@ -1578,12 +1584,25 @@ export function HomePage() {
 
     if (isBooksParent) {
       if (booksRailExpandedParentId === tagId) {
+        const children = getChildTags(tagId, allTags, tagParentLinks)
+        const childSelected =
+          Boolean(selectedTagId) &&
+          isTagChildOfParent(selectedTagId!, tagId, allTags, tagParentLinks)
+        if (children.length > 0 && childSelected) {
+          setSelectedTagId(null)
+          setBooksMemoComposeTarget('parent')
+          syncTagPullEntryForSelection(null)
+          setViewingNote(null)
+          return
+        }
         setBooksRailExpandedParentId(null)
+        setBooksMemoComposeTarget(null)
         setSelectedTagId(null)
         syncTagPullEntryForSelection(null)
       } else {
         const children = getChildTags(tagId, allTags, tagParentLinks)
         setBooksRailExpandedParentId(tagId)
+        setBooksMemoComposeTarget('parent')
         if (children.length === 0) {
           setSelectedTagId(tagId)
           syncTagPullEntryForSelection(tagId, [tagId])
@@ -1608,6 +1627,7 @@ export function HomePage() {
         booksFilterParentId = parentId
         setBooksRailExpandedParentId(parentId)
       }
+      setBooksMemoComposeTarget('child')
     }
 
     if (homeBrowseNav === 'tags') {
@@ -1662,6 +1682,7 @@ export function HomePage() {
     setSelectedSourceId(sourceId)
     setSelectedTagId(null)
     setBooksRailExpandedParentId(null)
+    setBooksMemoComposeTarget(null)
     setTagSearch('')
     setSearchNotesResult(null)
     setSearchError(null)
@@ -1701,9 +1722,19 @@ export function HomePage() {
         isBooksRailParentTag(tag, allTags, tagParentLinks) &&
         getChildTags(tag.id, allTags, tagParentLinks).length > 0
       ) {
+        setBooksMemoComposeTarget('parent')
         setSelectedTagId(null)
         syncTagPullEntryForSelection(null)
         return
+      }
+
+      if (
+        resolvedParent &&
+        isTagChildOfParent(tagId, resolvedParent, allTags, tagParentLinks)
+      ) {
+        setBooksMemoComposeTarget('child')
+      } else if (tag && isBooksRailParentTag(tag, allTags, tagParentLinks)) {
+        setBooksMemoComposeTarget('parent')
       }
 
       const filterTagIds = resolveBooksTagFilterTagIds(
@@ -1747,7 +1778,15 @@ export function HomePage() {
     [],
   )
 
-  function openEditNote(note: NoteWithTags) {
+  function openEditNote(note: NoteWithTags, contextTagId?: string | null) {
+    const ctx = contextTagId ?? viewingNoteContextTagId
+    setEditingNoteLockedParentTagId(
+      resolveLockedParentTagIdForNoteModal(
+        ctx,
+        allTags,
+        tagParentLinks,
+      ),
+    )
     setViewingNote(null)
     setViewingNoteContextTagId(null)
     setEditingNote(note)
@@ -1783,6 +1822,26 @@ export function HomePage() {
     if (!selectedTagId) return null
     return allTags.find((x) => x.id === selectedTagId) ?? null
   }, [allTags, selectedTagId])
+
+  const addNoteCompose = useMemo(
+    () =>
+      resolveAddNoteComposeState(
+        homeBrowseNav,
+        selectedTagId,
+        booksRailExpandedParentId,
+        booksMemoComposeTarget,
+        allTags,
+        tagParentLinks,
+      ),
+    [
+      homeBrowseNav,
+      selectedTagId,
+      booksRailExpandedParentId,
+      booksMemoComposeTarget,
+      allTags,
+      tagParentLinks,
+    ],
+  )
 
   const tagViewNoneMemoCount = useMemo(
     () => notes.filter((n) => noteHasNoTagViewTags(n)).length,
@@ -2302,21 +2361,11 @@ export function HomePage() {
 
   function openAddNote() {
     if (!canUseCompose) return
-    setAddNoteParentTagId(
-      resolveAddNoteParentTagId(
-        homeBrowseNav,
-        selectedTagId,
-        booksRailExpandedParentId,
-        allTags,
-        tagParentLinks,
-      ),
-    )
     setAddNoteOpen(true)
   }
 
   function closeAddNote() {
     setAddNoteOpen(false)
-    setAddNoteParentTagId(null)
   }
 
   function toggleAddNote() {
@@ -2373,6 +2422,16 @@ export function HomePage() {
       }
     }
     setBooksRailExpandedParentId(expandedParent)
+    if (isParentSpine) {
+      setBooksMemoComposeTarget('parent')
+    } else if (
+      expandedParent &&
+      isTagChildOfParent(tagId, expandedParent, allTags, tagParentLinks)
+    ) {
+      setBooksMemoComposeTarget('child')
+    } else {
+      setBooksMemoComposeTarget(null)
+    }
     const filterTagIds = resolveBooksTagFilterTagIds(
       isParentSpine ? 'books' : homeBrowseNav,
       tagId,
@@ -2966,6 +3025,9 @@ export function HomePage() {
                             parentDirectNotes.length > 0 ||
                             selectedTagId === t.id
                           : parentDirectNotes.length > 0)
+                      const childSelected =
+                        Boolean(selectedTagId) &&
+                        children.some((c) => c.id === selectedTagId)
                       return (
                         <li
                           key={t.id}
@@ -3008,7 +3070,7 @@ export function HomePage() {
                                 {children.length > 0 ? (
                                   <>
                                     <ul
-                                      className="parent-tag-child-list parent-tag-child-list--nav"
+                                      className="parent-tag-child-list"
                                       aria-label={`${displayTagName(t.name)} 하위 태그`}
                                     >
                                       {children.map((child) => {
@@ -3027,6 +3089,7 @@ export function HomePage() {
                                                   : ''
                                               }`}
                                               aria-pressed={childActive}
+                                              aria-expanded={childActive}
                                               onClick={() =>
                                                 toggleTagSelect(child.id, {
                                                   childOfParentId: t.id,
@@ -3037,27 +3100,23 @@ export function HomePage() {
                                                 {displayTagName(child.name)}
                                               </span>
                                             </button>
+                                            {childActive ? (
+                                              <InlineRailNotesPanel
+                                                tagLabel={displayTagName(
+                                                  child.name,
+                                                )}
+                                                tagId={child.id}
+                                                notes={notesForSelectedTag}
+                                                loading={tagPullLoading}
+                                                onView={openViewNote}
+                                                onTagFilter={openTagViewFromNote}
+                                              />
+                                            ) : null}
                                           </li>
                                         )
                                       })}
                                     </ul>
-                                    {selectedTagId &&
-                                    children.some(
-                                      (c) => c.id === selectedTagId,
-                                    ) ? (
-                                      <InlineRailNotesPanel
-                                        tagLabel={displayTagName(
-                                          children.find(
-                                            (c) => c.id === selectedTagId,
-                                          )!.name,
-                                        )}
-                                        tagId={selectedTagId}
-                                        notes={notesForSelectedTag}
-                                        loading={tagPullLoading}
-                                        onView={openViewNote}
-                                        onTagFilter={openTagViewFromNote}
-                                      />
-                                    ) : showParentDirectNotes ? (
+                                    {showParentDirectNotes && !childSelected ? (
                                       <InlineRailNotesPanel
                                         tagLabel={displayTagName(t.name)}
                                         tagId={t.id}
@@ -3278,7 +3337,10 @@ export function HomePage() {
                                     불러오는 중…
                                   </p>
                                 ) : sourceTags.length > 0 ? (
-                                  <ul className="parent-tag-child-list">
+                                  <ul
+                                    className="parent-tag-child-list"
+                                    aria-label={`${displaySourceTitle(s.title)} 관련 태그`}
+                                  >
                                     {sourceTags.map((tag) => {
                                       const tagActive = selectedTagId === tag.id
                                       const showTagNotes = tagActive
@@ -3306,7 +3368,9 @@ export function HomePage() {
                                           </button>
                                           {showTagNotes ? (
                                             <InlineRailNotesPanel
-                                              tagLabel={displayTagName(tag.name)}
+                                              tagLabel={displayTagName(
+                                                tag.name,
+                                              )}
                                               tagId={tag.id}
                                               notes={notesForLinkModeTag}
                                               loading={tagPullLoading}
@@ -3432,17 +3496,15 @@ export function HomePage() {
         <AddNoteModal
           open={addNoteOpen}
           onClose={() => closeAddNote()}
-          initialTags={EMPTY_MODAL_SEED_TAGS}
-          parentTagId={addNoteParentTagId}
-          parentTagName={
-            addNoteParentTagId
-              ? allTags.find((t) => t.id === addNoteParentTagId)?.name ?? null
-              : null
-          }
+          initialTags={addNoteCompose.initialTags}
+          lockedParentTagId={addNoteCompose.lockedParentTagId}
+          childTagCompose={addNoteCompose.childTagCompose}
           allTags={allTags}
+          tagParentLinks={tagParentLinks}
           allSources={allSources}
           userId={user.id}
           onSaved={applyNoteCreated}
+          onTagsAssignedToParent={applyTagsAssigned}
           onSaveFailed={async (tempId) => {
             applyNoteRemoved(tempId)
             await syncAllFromServer()
@@ -3468,6 +3530,7 @@ export function HomePage() {
         <AddParentTagModal
           open={addParentTagRailOpen}
           userId={user.id}
+          allTags={allTags}
           onClose={() => setAddParentTagRailOpen(false)}
           onCreated={(row) => applyTagCreated({ ...row, is_parent: true })}
           onError={(message) => setSaveError(message)}
@@ -3528,7 +3591,7 @@ export function HomePage() {
             setViewingNoteContextTagId(null)
             setViewNoteLoading(false)
           }}
-          onEdit={openEditNote}
+          onEdit={(note) => openEditNote(note, viewingNoteContextTagId)}
           onSourceFilter={openSourceViewFromNote}
           onTagFilter={openTagViewFromNote}
         />
@@ -3537,12 +3600,18 @@ export function HomePage() {
       {user ? (
         <EditNoteModal
           open={editingNote !== null}
-          onClose={() => setEditingNote(null)}
+          onClose={() => {
+            setEditingNote(null)
+            setEditingNoteLockedParentTagId(null)
+          }}
           note={editingNote}
+          lockedParentTagId={editingNoteLockedParentTagId}
           allTags={allTags}
+          tagParentLinks={tagParentLinks}
           allSources={allSources}
           userId={user.id}
           onNoteUpdated={applyNoteUpdated}
+          onTagsAssignedToParent={applyTagsAssigned}
           onUpdateError={(message) => setSaveError(message)}
           onSyncNoteFromServer={syncNoteFromServer}
           onNoteDeleted={applyNoteDeleted}

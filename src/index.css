@@ -1,17 +1,17 @@
 @font-face {
   font-family: 'TagNote DOSGothic';
-  src: url('./assets/fonts/DOSGothic.ttf') format('truetype');
+  src: url('/fonts/DOSGothic.ttf') format('truetype');
   font-weight: 400;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
   font-family: 'TagNote SpoqaHanSansNeo';
-  src: url('./assets/fonts/SpoqaHanSansNeo-Regular.otf') format('opentype');
+  src: url('/fonts/SpoqaHanSansNeo-Regular.otf') format('opentype');
   font-weight: 400;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 :root {
@@ -1962,32 +1962,23 @@ body:has(.home-main--parent-rail-hero) {
   border-left: none;
   border-radius: 0;
   background: #fff;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .parent-tag-child-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  flex: 1;
-  min-height: 0;
+  overflow: visible;
+  flex: 0 0 auto;
   min-width: 0;
   max-width: 100%;
-  overscroll-behavior-y: contain;
-  -webkit-overflow-scrolling: touch;
 }
 
-/* 책 뷰 — 하위 태그 네비(상단), 메모는 아래 영역 */
-.parent-tag-child-list--nav {
-  flex: 0 0 auto;
-  overflow-y: auto;
-  max-height: min(40vh, 12rem);
-  border-bottom: 1px solid var(--border);
-}
-
-.parent-tag-child-list--nav .parent-tag-child-block + .parent-tag-child-block {
+.parent-tag-child-list .parent-tag-child-block + .parent-tag-child-block {
   border-top: 1px solid var(--border);
 }
 
@@ -1996,8 +1987,10 @@ body:has(.home-main--parent-rail-hero) {
   max-width: 100%;
 }
 
-.parent-tag-child-block + .parent-tag-child-block {
-  border-top: 1px solid var(--border);
+.parent-tag-child-block .parent-tag-child-notes {
+  flex: none;
+  max-height: none;
+  overflow-y: visible;
 }
 
 .parent-tag-child-notes {
@@ -2005,17 +1998,12 @@ body:has(.home-main--parent-rail-hero) {
   background: #ffffff;
 }
 
-/* 태그·출처 뷰 — 트랙 안 메모만 있을 때 세로 스크롤 */
+/* 트랙 직속 메모(하위 태그 없을 때 등) — 트랙과 함께 스크롤 */
 .parent-tag-inline-tracks > .parent-tag-child-notes {
-  flex: 1 1 0;
-  min-height: 0;
+  flex: 0 0 auto;
   min-width: 0;
   max-width: 100%;
   border-top: none;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  -webkit-overflow-scrolling: touch;
 }
 
 .parent-tag-child-notes-empty {

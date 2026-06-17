@@ -494,6 +494,239 @@ export function resolveAddNoteParentTagId(
   return null
 }
 
+/** 태그가 어떤 상위태그 아래에 지정된 하위인지 (parent_id 또는 link) */
+export function isTagAssignedUnderParent(
+  tagId: string,
+  tags: TagHierarchyRow[],
+  links?: TagParentLink[],
+): boolean {
+  const tag = tags.find((t) => t.id === tagId)
+  if (!tag) return false
+  if (tag.parent_id) return true
+  return links?.some((l) => l.tag_id === tagId) ?? false
+}
+
+/** + 메모 추가 시 태그칩에 미리 넣을 선택 태그 */
+export function resolveAddNoteInitialTags(
+  selectedTagId: string | null,
+  tags: TagHierarchyRow[],
+): { id: string; name: string; color_index: number }[] {
+  if (!selectedTagId || selectedTagId === TAG_VIEW_NONE_ID) return []
+  const tag = tags.find((t) => t.id === selectedTagId)
+  if (!tag) return []
+  const name = normalizeTagInput(tag.name)
+  if (!name) return []
+  return [{ id: tag.id, name, color_index: tag.color_index }]
+}
+
+export type AddNoteComposeState = {
+  initialTags: { id: string; name: string; color_index: number }[]
+  lockedParentTagId: string | null
+  childTagCompose: boolean
+}
+
+/** 책 뷰 + 메모 — 마지막으로 눌린 대상(상위 spine vs 하위 태그) */
+export type BooksMemoComposeTarget = 'parent' | 'child'
+
+function tagToAddNoteInitialChip(
+  tag: TagHierarchyRow,
+): { id: string; name: string; color_index: number } | null {
+  const name = normalizeTagInput(tag.name)
+  if (!name) return null
+  return { id: tag.id, name, color_index: tag.color_index }
+}
+
+/** + 메모 추가 — 태그칩·상위 고정·하위 compose 한 번에 결정 */
+export function resolveAddNoteComposeState(
+  homeBrowseNav: 'books' | 'tags' | 'links',
+  selectedTagId: string | null,
+  booksRailExpandedParentId: string | null,
+  booksMemoComposeTarget: BooksMemoComposeTarget | null,
+  tags: TagHierarchyRow[],
+  links?: TagParentLink[],
+): AddNoteComposeState {
+  const empty: AddNoteComposeState = {
+    initialTags: [],
+    lockedParentTagId: null,
+    childTagCompose: false,
+  }
+
+  const asLockedParent = (id: string | null | undefined): string | null => {
+    if (!id) return null
+    const tag = tags.find((t) => t.id === id)
+    if (!tag || !isBooksRailParentTag(tag, tags, links)) return null
+    return tag.id
+  }
+
+  if (homeBrowseNav === 'books' && booksRailExpandedParentId) {
+    const parentId = booksRailExpandedParentId
+    if (
+      booksMemoComposeTarget === 'child' &&
+      selectedTagId &&
+      isTagChildOfParent(selectedTagId, parentId, tags, links)
+    ) {
+      const child = tags.find((t) => t.id === selectedTagId)
+      if (!child) return empty
+      const chip = tagToAddNoteInitialChip(child)
+      if (!chip) return empty
+      return {
+        initialTags: [chip],
+        lockedParentTagId: null,
+        childTagCompose: true,
+      }
+    }
+    const locked = asLockedParent(parentId)
+    if (!locked) return empty
+    return {
+      initialTags: [],
+      lockedParentTagId: locked,
+      childTagCompose: false,
+    }
+  }
+
+  if (homeBrowseNav === 'books' && selectedTagId) {
+    const selected = tags.find((t) => t.id === selectedTagId)
+    if (selected && isBooksRailParentTag(selected, tags, links)) {
+      return {
+        initialTags: [],
+        lockedParentTagId: selected.id,
+        childTagCompose: false,
+      }
+    }
+  }
+
+  if (
+    homeBrowseNav === 'tags' &&
+    selectedTagId &&
+    selectedTagId !== TAG_VIEW_NONE_ID
+  ) {
+    const selected = tags.find((t) => t.id === selectedTagId)
+    if (!selected) return empty
+    if (isBooksRailParentTag(selected, tags, links)) {
+      return {
+        initialTags: [],
+        lockedParentTagId: selected.id,
+        childTagCompose: false,
+      }
+    }
+    const chip = tagToAddNoteInitialChip(selected)
+    if (!chip) return empty
+    if (isTagAssignedUnderParent(selectedTagId, tags, links)) {
+      return {
+        initialTags: [chip],
+        lockedParentTagId: null,
+        childTagCompose: true,
+      }
+    }
+    return {
+      initialTags: [chip],
+      lockedParentTagId: null,
+      childTagCompose: false,
+    }
+  }
+
+  return empty
+}
+
+/** + 메모: 상위 A 직접 선택·하위 없이 펼침 → A만(메인). 하위 a 선택 → a만. 미선택 → 태그·상위 지정 UI */
+export function resolveAddNoteLockedParentTagId(
+  homeBrowseNav: 'books' | 'tags' | 'links',
+  selectedTagId: string | null,
+  booksRailExpandedParentId: string | null,
+  tags: TagHierarchyRow[],
+  links?: TagParentLink[],
+): string | null {
+  const asLockedParent = (id: string | null | undefined): string | null => {
+    if (!id) return null
+    const tag = tags.find((t) => t.id === id)
+    if (!tag || !isBooksRailParentTag(tag, tags, links)) return null
+    return tag.id
+  }
+
+  if (homeBrowseNav === 'books' && selectedTagId) {
+    const selected = tags.find((t) => t.id === selectedTagId)
+    if (!selected) return null
+    if (!isBooksRailParentTag(selected, tags, links)) {
+      return null
+    }
+    return selected.id
+  }
+
+  if (homeBrowseNav === 'tags' && selectedTagId) {
+    return asLockedParent(selectedTagId)
+  }
+
+  if (
+    homeBrowseNav === 'books' &&
+    !selectedTagId &&
+    booksRailExpandedParentId
+  ) {
+    return asLockedParent(booksRailExpandedParentId)
+  }
+
+  return null
+}
+
+/** + 메모: 상위 아래 하위 a 선택 → a만 태그칩(상위 A는 메모 태그에 넣지 않음) */
+export function isChildTagAddNoteCompose(
+  selectedTagId: string | null,
+  tags: TagHierarchyRow[],
+  links?: TagParentLink[],
+): boolean {
+  if (!selectedTagId || selectedTagId === TAG_VIEW_NONE_ID) return false
+  const tag = tags.find((t) => t.id === selectedTagId)
+  if (!tag || isBooksRailParentTag(tag, tags, links)) return false
+  return isTagAssignedUnderParent(selectedTagId, tags, links)
+}
+
+/** 메모 수정 — 상위태그 spine에서 상위 자체를 눌러 본 맥락만 고정 */
+export function resolveLockedParentTagIdForNoteModal(
+  contextTagId: string | null | undefined,
+  tags: TagHierarchyRow[],
+  links?: TagParentLink[],
+): string | null {
+  if (!contextTagId || contextTagId === TAG_VIEW_NONE_ID) return null
+  const tag = tags.find((t) => t.id === contextTagId)
+  if (!tag) return null
+  if (isBooksRailParentTag(tag, tags, links)) return tag.id
+  return null
+}
+
+/** 메모 태그·선택 태그에서 공통 상위태그 추론 */
+export function inferParentTagIdFromTagIds(
+  tagIds: string[],
+  tags: TagHierarchyRow[],
+  links?: TagParentLink[],
+): string {
+  const parents = new Set<string>()
+  for (const id of tagIds) {
+    if (!id) continue
+    const tag = tags.find((t) => t.id === id)
+    if (tag?.parent_id) parents.add(tag.parent_id)
+    for (const l of links ?? []) {
+      if (l.tag_id === id) parents.add(l.parent_tag_id)
+    }
+  }
+  if (parents.size === 1) return [...parents][0]
+  return ''
+}
+
+/** 상위태그 아래로 편입할 태그 id (상위·다른 상위태그 제외) */
+export function tagIdsForParentAssignment(
+  tagIds: string[],
+  parentId: string,
+  tags: TagHierarchyRow[],
+  links?: TagParentLink[],
+): string[] {
+  return tagIds.filter((id) => {
+    if (!id || id === parentId) return false
+    const tag = tags.find((t) => t.id === id)
+    if (!tag) return false
+    if (isBooksRailParentTag(tag, tags, links)) return false
+    return true
+  })
+}
+
 /** 상위 태그로 쓸 수 있는 후보 (상위태그만, 자기 자신 제외) */
 export function getParentTagCandidates(
   tag: TagHierarchyRow,

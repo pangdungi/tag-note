@@ -362,6 +362,7 @@ export function TagManageModal({
         <AddParentTagModal
           open={open && addParentOpen}
           userId={userId}
+          allTags={tags}
           onClose={() => setAddParentOpen(false)}
           onCreated={(row) => {
             onTagCreated(row)

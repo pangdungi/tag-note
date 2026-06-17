@@ -1086,15 +1086,14 @@ function canSetTagPrimaryParentId(
 export async function createParentTag(
   rawName: string,
   userId: string,
+  opts?: { existingTags?: TagRow[] },
 ): Promise<TagRow> {
   const label = normalizeTagInput(rawName)
   if (!label) throw new Error('태그 이름이 비었습니다.')
 
-  const existing = await fetchTags()
-  const hit = existing.find(
-    (t) => t.name.toLowerCase() === label.toLowerCase() || t.name === label,
-  )
-  if (hit) {
+  const normalized = label.toLowerCase()
+
+  const promoteOrReturnParent = async (hit: TagRow): Promise<TagRow> => {
     if (hit.parent_id) {
       throw new Error('이미 다른 상위 태그 아래에 있는 태그입니다.')
     }
@@ -1110,25 +1109,56 @@ export async function createParentTag(
     return data as TagRow
   }
 
-  const color_index = pickColorIndex(label, existing)
-  const { data, error } = await supabase
-    .from('tags')
-    .insert({
-      user_id: userId,
-      name: label,
-      color_index,
-      parent_id: null,
-      is_parent: true,
-    })
-    .select('id, name, color_index, parent_id, is_parent, created_at')
-    .single()
-  if (error) {
-    if (error.code === '23505') {
-      throw new Error('같은 이름의 태그가 이미 있습니다.')
-    }
-    throw error
+  const findByNormalizedName = async (): Promise<TagRow | null> => {
+    const { data, error } = await supabase
+      .from('tags')
+      .select('id, name, color_index, parent_id, is_parent, created_at')
+      .eq('user_id', userId)
+      .eq('name_normalized', normalized)
+      .maybeSingle()
+    if (error) throw error
+    return (data as TagRow | null) ?? null
   }
-  return data as TagRow
+
+  const hitFromCache = opts?.existingTags?.find(
+    (t) => t.name.toLowerCase() === normalized || t.name === label,
+  )
+  if (hitFromCache) {
+    return promoteOrReturnParent(hitFromCache)
+  }
+
+  const insertNew = async (): Promise<TagRow> => {
+    const { data, error } = await supabase
+      .from('tags')
+      .insert({
+        user_id: userId,
+        name: label,
+        color_index: pickColorIndex(label, opts?.existingTags ?? []),
+        parent_id: null,
+        is_parent: true,
+      })
+      .select('id, name, color_index, parent_id, is_parent, created_at')
+      .single()
+    if (error) {
+      if (error.code === '23505') {
+        const existing = await findByNormalizedName()
+        if (!existing) throw error
+        return promoteOrReturnParent(existing)
+      }
+      throw error
+    }
+    return data as TagRow
+  }
+
+  if (opts?.existingTags) {
+    return insertNew()
+  }
+
+  const hit = await findByNormalizedName()
+  if (hit) {
+    return promoteOrReturnParent(hit)
+  }
+  return insertNew()
 }
 
 /** 상위 태그 아래 새 하위 태그 */

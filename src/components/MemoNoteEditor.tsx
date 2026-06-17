@@ -7,17 +7,19 @@ import {
   type ClipboardEvent,
   type FocusEvent,
 } from 'react'
-import { applyStructuredNotePaste, cleanPastedMemoText } from '../lib/pasteNoteFormat'
+import { applyStructuredNotePaste } from '../lib/pasteNoteFormat'
 import {
   applyMemoTextShortcuts,
   applyMemoTextShortcutsInEditor,
+  getMemoEditorSelectionOffsets,
   insertMemoEmojiInEditor,
+  insertPlainTextInMemoEditor,
+  isRangeInsideMemoEditor,
   memoBodyFromEditor,
   memoBodyToEditorHtml,
   normalizeMemoBodyStorage,
   reconcileMemoEditorShortcuts,
   serializedLengthOfMemoPrefix,
-  serializedOffsetInEditor,
   setSelectionAtSerializedOffset,
 } from '../lib/memoQuickEmojis'
 import { MemoEmojiBar } from './MemoEmojiBar'
@@ -53,6 +55,7 @@ export function MemoNoteEditor({
 }: Props) {
   const editorRef = useRef<HTMLDivElement>(null)
   const lastSerializedRef = useRef<string | null>(null)
+  const savedRangeRef = useRef<Range | null>(null)
   const isComposingRef = useRef(false)
   const fallbackId = useId()
   const editorId = id ?? fallbackId
@@ -95,39 +98,56 @@ export function MemoNoteEditor({
     onChange(next)
   }, [onChange])
 
-  const getEditorSelectionOffsets = useCallback((el: HTMLDivElement) => {
+  const rememberEditorSelection = useCallback(() => {
+    const el = editorRef.current
+    if (!el || disabled) return
     const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0) {
-      const len = memoBodyFromEditor(el).length
-      return { start: len, end: len }
+    if (!sel || sel.rangeCount === 0) return
+    const range = sel.getRangeAt(0)
+    if (!isRangeInsideMemoEditor(el, range)) return
+    savedRangeRef.current = range.cloneRange()
+  }, [disabled])
+
+  const resolveEditorInsertRange = useCallback((el: HTMLDivElement): Range => {
+    el.focus()
+
+    const sel = window.getSelection()
+    if (sel && sel.rangeCount > 0) {
+      const live = sel.getRangeAt(0)
+      if (isRangeInsideMemoEditor(el, live)) {
+        return live.cloneRange()
+      }
     }
-    const anchor = sel.anchorNode
-    const focus = sel.focusNode
-    if (
-      !anchor ||
-      !focus ||
-      !el.contains(anchor) ||
-      !el.contains(focus)
-    ) {
-      const len = memoBodyFromEditor(el).length
-      return { start: len, end: len }
+
+    const saved = savedRangeRef.current
+    if (saved && isRangeInsideMemoEditor(el, saved)) {
+      if (sel) {
+        sel.removeAllRanges()
+        sel.addRange(saved)
+      }
+      return saved.cloneRange()
     }
-    const anchorOffset = serializedOffsetInEditor(
-      el,
-      anchor,
-      sel.anchorOffset,
-    )
-    const focusOffset = serializedOffsetInEditor(el, focus, sel.focusOffset)
-    return {
-      start: Math.min(anchorOffset, focusOffset),
-      end: Math.max(anchorOffset, focusOffset),
-    }
+
+    const end = document.createRange()
+    end.selectNodeContents(el)
+    end.collapse(false)
+    return end
   }, [])
 
-  const normalizePastePlainText = (raw: string) =>
-    applyMemoTextShortcuts(
-      cleanPastedMemoText(raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n')),
-    )
+  useEffect(() => {
+    const el = editorRef.current
+    if (!el) return
+
+    const onSelectionChange = () => {
+      if (el !== document.activeElement && !el.contains(document.activeElement)) {
+        return
+      }
+      rememberEditorSelection()
+    }
+
+    document.addEventListener('selectionchange', onSelectionChange)
+    return () => document.removeEventListener('selectionchange', onSelectionChange)
+  }, [rememberEditorSelection, resetKey])
 
   const handleInput = () => {
     if (isComposingRef.current) return
@@ -156,9 +176,10 @@ export function MemoNoteEditor({
 
     e.preventDefault()
 
+    const insertRange = resolveEditorInsertRange(el)
     const currentBody = normalizeMemoBodyStorage(memoBodyFromEditor(el))
     const { start: selectionStart, end: selectionEnd } =
-      getEditorSelectionOffsets(el)
+      getMemoEditorSelectionOffsets(el, insertRange)
 
     const structured = applyStructuredNotePaste(
       currentBody,
@@ -178,20 +199,13 @@ export function MemoNoteEditor({
       if (structured.source && onSourceChange) {
         onSourceChange(structured.source)
       }
+      rememberEditorSelection()
       return
     }
 
-    const insertText = normalizePastePlainText(pasted)
-    const pastePrefix = `${currentBody.slice(0, selectionStart)}${insertText}`
-    const newBody = normalizeMemoBodyStorage(
-      applyMemoTextShortcuts(
-        `${pastePrefix}${currentBody.slice(selectionEnd)}`,
-      ),
-    )
-    const normalized = applyMemoTextShortcuts(newBody)
-    const cursorOffset = serializedLengthOfMemoPrefix(pastePrefix)
-    syncEditorFromValue(normalized, cursorOffset)
-    onChange(normalized)
+    insertPlainTextInMemoEditor(el, insertRange, pasted)
+    emitChange()
+    rememberEditorSelection()
   }
 
   const boxHeight = `${Math.max(rows, 3) * 1.5 + 1.5}rem`
@@ -213,6 +227,8 @@ export function MemoNoteEditor({
         }}
         data-placeholder={placeholder}
         onInput={handleInput}
+        onMouseUp={rememberEditorSelection}
+        onKeyUp={rememberEditorSelection}
         onCompositionStart={() => {
           isComposingRef.current = true
         }}

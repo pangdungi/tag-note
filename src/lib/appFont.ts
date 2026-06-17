@@ -38,6 +38,21 @@ export function applyAppFontsToDocument(): void {
   root.setProperty('--tag-font-family', DOS_GOTHIC_STACK)
 }
 
+const APP_FONT_FACES = ['TagNote SpoqaHanSansNeo', 'TagNote DOSGothic'] as const
+
+/** 첫 화면 전에 스포카·도스고딕 로드 — 시스템 폰트 깜빡임 방지 */
+export async function waitForAppFonts(timeoutMs = 12000): Promise<void> {
+  if (!document.fonts?.load) return
+  const loads = APP_FONT_FACES.map((family) =>
+    document.fonts.load(`16px "${family}"`).catch(() => undefined),
+  )
+  const ready = Promise.all(loads).then(() => document.fonts.ready)
+  const timeout = new Promise<void>((resolve) => {
+    window.setTimeout(resolve, timeoutMs)
+  })
+  await Promise.race([ready, timeout])
+}
+
 export function getStoredAppFontId(): AppFontChoiceId {
   try {
     const raw = localStorage.getItem(APP_FONT_STORAGE_KEY)
