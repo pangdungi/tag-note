@@ -65,6 +65,55 @@ export function stripTrailingPasteEllipsis(text: string): string {
   return t.trimEnd()
 }
 
+/** HTML 클립보드 → 평문 (목록은 `• ` 줄로 — 이후 uncheck 아이콘으로 변환) */
+export function clipboardHtmlToPlainMemoText(html: string): string {
+  if (!html.trim()) return ''
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  let out = ''
+
+  function ensureLineBreak(): void {
+    if (out.length > 0 && !out.endsWith('\n')) out += '\n'
+  }
+
+  function walk(node: Node): void {
+    if (node.nodeType === Node.TEXT_NODE) {
+      out += node.textContent ?? ''
+      return
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return
+    const el = node as HTMLElement
+    const tag = el.tagName
+
+    if (tag === 'BR') {
+      out += '\n'
+      return
+    }
+    if (tag === 'LI') {
+      ensureLineBreak()
+      out += '• '
+      for (const child of el.childNodes) walk(child)
+      return
+    }
+    if (tag === 'UL' || tag === 'OL') {
+      for (const child of el.childNodes) walk(child)
+      return
+    }
+    if (
+      (tag === 'P' || tag === 'DIV') &&
+      (el.parentElement === doc.body || el.parentElement?.tagName === 'BODY')
+    ) {
+      ensureLineBreak()
+      for (const child of el.childNodes) walk(child)
+      out += '\n'
+      return
+    }
+    for (const child of el.childNodes) walk(child)
+  }
+
+  for (const child of doc.body.childNodes) walk(child)
+  return out.replace(/\n{3,}/g, '\n\n').trimEnd()
+}
+
 /** 붙여넣은 메모 본문 — 각 줄 끝 말줄임 정리 */
 export function cleanPastedMemoText(text: string): string {
   return text

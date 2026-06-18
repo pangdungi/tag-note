@@ -54,7 +54,6 @@ import {
   isTagChildOfParent,
   normalizeTagInput,
   formatSpineLabel,
-  formatTagViewSpineLabel,
   formatSpineText,
   tagHasChildren,
   TAG_RAIL_INDEX_KO,
@@ -2158,7 +2157,7 @@ export function HomePage() {
       const scrollerRect = scroller.getBoundingClientRect()
       const slotRect = slot.getBoundingClientRect()
       scroller.scrollTo({
-        left: scroller.scrollLeft + slotRect.left - scrollerRect.left - 16,
+        top: scroller.scrollTop + slotRect.top - scrollerRect.top - 12,
         behavior: 'smooth',
       })
     },
@@ -2297,13 +2296,18 @@ export function HomePage() {
 
   const parentTagRailSectionRef = useRef<HTMLElement>(null)
   const parentTagRailScrollRef = useRef<HTMLDivElement>(null)
-  const tagSpineSlotRefs = useRef(new Map<string, HTMLLIElement>())
+  const tagSpineSlotRefs = useRef(new Map<string, HTMLButtonElement>())
   const openTracksRef = useRef<HTMLDivElement>(null)
   const openParentSpineRef = useRef<HTMLLIElement>(null)
 
   useLayoutEffect(() => {
     const section = parentTagRailSectionRef.current
     if (!section) return
+
+    if (homeBrowseNavRef.current === 'tags') {
+      section.style.removeProperty('--parent-open-slot-width')
+      return
+    }
 
     const scroller = parentTagRailScrollRef.current ?? section
 
@@ -2893,7 +2897,11 @@ export function HomePage() {
               ref={parentTagRailSectionRef}
               className={`parent-tag-rail-section${
                 showTagRailIndex ? ' parent-tag-rail-section--with-index' : ''
-              }${railSectionOpen ? ' parent-tag-rail-section--open' : ''}`}
+              }${railSectionOpen ? ' parent-tag-rail-section--open' : ''}${
+                homeBrowseNav === 'tags' ? ' parent-tag-rail-section--tag-view' : ''
+              }${
+                homeBrowseNav === 'books' ? ' parent-tag-rail-section--books-view' : ''
+              }`}
               aria-label={browseRailAriaLabel}
             >
               {showTagRailIndex ? (
@@ -2974,7 +2982,110 @@ export function HomePage() {
                   </div>
                 </nav>
               ) : null}
-              <div ref={parentTagRailScrollRef} className="parent-tag-rail-scroll">
+              {homeBrowseNav === 'tags' ? (
+                <div className="tag-view-rail-layout">
+                  <div
+                    ref={parentTagRailScrollRef}
+                    className="tag-view-bar-scroll"
+                    aria-label="태그 목록"
+                  >
+                    <div className="tag-view-bar-list" role="list">
+                      <div className="tag-view-bar-block" role="listitem">
+                        <button
+                          type="button"
+                          ref={(el) => {
+                            if (el) {
+                              tagSpineSlotRefs.current.set(TAG_VIEW_NONE_ID, el)
+                            } else {
+                              tagSpineSlotRefs.current.delete(TAG_VIEW_NONE_ID)
+                            }
+                          }}
+                          className={`tag-view-bar${
+                            selectedTagId === TAG_VIEW_NONE_ID
+                              ? ' tag-view-bar--selected'
+                              : ''
+                          }`}
+                          aria-pressed={selectedTagId === TAG_VIEW_NONE_ID}
+                          aria-expanded={selectedTagId === TAG_VIEW_NONE_ID}
+                          onClick={() => toggleTagSelect(TAG_VIEW_NONE_ID)}
+                        >
+                          <span className="tag-view-bar-label">태그 없음</span>
+                          <span className="tag-view-bar-stat">
+                            {tagViewNoneMemoCount}
+                          </span>
+                        </button>
+                        {selectedTagId === TAG_VIEW_NONE_ID ? (
+                          <div
+                            ref={openTracksRef}
+                            className="tag-view-bar-notes"
+                            aria-label="태그 없음 메모"
+                          >
+                            <InlineRailNotesPanel
+                              tagLabel="태그 없음"
+                              tagId={TAG_VIEW_NONE_ID}
+                              notes={notesForSelectedTag}
+                              loading={tagPullLoading}
+                              onView={(note) => openViewNote(note, null)}
+                              onTagFilter={openTagViewFromNote}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                      {tagsForTagModeRail.map((t) => {
+                        const isSelected = selectedTagId === t.id
+                        const memoCount = tagMemoCounts.get(t.id) ?? 0
+                        return (
+                          <div
+                            key={t.id}
+                            className="tag-view-bar-block"
+                            role="listitem"
+                          >
+                            <button
+                              type="button"
+                              ref={(el) => {
+                                if (el) tagSpineSlotRefs.current.set(t.id, el)
+                                else tagSpineSlotRefs.current.delete(t.id)
+                              }}
+                              className={`tag-view-bar${
+                                isSelected ? ' tag-view-bar--selected' : ''
+                              }`}
+                              aria-pressed={isSelected}
+                              aria-expanded={isSelected}
+                              aria-label={displayTagName(t.name)}
+                              title={displayTagName(t.name)}
+                              onClick={() => toggleTagSelect(t.id)}
+                            >
+                              <span className="tag-view-bar-label">
+                                {displayTagName(t.name)}
+                              </span>
+                              <span className="tag-view-bar-stat">
+                                {memoCount}
+                              </span>
+                            </button>
+                            {isSelected ? (
+                              <div
+                                ref={openTracksRef}
+                                className="tag-view-bar-notes"
+                                aria-label={`${displayTagName(t.name)} 관련 메모`}
+                              >
+                                <InlineRailNotesPanel
+                                  tagLabel={displayTagName(t.name)}
+                                  tagId={t.id}
+                                  notes={notesForSelectedTag}
+                                  loading={tagPullLoading}
+                                  onView={openViewNote}
+                                  onTagFilter={openTagViewFromNote}
+                                />
+                              </div>
+                            ) : null}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div ref={parentTagRailScrollRef} className="parent-tag-rail-scroll">
               <ul className="parent-tag-rail">
                 {homeBrowseNav === 'books'
                   ? parentTagsForRail.map((t) => {
@@ -3025,9 +3136,6 @@ export function HomePage() {
                             parentDirectNotes.length > 0 ||
                             selectedTagId === t.id
                           : parentDirectNotes.length > 0)
-                      const childSelected =
-                        Boolean(selectedTagId) &&
-                        children.some((c) => c.id === selectedTagId)
                       return (
                         <li
                           key={t.id}
@@ -3116,7 +3224,7 @@ export function HomePage() {
                                         )
                                       })}
                                     </ul>
-                                    {showParentDirectNotes && !childSelected ? (
+                                    {showParentDirectNotes ? (
                                       <InlineRailNotesPanel
                                         tagLabel={displayTagName(t.name)}
                                         tagId={t.id}
@@ -3152,141 +3260,6 @@ export function HomePage() {
                       )
                     })
                   : null}
-                {homeBrowseNav === 'tags' ? (
-                  <>
-                    <li
-                      key={TAG_VIEW_NONE_ID}
-                      ref={(el) => {
-                        if (el) tagSpineSlotRefs.current.set(TAG_VIEW_NONE_ID, el)
-                        else tagSpineSlotRefs.current.delete(TAG_VIEW_NONE_ID)
-                        if (selectedTagId === TAG_VIEW_NONE_ID) {
-                          openParentSpineRef.current = el
-                        }
-                      }}
-                      className={`parent-tag-spine-slot${
-                        selectedTagId === TAG_VIEW_NONE_ID
-                          ? ' parent-tag-spine-slot--open'
-                          : ''
-                      }`}
-                    >
-                      <div className="parent-tag-spine-group">
-                        <div
-                          className={`parent-tag-card${
-                            selectedTagId === TAG_VIEW_NONE_ID
-                              ? ' parent-tag-card--selected'
-                              : ''
-                          }${
-                            selectedTagId === TAG_VIEW_NONE_ID
-                              ? ' parent-tag-card--expanded'
-                              : ''
-                          }`}
-                        >
-                          <button
-                            type="button"
-                            className="parent-tag-card-body"
-                            aria-pressed={selectedTagId === TAG_VIEW_NONE_ID}
-                            aria-current={
-                              selectedTagId === TAG_VIEW_NONE_ID
-                                ? 'true'
-                                : undefined
-                            }
-                            aria-expanded={selectedTagId === TAG_VIEW_NONE_ID}
-                            aria-label="태그 없음"
-                            title="태그 없음"
-                            onClick={() => toggleTagSelect(TAG_VIEW_NONE_ID)}
-                          >
-                            <span className="parent-tag-card-label">
-                              태그 없음
-                            </span>
-                          </button>
-                          <ParentTagSpineStat
-                            value={tagViewNoneMemoCount}
-                            ariaLabel={`메모 ${tagViewNoneMemoCount}개`}
-                          />
-                        </div>
-                        {selectedTagId === TAG_VIEW_NONE_ID ? (
-                          <div
-                            ref={openTracksRef}
-                            className="parent-tag-inline-tracks"
-                            aria-label="태그 없음 메모"
-                          >
-                            <InlineRailNotesPanel
-                              tagLabel="태그 없음"
-                              tagId={TAG_VIEW_NONE_ID}
-                              notes={notesForSelectedTag}
-                              loading={tagPullLoading}
-                              onView={(note) => openViewNote(note, null)}
-                              onTagFilter={openTagViewFromNote}
-                            />
-                          </div>
-                        ) : null}
-                      </div>
-                    </li>
-                    {tagsForTagModeRail.map((t) => {
-                      const isOpen = selectedTagId === t.id
-                      const showNotes = isOpen
-                      const memoCount = tagMemoCounts.get(t.id) ?? 0
-                      return (
-                        <li
-                          key={t.id}
-                          ref={(el) => {
-                            if (el) tagSpineSlotRefs.current.set(t.id, el)
-                            else tagSpineSlotRefs.current.delete(t.id)
-                            if (isOpen) openParentSpineRef.current = el
-                          }}
-                          className={`parent-tag-spine-slot${
-                            isOpen ? ' parent-tag-spine-slot--open' : ''
-                          }`}
-                        >
-                          <div className="parent-tag-spine-group">
-                            <div
-                              className={`parent-tag-card${
-                                isOpen ? ' parent-tag-card--selected' : ''
-                              }${isOpen ? ' parent-tag-card--expanded' : ''}`}
-                            >
-                              <button
-                                type="button"
-                                className="parent-tag-card-body"
-                                aria-pressed={isOpen}
-                                aria-current={isOpen ? 'true' : undefined}
-                                aria-expanded={isOpen}
-                                aria-label={displayTagName(t.name)}
-                                title={displayTagName(t.name)}
-                                onClick={() => toggleTagSelect(t.id)}
-                              >
-                                <span className="parent-tag-card-label">
-                                  {formatTagViewSpineLabel(t.name)}
-                                </span>
-                              </button>
-                              <ParentTagSpineStat
-                                value={memoCount}
-                                ariaLabel={`메모 ${memoCount}개`}
-                              />
-                            </div>
-                            {isOpen ? (
-                              <div
-                                ref={showNotes ? openTracksRef : undefined}
-                                className="parent-tag-inline-tracks"
-                                aria-label={`${displayTagName(t.name)} 관련 메모`}
-                              >
-                                {showNotes ? (
-                                  <InlineRailNotesPanel
-                                    tagLabel={displayTagName(t.name)}
-                                    tagId={t.id}
-                                    notes={notesForSelectedTag}
-                                    loading={tagPullLoading}
-                                    onView={openViewNote}
-                                    onTagFilter={openTagViewFromNote}
-                                  />
-                                ) : null}
-                              </div>
-                            ) : null}
-                          </div>
-                        </li>
-                      )
-                    })}
-                  </>
-                ) : null}
                 {homeBrowseNav === 'links'
                   ? sourcesForLinkModeRail.map((s) => {
                       const isOpen = selectedSourceId === s.id
@@ -3396,6 +3369,7 @@ export function HomePage() {
                   : null}
               </ul>
               </div>
+              )}
             </section>
           ) : null}
 

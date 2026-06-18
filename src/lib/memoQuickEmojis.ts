@@ -97,7 +97,8 @@ const MEMO_TEXT_SHORTCUTS: { pattern: RegExp; id: string }[] = [
 ]
 
 /** 줄 시작 `- `·`•` 등 → 빈 칸(uncheck) */
-const MEMO_BULLET_LINE_PREFIX_RE = /(^|\n)(?:-\s+|[•·‣◦\u2022\u2043\u25E6]\s*)/g
+const MEMO_BULLET_LINE_PREFIX_RE =
+  /(^|\n)(?:-\s+|[•·‣◦●▪\u2022\u2043\u25E6\u25CF\u25AA\u2219]\s*)/g
 const MEMO_STAR_LINE_PREFIX_RE = /(^|\n)\*\s/g
 
 const MEMO_IN_EDITOR_SHORTCUTS: {
@@ -141,11 +142,23 @@ function replaceUncheckLegacyBoxes(text: string): string {
   return result
 }
 
+function memoEditorDomNeedsHtmlRefresh(
+  root: HTMLElement,
+  raw: string,
+  next: string,
+): boolean {
+  if (next !== raw) return true
+  if (root.querySelector('ul, ol, li')) return true
+  return /(?:^|\n)(?:-\s+|[•·‣◦●▪\u2022\u2043\u25E6\u25CF\u25AA\u2219])/.test(
+    raw,
+  )
+}
+
 /** 에디터 DOM ↔ 저장 문자열 동기화 + `•`·`-` 등 글머리를 uncheck 아이콘으로 */
 export function reconcileMemoEditorShortcuts(root: HTMLElement): string {
   const raw = normalizeMemoBodyStorage(memoBodyFromEditor(root))
   const next = applyMemoTextShortcuts(raw)
-  if (next === raw) {
+  if (!memoEditorDomNeedsHtmlRefresh(root, raw, next)) {
     return next
   }
 
@@ -331,11 +344,29 @@ export function memoBodyFromEditor(root: HTMLElement): string {
       return
     }
 
+    if (el.tagName === 'LI') {
+      if (out.length > 0 && !out.endsWith('\n')) {
+        out += '\n'
+      }
+      out += `${memoEmojiToken('uncheck')} `
+      for (const child of el.childNodes) {
+        walk(child)
+      }
+      return
+    }
+    if (el.tagName === 'UL' || el.tagName === 'OL') {
+      for (const child of el.childNodes) {
+        walk(child)
+      }
+      return
+    }
+
     if (
       (el.tagName === 'DIV' || el.tagName === 'P') &&
       el.parentElement === root
     ) {
       if (isCaretOnlyBlock(el)) {
+        out += '\n'
         return
       }
       if (out.length > 0 && !out.endsWith('\n')) {
@@ -356,7 +387,7 @@ export function memoBodyFromEditor(root: HTMLElement): string {
     walk(child)
   }
 
-  return out.replace(/\n+$/, '')
+  return out
 }
 
 export function serializedOffsetInEditor(
@@ -460,7 +491,14 @@ export function setSelectionAtSerializedOffset(
       (el.tagName === 'DIV' || el.tagName === 'P') &&
       el.parentElement === root
     ) {
-      if (isCaretOnlyBlock(el)) return
+      if (isCaretOnlyBlock(el)) {
+        if (pos + 1 >= target) {
+          markFound(el, 0)
+          return
+        }
+        pos += 1
+        return
+      }
       if (pos > 0) {
         if (pos + 1 >= target) {
           if (el.firstChild?.nodeType === Node.TEXT_NODE) {

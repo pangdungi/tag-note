@@ -2121,6 +2121,26 @@ body:has(.home-main--parent-rail-hero) {
   width: clamp(3.25rem, 13vw, 4.85rem);
 }
 
+/* 상위태그(책) 뷰 — 북스파인 너비만 약간 축소 */
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--books-view
+  .parent-tag-card {
+  width: clamp(2.5rem, 9.5vw, 3.65rem);
+  padding: 0.85rem 0.32rem;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--books-view
+  .parent-tag-card--selected:not(.parent-tag-card--expanded) {
+  width: clamp(2.65rem, 10.5vw, 3.85rem);
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--books-view
+  .parent-tag-card-label {
+  font-size: clamp(0.9rem, 3.1vw, 1.15rem);
+}
+
 .home-main--parent-rail-hero .parent-tag-card-body {
   flex: 1 1 0;
   min-height: 0;
@@ -2137,6 +2157,124 @@ body:has(.home-main--parent-rail-hero) {
 .home-main--parent-rail-hero .parent-tag-child-empty {
   font-size: clamp(0.98rem, 3.5vw, 1.28rem);
   letter-spacing: 0.1em;
+}
+
+/* 태그 뷰 전용 — 가로 한 줄당 태그 하나 (세로 목록) + 아래 메모 */
+.parent-tag-rail-section--tag-view .tag-view-rail-layout {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tag-view-bar-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  border-bottom: 1px solid var(--border);
+  background: #ffffff;
+}
+
+.tag-view-bar-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.tag-view-bar-list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.tag-view-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.72rem 1rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: #ffffff;
+  color: #111111;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.tag-view-bar:first-child {
+  border-top: none;
+}
+
+.tag-view-bar:hover:not(.tag-view-bar--selected) {
+  background: rgb(15 23 42 / 4%);
+}
+
+.tag-view-bar--selected {
+  background: #111111;
+  color: #ffffff;
+}
+
+.tag-view-bar-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--tag-font-family);
+  font-size: 0.88rem;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+}
+
+.tag-view-bar-stat {
+  flex-shrink: 0;
+  font-family: var(--spine-font-family);
+  font-size: 0.72rem;
+  font-weight: 500;
+  opacity: 0.55;
+  line-height: 1;
+}
+
+.tag-view-bar-block {
+  width: 100%;
+}
+
+.tag-view-bar-block .tag-view-bar {
+  border-top: none;
+}
+
+.tag-view-bar-block:first-child .tag-view-bar {
+  border-top: 1px solid var(--border);
+}
+
+.tag-view-bar-notes .parent-tag-child-notes {
+  border-top: none;
+  background: #ffffff;
+}
+
+.tag-view-bar-block .tag-view-bar--selected {
+  border-bottom-color: transparent;
+}
+
+.tag-view-bar-block:has(.tag-view-bar-notes) .tag-view-bar {
+  border-bottom: none;
 }
 
 .parent-tag-rail::-webkit-scrollbar {

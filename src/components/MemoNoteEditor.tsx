@@ -7,7 +7,10 @@ import {
   type ClipboardEvent,
   type FocusEvent,
 } from 'react'
-import { applyStructuredNotePaste } from '../lib/pasteNoteFormat'
+import {
+  applyStructuredNotePaste,
+  clipboardHtmlToPlainMemoText,
+} from '../lib/pasteNoteFormat'
 import {
   applyMemoTextShortcuts,
   applyMemoTextShortcutsInEditor,
@@ -109,8 +112,6 @@ export function MemoNoteEditor({
   }, [disabled])
 
   const resolveEditorInsertRange = useCallback((el: HTMLDivElement): Range => {
-    el.focus()
-
     const sel = window.getSelection()
     if (sel && sel.rangeCount > 0) {
       const live = sel.getRangeAt(0)
@@ -128,6 +129,7 @@ export function MemoNoteEditor({
       return saved.cloneRange()
     }
 
+    el.focus()
     const end = document.createRange()
     end.selectNodeContents(el)
     end.collapse(false)
@@ -171,12 +173,21 @@ export function MemoNoteEditor({
     const el = editorRef.current
     if (!el) return
 
-    const pasted = e.clipboardData.getData('text/plain')
-    if (!pasted) return
-
     e.preventDefault()
 
+    const pasted =
+      e.clipboardData.getData('text/plain') ||
+      clipboardHtmlToPlainMemoText(e.clipboardData.getData('text/html'))
+    if (!pasted) return
+
     const insertRange = resolveEditorInsertRange(el)
+    el.focus()
+    const sel = window.getSelection()
+    if (sel) {
+      sel.removeAllRanges()
+      sel.addRange(insertRange)
+    }
+
     const currentBody = normalizeMemoBodyStorage(memoBodyFromEditor(el))
     const { start: selectionStart, end: selectionEnd } =
       getMemoEditorSelectionOffsets(el, insertRange)
