@@ -65,7 +65,7 @@ export function stripTrailingPasteEllipsis(text: string): string {
   return t.trimEnd()
 }
 
-/** HTML 클립보드 → 평문 (목록은 `• ` 줄로 — 이후 uncheck 아이콘으로 변환) */
+/** HTML 클립보드 → 평문 */
 export function clipboardHtmlToPlainMemoText(html: string): string {
   if (!html.trim()) return ''
   const doc = new DOMParser().parseFromString(html, 'text/html')
@@ -90,7 +90,6 @@ export function clipboardHtmlToPlainMemoText(html: string): string {
     }
     if (tag === 'LI') {
       ensureLineBreak()
-      out += '• '
       for (const child of el.childNodes) walk(child)
       return
     }
@@ -115,13 +114,20 @@ export function clipboardHtmlToPlainMemoText(html: string): string {
 }
 
 /** 붙여넣은 메모 본문 — 각 줄 끝 말줄임 정리 */
-export function cleanPastedMemoText(text: string): string {
-  return text
+export function cleanPastedMemoText(
+  text: string,
+  options?: { trimWhole?: boolean },
+): string {
+  const trimWhole = options?.trimWhole ?? true
+  let result = text
     .split('\n')
     .map((line) => stripTrailingPasteEllipsis(line))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
-    .trim()
+  if (trimWhole) {
+    result = result.trim()
+  }
+  return result
 }
 
 /**

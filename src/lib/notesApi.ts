@@ -7,7 +7,6 @@ import {
   noteHasNoTagViewTags,
   tagHasChildren,
   TAG_VIEW_NONE_ID,
-  filterNotesForAllTagIds,
 } from './tagUtils'
 
 /** Supabase/PostgREST 오류에서 사람이 읽을 메시지 추출 */
@@ -613,7 +612,7 @@ export async function pullAllTagNotes(tagId: string): Promise<NotesPageResult> {
   }
 }
 
-/** 여러 태그가 모두 붙은 메모 전량 조회 (교집합) */
+/** 여러 태그 중 하나라도 붙은 메모 전량 조회 */
 export async function pullAllTagNotesForTagIds(
   tagIds: string[],
 ): Promise<NotesPageResult> {
@@ -624,9 +623,15 @@ export async function pullAllTagNotesForTagIds(
   if (ids.length === 1) {
     return pullAllTagNotes(ids[0]!)
   }
-  const page = await pullAllTagNotes(ids[ids.length - 1]!)
+  const map = new Map<string, NoteWithTags>()
+  for (const id of ids) {
+    const page = await pullAllTagNotes(id)
+    for (const note of page.notes) {
+      map.set(note.id, note)
+    }
+  }
   return {
-    notes: filterNotesForAllTagIds(page.notes, ids),
+    notes: sortNotesNewestFirst([...map.values()]),
     hasMore: false,
   }
 }

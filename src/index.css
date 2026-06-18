@@ -1702,6 +1702,58 @@ body:has(.home-main--parent-rail-hero) {
   outline-offset: -2px;
 }
 
+.parent-tag-spine-book-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin: 0;
+  padding: 0.32rem 0.25rem 0.28rem;
+  border: none;
+  border-bottom: 1px solid rgb(17 17 17 / 12%);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.parent-tag-card--selected .parent-tag-spine-book-btn {
+  border-bottom-color: rgb(255 255 255 / 22%);
+}
+
+.parent-tag-spine-book-btn:hover {
+  background: rgb(17 17 17 / 5%);
+}
+
+.parent-tag-card--selected .parent-tag-spine-book-btn:hover {
+  background: rgb(255 255 255 / 10%);
+}
+
+.parent-tag-spine-book-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.parent-tag-card--selected .parent-tag-spine-book-btn:focus-visible {
+  outline-color: rgb(255 255 255 / 85%);
+}
+
+.parent-tag-spine-book-icon {
+  display: block;
+  width: 1.15rem;
+  height: 1.15rem;
+  object-fit: contain;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.parent-tag-card--selected .parent-tag-spine-book-icon {
+  filter: brightness(0) invert(1);
+  opacity: 0.88;
+}
+
 .parent-tag-spine-stat {
   flex-shrink: 0;
   display: block;
@@ -2159,8 +2211,9 @@ body:has(.home-main--parent-rail-hero) {
   letter-spacing: 0.1em;
 }
 
-/* 태그 뷰 전용 — 가로 한 줄당 태그 하나 (세로 목록) + 아래 메모 */
-.parent-tag-rail-section--tag-view .tag-view-rail-layout {
+/* 태그·날짜 뷰 — 세로 목록 + 아래 메모 (내부 세로 스크롤) */
+.parent-tag-rail-section--tag-view .tag-view-rail-layout,
+.parent-tag-rail-section--date-view .tag-view-rail-layout {
   flex: 1 1 0;
   min-height: 0;
   display: flex;
@@ -2275,6 +2328,12 @@ body:has(.home-main--parent-rail-hero) {
 
 .tag-view-bar-block:has(.tag-view-bar-notes) .tag-view-bar {
   border-bottom: none;
+}
+
+.date-view-empty {
+  margin: 0;
+  padding: 1.25rem 1rem;
+  font-size: 0.88rem;
 }
 
 .parent-tag-rail::-webkit-scrollbar {
@@ -3767,6 +3826,34 @@ button.note-board-tag-pill--link:focus-visible {
   max-width: min(100%, 440px);
 }
 
+@media (min-width: 641px) {
+  .tag-manage-dialog--edit-note {
+    max-width: min(100%, 44rem);
+    max-height: min(92vh, 880px);
+  }
+
+  .tag-manage-dialog--edit-note .tag-manage-head {
+    padding: 1rem 1.35rem;
+  }
+
+  .tag-manage-dialog--edit-note .edit-note-modal-body {
+    padding: 0 1.35rem 1rem;
+  }
+
+  .tag-manage-dialog--edit-note .edit-note-modal-source {
+    padding: 0.85rem 1.35rem;
+  }
+
+  .tag-manage-dialog--edit-note .edit-note-modal-actions {
+    padding: 0.85rem 1.35rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .tag-manage-dialog--edit-note .edit-note-modal-note.memo-note-editor--scroll-clamp {
+    min-height: 20rem !important;
+    max-height: 20rem !important;
+  }
+}
+
 .tag-manage-dialog--view-note {
   max-width: min(100%, 40rem);
   width: 100%;
@@ -3805,6 +3892,271 @@ button.note-board-tag-pill--link:focus-visible {
   font-size: 1.05rem;
   font-weight: 400;
   letter-spacing: 0.06em;
+}
+
+/* 상위태그 책 보기 — 한 페이지에 메모 하나 (흑백) */
+.parent-tag-book-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding:
+    max(0.5rem, env(safe-area-inset-top, 0px))
+    max(0.5rem, env(safe-area-inset-right, 0px))
+    max(0.5rem, env(safe-area-inset-bottom, 0px))
+    max(0.5rem, env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
+}
+
+.parent-tag-book-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 62%);
+}
+
+.parent-tag-book-dialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 56rem;
+  height: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  border-radius: 0;
+  border: 1px solid #111111;
+  background: #ffffff;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 35%);
+  overflow: hidden;
+}
+
+.parent-tag-book-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem 0.55rem;
+  background: #ffffff;
+  border-bottom: 1px solid #111111;
+}
+
+.parent-tag-book-toolbar-title {
+  margin: 0;
+  font-family: var(--spine-font-family);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: rgb(17 17 17 / 45%);
+}
+
+.parent-tag-book-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #111111;
+  font-size: 1.45rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.parent-tag-book-close:hover {
+  background: rgb(0 0 0 / 6%);
+}
+
+.parent-tag-book-close:focus-visible {
+  outline: 2px solid #111111;
+  outline-offset: 2px;
+}
+
+.parent-tag-book-empty {
+  margin: auto;
+  padding: 2rem 1.5rem;
+  font-size: 0.92rem;
+  color: rgb(17 17 17 / 45%);
+  text-align: center;
+}
+
+.parent-tag-book-stage {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 0.35rem;
+  padding: 0.75rem 0.5rem 0.85rem;
+  box-sizing: border-box;
+  background: #ffffff;
+}
+
+.parent-tag-book-nav {
+  flex-shrink: 0;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #111111;
+  border-radius: 0;
+  background: #ffffff;
+  color: #111111;
+  font-size: 1.55rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    opacity 0.16s ease;
+}
+
+.parent-tag-book-nav:hover:not(:disabled) {
+  background: #111111;
+  color: #ffffff;
+}
+
+.parent-tag-book-nav:disabled {
+  opacity: 0.22;
+  cursor: default;
+  border-color: rgb(17 17 17 / 25%);
+}
+
+.parent-tag-book-nav:focus-visible {
+  outline: 2px solid #111111;
+  outline-offset: 2px;
+}
+
+.parent-tag-book-page {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  border: 1px solid rgb(17 17 17 / 12%);
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.parent-tag-book-page-inner {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding:
+    1.35rem 1.75rem 1.1rem;
+  box-sizing: border-box;
+}
+
+.parent-tag-book-meta {
+  flex-shrink: 0;
+  text-align: center;
+  margin-bottom: 0.75rem;
+}
+
+.parent-tag-book-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.parent-tag-book-tag {
+  font-family: var(--tag-font-family);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgb(17 17 17 / 38%);
+}
+
+.parent-tag-book-source {
+  margin: 0;
+  font-family: var(--spine-font-family);
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  color: rgb(17 17 17 / 35%);
+}
+
+.parent-tag-book-body {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.5rem 0.25rem;
+}
+
+.parent-tag-book-text {
+  width: 100%;
+  max-width: 32rem;
+  margin: 0 auto;
+  font-family: var(--body-font-family, inherit);
+  font-size: 1rem;
+  line-height: 1.75;
+  letter-spacing: 0.01em;
+  color: #111111;
+  text-align: left;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.parent-tag-book-text--empty {
+  color: rgb(17 17 17 / 40%);
+  text-align: center;
+}
+
+.parent-tag-book-text .memo-body-inline-icon {
+  width: 1.1em;
+  height: 1.1em;
+}
+
+.parent-tag-book-page-indicator {
+  flex-shrink: 0;
+  margin: 0.65rem 0 0;
+  font-family: var(--spine-font-family);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-align: center;
+  color: rgb(17 17 17 / 30%);
+}
+
+@media (max-width: 640px) {
+  .parent-tag-book-stage {
+    padding: 0.5rem 0.15rem 0.75rem;
+    gap: 0.15rem;
+  }
+
+  .parent-tag-book-nav {
+    width: 2.15rem;
+    height: 2.15rem;
+    font-size: 1.35rem;
+  }
+
+  .parent-tag-book-page-inner {
+    padding: 1rem 1.1rem 0.85rem;
+  }
+
+  .parent-tag-book-text {
+    font-size: 0.94rem;
+    line-height: 1.68;
+  }
 }
 
 .note-view-modal-body {

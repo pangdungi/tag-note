@@ -12,16 +12,16 @@ import {
   clipboardHtmlToPlainMemoText,
 } from '../lib/pasteNoteFormat'
 import {
-  applyMemoTextShortcuts,
-  applyMemoTextShortcutsInEditor,
   getMemoEditorSelectionOffsets,
   insertMemoEmojiInEditor,
   insertPlainTextInMemoEditor,
   isRangeInsideMemoEditor,
   memoBodyFromEditor,
   memoBodyToEditorHtml,
+  normalizeLegacyUnicodeInString,
   normalizeMemoBodyStorage,
-  reconcileMemoEditorShortcuts,
+  normalizeQuickEmojisInEditor,
+  serializeMemoEditor,
   serializedLengthOfMemoPrefix,
   setSelectionAtSerializedOffset,
 } from '../lib/memoQuickEmojis'
@@ -67,7 +67,9 @@ export function MemoNoteEditor({
     (body: string, cursorOffset?: number) => {
       const el = editorRef.current
       if (!el) return
-      const normalized = applyMemoTextShortcuts(body)
+      const normalized = normalizeLegacyUnicodeInString(
+        normalizeMemoBodyStorage(body),
+      )
       lastSerializedRef.current = normalized
       el.innerHTML = normalized ? memoBodyToEditorHtml(normalized) : ''
       if (cursorOffset != null) {
@@ -96,7 +98,7 @@ export function MemoNoteEditor({
   const emitChange = useCallback(() => {
     const el = editorRef.current
     if (!el) return
-    const next = reconcileMemoEditorShortcuts(el)
+    const next = serializeMemoEditor(el)
     lastSerializedRef.current = next
     onChange(next)
   }, [onChange])
@@ -155,7 +157,7 @@ export function MemoNoteEditor({
     if (isComposingRef.current) return
     const el = editorRef.current
     if (el) {
-      applyMemoTextShortcutsInEditor(el)
+      normalizeQuickEmojisInEditor(el)
     }
     emitChange()
   }
@@ -201,7 +203,9 @@ export function MemoNoteEditor({
     )
     if (structured.handled) {
       const tailLen = currentBody.length - selectionEnd
-      const normalized = applyMemoTextShortcuts(structured.body)
+      const normalized = normalizeLegacyUnicodeInString(
+        normalizeMemoBodyStorage(structured.body),
+      )
       const cursorOffset = serializedLengthOfMemoPrefix(
         structured.body.slice(0, structured.body.length - tailLen),
       )

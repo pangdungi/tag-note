@@ -1,9 +1,12 @@
 import tagNavIconUrl from '../assets/home-nav-tag-icon.png'
 import bookNavIconUrl from '../assets/home-nav-book-icon.png'
 import linkNavIconUrl from '../assets/home-nav-link-icon.png'
+import calendarNavIconUrl from '../assets/home-nav-calendar-icon.png'
 import eyeNavIconUrl from '../assets/home-nav-eye-icon.png'
 
-export type HomeBrowseNavId = 'tags' | 'books' | 'links'
+import type { HomeBrowseNavMode } from '../lib/tagUtils'
+
+export type HomeBrowseNavId = HomeBrowseNavMode
 
 const NAV_ITEMS: {
   id: HomeBrowseNavId
@@ -14,6 +17,7 @@ const NAV_ITEMS: {
   { id: 'tags', label: '태그', title: '태그별 보기', icon: tagNavIconUrl },
   { id: 'books', label: '책', title: '상위 태그별 보기', icon: bookNavIconUrl },
   { id: 'links', label: '출처', title: '출처별 보기', icon: linkNavIconUrl },
+  { id: 'dates', label: '날짜', title: '날짜별 보기', icon: calendarNavIconUrl },
 ]
 
 type HomeBrowseNavButtonsProps = {

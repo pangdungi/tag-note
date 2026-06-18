@@ -4,7 +4,6 @@ import { SourceComposer, type SelectedSource } from './SourceComposer'
 import { ConfirmModal } from './ConfirmModal'
 import { MemoParentTagSelect } from './MemoParentTagSelect'
 import {
-  assignTagsToParent,
   deleteNote,
   updateNoteWithTags,
   type NoteWithTags,
@@ -13,7 +12,6 @@ import {
 } from '../lib/notesApi'
 import {
   inferParentTagIdFromTagIds,
-  tagIdsForParentAssignment,
   type TagParentLink,
 } from '../lib/tagUtils'
 import { MemoNoteEditor } from './MemoNoteEditor'
@@ -82,7 +80,6 @@ type Props = {
   onSyncNoteFromServer?: (noteId: string) => void | Promise<void>
   onNoteDeleted: (noteId: string) => void | Promise<void>
   onSourcesChanged?: () => void | Promise<void>
-  onTagsAssignedToParent?: (rows: TagRow[], parentId: string) => void
 }
 
 export function EditNoteModal({
@@ -99,7 +96,6 @@ export function EditNoteModal({
   onSyncNoteFromServer,
   onNoteDeleted,
   onSourcesChanged,
-  onTagsAssignedToParent,
 }: Props) {
   const titleId = useId()
   const [tags, setTags] = useState<SelectedTag[]>([])
@@ -128,8 +124,6 @@ export function EditNoteModal({
   }, [open, note?.id, note?.body, allTags, tagParentLinks])
 
   if (!open || !note) return null
-
-  const effectiveParentId = lockedParentTagId ?? (parentTagId || '')
 
   return (
     <>
@@ -236,23 +230,6 @@ export function EditNoteModal({
                       saveSource,
                       [...allSources],
                     )
-                    if (effectiveParentId) {
-                      const assignIds = tagIdsForParentAssignment(
-                        updated.note_tags.map(
-                          (nt) => nt.tags?.id ?? nt.tag_id,
-                        ),
-                        effectiveParentId,
-                        allTags,
-                        tagParentLinks,
-                      )
-                      if (assignIds.length > 0) {
-                        const assigned = await assignTagsToParent(
-                          assignIds,
-                          effectiveParentId,
-                        )
-                        onTagsAssignedToParent?.(assigned, effectiveParentId)
-                      }
-                    }
                     await onNoteUpdated(updated)
                     await onSourcesChanged?.()
                   } catch (e) {

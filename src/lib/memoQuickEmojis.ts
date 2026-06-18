@@ -91,118 +91,120 @@ export function memoEmojiToken(id: string): string {
   return `:m/${id}:`
 }
 
-/** 입력 `->` 등을 고정 아이콘 토큰으로 치환 */
-const MEMO_TEXT_SHORTCUTS: { pattern: RegExp; id: string }[] = [
-  { pattern: /->/g, id: 'arrowright' },
-]
+/** DB·입력에 섞인 유니코드 이모지 → 바와 동일한 토큰 */
+export function normalizeLegacyUnicodeInString(body: string): string {
+  let result = body
+  for (const emoji of MEMO_QUICK_EMOJIS) {
+    if (!emoji.legacyUnicode) continue
+    if (!result.includes(emoji.legacyUnicode)) continue
+    result = result.split(emoji.legacyUnicode).join(memoEmojiToken(emoji.id))
+  }
+  return result
+}
 
-/** 줄 시작 `- `·`•` 등 → 빈 칸(uncheck) */
-const MEMO_BULLET_LINE_PREFIX_RE =
-  /(^|\n)(?:-\s+|[•·‣◦●▪\u2022\u2043\u25E6\u25CF\u25AA\u2219]\s*)/g
-const MEMO_STAR_LINE_PREFIX_RE = /(^|\n)\*\s/g
-
-const MEMO_IN_EDITOR_SHORTCUTS: {
-  suffix: string
-  id: string
-  lineStartOnly?: boolean
-}[] = [
-  { suffix: '->', id: 'arrowright' },
-  { suffix: '- ', id: 'uncheck', lineStartOnly: true },
-  { suffix: '* ', id: 'start', lineStartOnly: true },
-  { suffix: '• ', id: 'uncheck', lineStartOnly: true },
-  { suffix: '· ', id: 'uncheck', lineStartOnly: true },
-  { suffix: '•', id: 'uncheck', lineStartOnly: true },
-  { suffix: '·', id: 'uncheck', lineStartOnly: true },
-]
-
-/** 붙여넣기·외부 글머리 등 → 빈 칸(uncheck) 아이콘 */
-const UNCHECK_LEGACY_BOXES = [
-  '■',
-  '□',
-  '▪',
-  '▫',
-  '◻',
-  '▢',
-  '◽',
-  '◽️',
-]
-
-function replaceUncheckLegacyBoxes(text: string): string {
-  let result = text
-  for (const box of UNCHECK_LEGACY_BOXES) {
-    const esc = box.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    result = result.replace(
-      new RegExp(`(^|\\n)${esc}\\s*`, 'g'),
-      (_, lineBreak) => `${lineBreak}${memoEmojiToken('uncheck')}`,
-    )
-    if (result.includes(box)) {
-      result = result.split(box).join(memoEmojiToken('uncheck'))
+function textHasQuickEmojiMarkup(text: string): boolean {
+  if (MEMO_EMOJI_TOKEN_RE.test(text)) {
+    MEMO_EMOJI_TOKEN_RE.lastIndex = 0
+    return true
+  }
+  for (const emoji of MEMO_QUICK_EMOJIS) {
+    if (emoji.legacyUnicode && text.includes(emoji.legacyUnicode)) {
+      return true
     }
   }
-  return result
+  return false
 }
 
-function memoEditorDomNeedsHtmlRefresh(
-  root: HTMLElement,
-  raw: string,
-  next: string,
-): boolean {
-  if (next !== raw) return true
-  if (root.querySelector('ul, ol, li')) return true
-  return /(?:^|\n)(?:-\s+|[•·‣◦●▪\u2022\u2043\u25E6\u25CF\u25AA\u2219])/.test(
-    raw,
-  )
+function createMemoEmojiImg(emoji: MemoQuickEmoji): HTMLImageElement {
+  const img = document.createElement('img')
+  img.src = emoji.iconSrc
+  img.dataset.memoEmoji = emoji.id
+  img.className = 'memo-body-inline-icon'
+  img.draggable = false
+  img.contentEditable = 'false'
+  img.alt = emoji.label
+  return img
 }
 
-/** 에디터 DOM ↔ 저장 문자열 동기화 + `•`·`-` 등 글머리를 uncheck 아이콘으로 */
-export function reconcileMemoEditorShortcuts(root: HTMLElement): string {
-  const raw = normalizeMemoBodyStorage(memoBodyFromEditor(root))
-  const next = applyMemoTextShortcuts(raw)
-  if (!memoEditorDomNeedsHtmlRefresh(root, raw, next)) {
-    return next
+/** 텍스트 조각 → DOM (바 클릭과 동일한 img 삽입) */
+function appendMemoSegmentsToFragment(
+  frag: DocumentFragment,
+  text: string,
+): Node | null {
+  let last: Node | null = null
+  const segments = parseMemoBody(text)
+  for (const seg of segments) {
+    if (seg.type === 'text') {
+      if (!seg.value) continue
+      last = document.createTextNode(seg.value)
+      frag.appendChild(last)
+      continue
+    }
+    const img = createMemoEmojiImg(seg.emoji)
+    frag.appendChild(img)
+    const caret = document.createTextNode(MEMO_EDITOR_ZWSP)
+    frag.appendChild(caret)
+    last = caret
   }
-
-  const sel = window.getSelection()
-  let rawCursor = raw.length
-  if (
-    sel &&
-    sel.rangeCount > 0 &&
-    sel.anchorNode &&
-    root.contains(sel.anchorNode)
-  ) {
-    rawCursor = serializedOffsetInEditor(
-      root,
-      sel.anchorNode,
-      sel.anchorOffset,
-    )
-  }
-
-  const newCursor = serializedLengthOfMemoPrefix(
-    applyMemoTextShortcuts(normalizeMemoBodyStorage(raw.slice(0, rawCursor))),
-  )
-  root.innerHTML = next ? memoBodyToEditorHtml(next) : ''
-  requestAnimationFrame(() => {
-    setSelectionAtSerializedOffset(root, newCursor)
-  })
-  return next
+  return last
 }
 
-export function applyMemoTextShortcuts(body: string): string {
-  let result = body
-  for (const { pattern, id } of MEMO_TEXT_SHORTCUTS) {
-    pattern.lastIndex = 0
-    result = result.replace(pattern, memoEmojiToken(id))
+/** 입력·붙여넣기 텍스트의 유니코드/토큰 → 바와 같은 img */
+export function normalizeQuickEmojisInEditor(root: HTMLElement): boolean {
+  const textNodes: Text[] = []
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let node: Node | null
+  while ((node = walker.nextNode())) {
+    const text = stripEditorZwsp(node.textContent ?? '')
+    if (text && textHasQuickEmojiMarkup(text)) {
+      textNodes.push(node as Text)
+    }
   }
-  result = result.replace(
-    MEMO_BULLET_LINE_PREFIX_RE,
-    (_, lineBreak) => `${lineBreak}${memoEmojiToken('uncheck')} `,
+
+  if (textNodes.length === 0) return false
+
+  for (const textNode of textNodes) {
+    const raw = textNode.textContent ?? ''
+    const text = stripEditorZwsp(raw)
+    if (!text || !textHasQuickEmojiMarkup(text)) continue
+
+    const parent = textNode.parentNode
+    if (!parent) continue
+
+    const frag = document.createDocumentFragment()
+    appendMemoSegmentsToFragment(frag, text)
+    if (frag.childNodes.length === 0) continue
+
+    parent.insertBefore(frag, textNode)
+    parent.removeChild(textNode)
+  }
+
+  return true
+}
+
+function flattenMemoEditorLists(root: HTMLElement): boolean {
+  if (!root.querySelector('ul, ol, li')) {
+    return false
+  }
+  const serialized = normalizeLegacyUnicodeInString(
+    normalizeMemoBodyStorage(memoBodyFromEditor(root)),
   )
-  result = result.replace(
-    MEMO_STAR_LINE_PREFIX_RE,
-    (_, lineBreak) => `${lineBreak}${memoEmojiToken('start')} `,
+  root.innerHTML = serialized ? memoBodyToEditorHtml(serialized) : ''
+  return true
+}
+
+/** 에디터 DOM → 저장 문자열 */
+export function serializeMemoEditor(root: HTMLElement): string {
+  normalizeQuickEmojisInEditor(root)
+  if (flattenMemoEditorLists(root)) {
+    const sel = window.getSelection()
+    if (sel && sel.rangeCount > 0 && root.contains(sel.anchorNode)) {
+      setSelectionAtSerializedOffset(root, memoBodyFromEditor(root).length)
+    }
+  }
+  return normalizeLegacyUnicodeInString(
+    normalizeMemoBodyStorage(memoBodyFromEditor(root)),
   )
-  result = replaceUncheckLegacyBoxes(result)
-  return result
 }
 
 export function memoEmojiById(id: string): MemoQuickEmoji | undefined {
@@ -216,7 +218,7 @@ export type MemoBodySegment =
 
 /** 본문을 텍스트·고정 아이콘 구간으로 나눔 (토큰 + 예전 유니코드) */
 export function parseMemoBody(body: string): MemoBodySegment[] {
-  const normalized = applyMemoTextShortcuts(body)
+  const normalized = normalizeMemoBodyStorage(body)
   if (!normalized) {
     return []
   }
@@ -348,7 +350,6 @@ export function memoBodyFromEditor(root: HTMLElement): string {
       if (out.length > 0 && !out.endsWith('\n')) {
         out += '\n'
       }
-      out += `${memoEmojiToken('uncheck')} `
       for (const child of el.childNodes) {
         walk(child)
       }
@@ -405,7 +406,7 @@ export function serializedOffsetInEditor(
 
 /** 붙여넣기·치환 후 직렬화 문자열에서 커서 offset */
 export function serializedLengthOfMemoPrefix(prefix: string): number {
-  return applyMemoTextShortcuts(normalizeMemoBodyStorage(prefix)).length
+  return normalizeLegacyUnicodeInString(normalizeMemoBodyStorage(prefix)).length
 }
 
 function domChildIndex(node: Node): number {
@@ -531,86 +532,6 @@ export function setSelectionAtSerializedOffset(
   return true
 }
 
-function getLinePrefixBeforeCursor(root: HTMLElement, range: Range): string {
-  const lineRange = document.createRange()
-  lineRange.selectNodeContents(root)
-  lineRange.setEnd(range.startContainer, range.startOffset)
-  const tmp = document.createElement('div')
-  tmp.appendChild(lineRange.cloneContents())
-  const serialized = memoBodyFromEditor(tmp)
-  const lastBreak = serialized.lastIndexOf('\n')
-  return lastBreak === -1 ? serialized : serialized.slice(lastBreak + 1)
-}
-
-function deleteStrippedCharsBeforeCursor(
-  range: Range,
-  count: number,
-): Range | null {
-  if (range.startContainer.nodeType !== Node.TEXT_NODE) {
-    return null
-  }
-  const textNode = range.startContainer as Text
-  const raw = textNode.textContent ?? ''
-  let offset = range.startOffset
-  let deleted = 0
-  while (offset > 0 && deleted < count) {
-    offset -= 1
-    if (raw[offset] === MEMO_EDITOR_ZWSP) {
-      continue
-    }
-    deleted += 1
-  }
-  if (deleted < count) {
-    return null
-  }
-  const deleteRange = document.createRange()
-  deleteRange.setStart(textNode, offset)
-  deleteRange.setEnd(textNode, range.startOffset)
-  deleteRange.deleteContents()
-  const collapsed = document.createRange()
-  collapsed.setStart(textNode, offset)
-  collapsed.collapse(true)
-  return collapsed
-}
-
-/** `->`, 줄 시작 `- `·`•` 등을 고정 아이콘으로 치환 */
-export function applyMemoTextShortcutsInEditor(root: HTMLElement): boolean {
-  const sel = window.getSelection()
-  if (!sel || sel.rangeCount === 0) {
-    return false
-  }
-
-  const range = sel.getRangeAt(0)
-  if (!range.collapsed || !root.contains(range.startContainer)) {
-    return false
-  }
-
-  const linePrefix = getLinePrefixBeforeCursor(root, range)
-  const shortcuts = [...MEMO_IN_EDITOR_SHORTCUTS].sort(
-    (a, b) => b.suffix.length - a.suffix.length,
-  )
-
-  for (const { suffix, id, lineStartOnly } of shortcuts) {
-    if (!linePrefix.endsWith(suffix)) {
-      continue
-    }
-    if (lineStartOnly && linePrefix !== suffix) {
-      continue
-    }
-
-    const collapsed = deleteStrippedCharsBeforeCursor(range, suffix.length)
-    if (!collapsed) {
-      continue
-    }
-
-    sel.removeAllRanges()
-    sel.addRange(collapsed)
-    return insertMemoEmojiInEditor(root, id)
-  }
-
-  return false
-}
-
 function isNodeInsideMemoEditor(root: HTMLElement, node: Node): boolean {
   return root === node || root.contains(node)
 }
@@ -653,7 +574,7 @@ export function getMemoEditorSelectionOffsets(
   }
 }
 
-/** 커서·선택 위치에 평문 붙여넣기 (DOM 직접 삽입) */
+/** 커서·선택 위치에 평문 붙여넣기 — 커서 위치에 그대로 삽입 */
 export function insertPlainTextInMemoEditor(
   root: HTMLElement,
   range: Range,
@@ -661,10 +582,9 @@ export function insertPlainTextInMemoEditor(
 ): void {
   root.focus()
 
-  const insert = applyMemoTextShortcuts(
-    cleanPastedMemoText(
-      rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n'),
-    ),
+  const insert = cleanPastedMemoText(
+    rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n'),
+    { trimWhole: false },
   )
 
   const r = range.cloneRange()
@@ -679,14 +599,17 @@ export function insertPlainTextInMemoEditor(
     return
   }
 
-  const holder = document.createElement('div')
-  holder.innerHTML = memoBodyToEditorHtml(insert)
-
   const frag = document.createDocumentFragment()
+  const parts = insert.split('\n')
   let lastInserted: Node | null = null
-  while (holder.firstChild) {
-    lastInserted = holder.firstChild
-    frag.appendChild(lastInserted)
+
+  for (let i = 0; i < parts.length; i++) {
+    if (i > 0) {
+      lastInserted = document.createElement('br')
+      frag.appendChild(lastInserted)
+    }
+    const lineLast = appendMemoSegmentsToFragment(frag, parts[i])
+    if (lineLast) lastInserted = lineLast
   }
 
   r.insertNode(frag)
@@ -742,13 +665,7 @@ export function insertMemoEmojiInEditor(root: HTMLElement, id: string): boolean 
 
   range.deleteContents()
 
-  const img = document.createElement('img')
-  img.src = emoji.iconSrc
-  img.dataset.memoEmoji = emoji.id
-  img.className = 'memo-body-inline-icon'
-  img.draggable = false
-  img.contentEditable = 'false'
-  img.alt = emoji.label
+  const img = createMemoEmojiImg(emoji)
 
   const caret = document.createTextNode(MEMO_EDITOR_ZWSP)
   range.insertNode(caret)
@@ -760,13 +677,7 @@ export function insertMemoEmojiInEditor(root: HTMLElement, id: string): boolean 
   return true
 }
 
-/** 저장된 본문에 아이콘 뒤 불필요 줄바꿈이 섞였을 때 정리 */
+/** 저장된 본문 정리 — 줄바꿈은 유지 */
 export function normalizeMemoBodyStorage(body: string): string {
-  return body
-    .replace(/:m\/enter:/g, '')
-    .replace(
-      new RegExp(`(:m\\/(${MEMO_EMOJI_TOKEN_IDS}):)\\n+(?!\\n)`, 'g'),
-      '$1',
-    )
-    .replace(/\n{3,}/g, '\n\n')
+  return body.replace(/:m\/enter:/g, '').replace(/\n{3,}/g, '\n\n')
 }

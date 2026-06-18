@@ -3,7 +3,6 @@ import { TagComposer, type SelectedTag } from './TagComposer'
 import { SourceComposer, type SelectedSource } from './SourceComposer'
 import { MemoParentTagSelect } from './MemoParentTagSelect'
 import {
-  assignTagsToParent,
   createNoteWithTags,
   type NoteWithTags,
   type SourceRow,
@@ -12,7 +11,6 @@ import {
 import {
   inferParentTagIdFromTagIds,
   normalizeTagInput,
-  tagIdsForParentAssignment,
   type TagParentLink,
 } from '../lib/tagUtils'
 import { MemoNoteEditor } from './MemoNoteEditor'
@@ -38,7 +36,6 @@ type Props = {
   onSaved: (note: NoteWithTags, options?: SavedOptions) => void | Promise<void>
   onSaveFailed?: (tempId: string) => void | Promise<void>
   onSaveError?: (message: string) => void
-  onTagsAssignedToParent?: (rows: TagRow[], parentId: string) => void
 }
 
 function buildSeedTags(
@@ -129,7 +126,6 @@ export function AddNoteModal({
   onSaved,
   onSaveFailed,
   onSaveError,
-  onTagsAssignedToParent,
 }: Props) {
   const titleId = useId()
   const idBase = useId()
@@ -199,8 +195,6 @@ export function AddNoteModal({
     (tags.length > 0 || Boolean(lockedParentTagId && lockedParentName))
 
   const modalTitle = lockedParentName || '메모 추가'
-
-  const effectiveParentId = lockedParentTagId ?? (parentTagId || '')
 
   return (
     <div className="tag-manage-overlay" role="presentation">
@@ -342,23 +336,6 @@ export function AddNoteModal({
                       saveSource,
                       [...allSources],
                     )
-                    if (effectiveParentId && !childTagCompose) {
-                      const assignIds = tagIdsForParentAssignment(
-                        note.note_tags.map(
-                          (nt) => nt.tags?.id ?? nt.tag_id,
-                        ),
-                        effectiveParentId,
-                        allTags,
-                        tagParentLinks,
-                      )
-                      if (assignIds.length > 0) {
-                        const assigned = await assignTagsToParent(
-                          assignIds,
-                          effectiveParentId,
-                        )
-                        onTagsAssignedToParent?.(assigned, effectiveParentId)
-                      }
-                    }
                     await onSaved(note, { replacingId: tempId })
                   } catch (e) {
                     console.error('[태그노트] AddNoteModal 저장 실패', {

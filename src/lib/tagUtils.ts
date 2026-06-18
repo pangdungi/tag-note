@@ -11,6 +11,8 @@ export type TagParentLink = {
   parent_tag_id: string
 }
 
+export type HomeBrowseNavMode = 'books' | 'tags' | 'links' | 'dates'
+
 /** 입력에서 # 접두사 제거, 앞뒤 공백 */
 export function normalizeTagInput(raw: string): string {
   const t = raw.trim()
@@ -291,9 +293,35 @@ export function resolveTagFilterIds(
   return [selectedTagId]
 }
 
+/** 상위 태그 트리(상위·하위)에 속한 태그가 하나라도 붙은 메모 */
+export function filterNotesForParentTagTree<
+  T extends {
+    note_tags: { tag_id: string; tags?: { id: string } | null }[]
+    created_at: string
+  },
+>(
+  notes: T[],
+  parentId: string,
+  tags: TagHierarchyRow[],
+  links?: TagParentLink[],
+): T[] {
+  const tagIds = new Set(resolveTagFilterIds(parentId, tags, links))
+  return notes
+    .filter((n) =>
+      n.note_tags.some((nt) => {
+        const id = nt.tags?.id ?? nt.tag_id
+        return id && !id.startsWith('pending-') && tagIds.has(id)
+      }),
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )
+}
+
 /** 책 뷰 — 선택된 태그에 대해 메모를 걸러낼 태그 id 목록 (하위 선택 시 상위+하위 교집합) */
 export function resolveBooksTagFilterTagIds(
-  nav: 'books' | 'tags' | 'links',
+  nav: HomeBrowseNavMode,
   selectedTagId: string,
   booksRailExpandedParentId: string | null,
   tags: TagHierarchyRow[],
@@ -312,6 +340,42 @@ export function resolveBooksTagFilterTagIds(
   ) {
     return [selectedTagId]
   }
+  return [selectedTagId]
+}
+
+/** 선택 태그에 맞는 메모 필터 id (상위·하위·책 뷰 맥락 포함) */
+export function resolveSelectedTagFilterIds(
+  selectedTagId: string,
+  nav: HomeBrowseNavMode,
+  booksRailExpandedParentId: string | null,
+  tags: TagHierarchyRow[],
+  links?: TagParentLink[],
+): string[] {
+  if (selectedTagId === TAG_VIEW_NONE_ID) return [TAG_VIEW_NONE_ID]
+
+  if (nav === 'books' && booksRailExpandedParentId) {
+    return resolveBooksTagFilterTagIds(
+      nav,
+      selectedTagId,
+      booksRailExpandedParentId,
+      tags,
+      links,
+    )
+  }
+
+  const tag = tags.find((t) => t.id === selectedTagId)
+  if (
+    tag &&
+    isBooksRailParentTag(tag, tags, links) &&
+    tagHasChildren(selectedTagId, tags, links)
+  ) {
+    return resolveTagFilterIds(selectedTagId, tags, links)
+  }
+
+  if (tagHasChildren(selectedTagId, tags, links)) {
+    return resolveTagFilterIds(selectedTagId, tags, links)
+  }
+
   return [selectedTagId]
 }
 
@@ -353,6 +417,31 @@ export function filterNotesForAllTagIds<
   }
   return notes
     .filter((n) => noteHasAllTagIds(n, ids))
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )
+}
+
+/** 태그 id 중 하나라도 붙은 메모 (상위·하위 묶음 필터) */
+export function filterNotesForAnyTagIds<
+  T extends {
+    note_tags: { tag_id: string; tags?: { id: string } | null }[]
+    created_at: string
+  },
+>(
+  notes: T[],
+  tagIds: string[],
+): T[] {
+  const set = new Set(tagIds.filter(Boolean))
+  if (set.size === 0) return []
+  return notes
+    .filter((n) =>
+      n.note_tags.some((nt) => {
+        const id = nt.tags?.id ?? nt.tag_id
+        return id && !id.startsWith('pending-') && set.has(id)
+      }),
+    )
     .sort(
       (a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
@@ -462,7 +551,7 @@ export function resolveBooksRailExpandedParentForTag(
 
 /** + 메모 추가 시 입력 태그를 붙일 상위태그 (책/태그 뷰에서 상위 선택·펼침 중) */
 export function resolveAddNoteParentTagId(
-  homeBrowseNav: 'books' | 'tags' | 'links',
+  homeBrowseNav: HomeBrowseNavMode,
   selectedTagId: string | null,
   booksRailExpandedParentId: string | null,
   tags: TagHierarchyRow[],
@@ -538,7 +627,7 @@ function tagToAddNoteInitialChip(
 
 /** + 메모 추가 — 태그칩·상위 고정·하위 compose 한 번에 결정 */
 export function resolveAddNoteComposeState(
-  homeBrowseNav: 'books' | 'tags' | 'links',
+  homeBrowseNav: HomeBrowseNavMode,
   selectedTagId: string | null,
   booksRailExpandedParentId: string | null,
   booksMemoComposeTarget: BooksMemoComposeTarget | null,
@@ -630,7 +719,7 @@ export function resolveAddNoteComposeState(
 
 /** + 메모: 상위 A 직접 선택·하위 없이 펼침 → A만(메인). 하위 a 선택 → a만. 미선택 → 태그·상위 지정 UI */
 export function resolveAddNoteLockedParentTagId(
-  homeBrowseNav: 'books' | 'tags' | 'links',
+  homeBrowseNav: HomeBrowseNavMode,
   selectedTagId: string | null,
   booksRailExpandedParentId: string | null,
   tags: TagHierarchyRow[],

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, startTransition } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, startTransition } from 'react'
 import { ConfirmModal } from './ConfirmModal'
 import {
   deleteParentTag,
@@ -61,6 +61,7 @@ export function EditParentTagModal({
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const wasOpenRef = useRef(false)
 
   const links = tagParentLinks
 
@@ -87,7 +88,14 @@ export function EditParentTagModal({
   )
 
   useEffect(() => {
-    if (!open || !tag) return
+    if (!open || !tag) {
+      wasOpenRef.current = false
+      return
+    }
+    const justOpened = !wasOpenRef.current
+    wasOpenRef.current = true
+    if (!justOpened) return
+
     const childIds = getChildTags(tag.id, tags, links).map((c) => c.id)
     startTransition(() => {
       setName(tag.name)
@@ -98,7 +106,7 @@ export function EditParentTagModal({
       setDeleteConfirmOpen(false)
       setSaving(false)
     })
-  }, [open, tag, tags, tagParentLinks])
+  }, [open, tag, tags, links])
 
   if (!open || !tag) return null
 
