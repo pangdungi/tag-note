@@ -484,6 +484,42 @@ body::-webkit-scrollbar,
   color: #c4c4c8;
 }
 
+.password-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrap .password-input {
+  padding-right: 2.75rem;
+}
+
+.password-input-toggle {
+  position: absolute;
+  right: 0.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.password-input-toggle:hover {
+  color: var(--text-strong);
+  background: var(--btn-hover-bg);
+}
+
+.password-input-toggle:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
 .feedback {
   margin: 0;
   font-size: 0.85rem;
@@ -2330,6 +2366,57 @@ body:has(.home-main--parent-rail-hero) {
   border-bottom: none;
 }
 
+.tag-view-detail-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.25rem;
+  padding: 0 0.15rem 0.75rem;
+  border-bottom: 1px solid rgb(0 0 0 / 8%);
+}
+
+.tag-view-detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.15rem 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tag-view-detail-back:hover {
+  color: var(--text);
+}
+
+.tag-view-detail-back-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.tag-view-detail-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.tag-view-detail-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.tag-view-detail-desc {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .date-view-empty {
   margin: 0;
   padding: 1.25rem 1rem;
@@ -3306,6 +3393,186 @@ button.note-board-tag-pill--link:focus-visible {
 
 .note-board-card-time {
   font-variant-numeric: tabular-nums;
+}
+
+/* 상위태그(책) 뷰 — 태그|메모 2열 시트 */
+.note-board-card--parent-sheet {
+  padding: 0;
+}
+
+.note-board-card--parent-sheet::before {
+  display: none;
+}
+
+.note-board-sheet-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.88rem;
+}
+
+.note-board-sheet-table--book {
+  background: #fff;
+}
+
+.note-board-sheet-table--memo-only .note-board-sheet-memo-cell--solo {
+  border: 1px solid #d8dce2;
+}
+
+.note-board-sheet-memo-cell--solo {
+  padding: 0;
+}
+
+.note-board-card--parent-sheet-memo-only .note-board-sheet-memo-cell--solo {
+  border-top: none;
+}
+
+.note-board-sheet-th {
+  padding: 0.42rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: #f3f4f6;
+  border: 1px solid #d8dce2;
+  text-align: left;
+}
+
+.note-board-sheet-th--tag {
+  width: 34%;
+  border-right: none;
+}
+
+.note-board-sheet-th--memo {
+  width: 66%;
+}
+
+.note-board-sheet-body-row td {
+  border: 1px solid #d8dce2;
+  vertical-align: top;
+}
+
+.note-board-sheet-tags-cell {
+  padding: 0;
+  background: #fafafa;
+  border-top: none;
+}
+
+.note-board-sheet-memo-cell {
+  padding: 0;
+  border-top: none;
+  border-left: none;
+}
+
+.note-board-sheet-tag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.note-board-sheet-tag-item + .note-board-sheet-tag-item {
+  border-top: 1px solid #e5e7eb;
+}
+
+.note-board-sheet-tag {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.48rem 0.55rem;
+  font-family: var(--tag-font-family);
+  font-size: 0.74rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--text-strong);
+  text-align: left;
+}
+
+.note-board-sheet-tag--link {
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+}
+
+.note-board-sheet-tag--link:hover {
+  background: rgb(0 0 0 / 4%);
+}
+
+.note-board-sheet-tag--empty {
+  color: var(--muted);
+  font-family: inherit;
+}
+
+.note-board-sheet-memo {
+  padding: 0.55rem 0.65rem;
+  min-height: 3.25rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text-strong);
+}
+
+.note-board-sheet-memo--empty {
+  color: var(--muted);
+}
+
+.note-board-sheet-meta-row td {
+  border: 1px solid #d8dce2;
+  border-top: none;
+  background: #f9fafb;
+}
+
+.note-board-sheet-meta-cell {
+  padding: 0;
+}
+
+.note-board-sheet-meta {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.74rem;
+}
+
+.note-board-sheet-meta-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem 0.65rem;
+  max-width: 100%;
+  text-align: right;
+}
+
+.note-board-sheet-meta-date {
+  flex-shrink: 0;
+}
+
+.note-board-sheet-meta-right .note-board-card-source,
+.note-board-sheet-meta-right .note-board-sheet-meta-placeholder {
+  text-align: right;
+}
+
+.note-board-sheet-meta-right .note-board-card-source--link {
+  text-align: right;
+}
+
+.note-board-sheet-meta-placeholder {
+  color: var(--muted);
+}
+
+.parent-tag-child-note-list .note-board-card--parent-sheet {
+  border-radius: 2px;
+  max-width: 100%;
+}
+
+.parent-tag-book-text-wrap {
+  min-height: 8rem;
+}
+
+.parent-tag-book-page-inner .note-board-sheet-table {
+  flex: 1;
+  min-height: 0;
 }
 
 .bootstrap-card {

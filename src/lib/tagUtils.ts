@@ -490,6 +490,28 @@ export function filterNotesForParentOnlyUnderParent<
     )
 }
 
+/** 상위 태그만 달리고 하위 태그는 없는 메모인지 */
+export function isNoteParentOnlyUnderParent<
+  T extends {
+    note_tags: { tag_id: string; tags?: { id: string } | null }[]
+  },
+>(
+  note: T,
+  parentId: string,
+  tags: TagHierarchyRow[],
+  links?: TagParentLink[],
+): boolean {
+  if (!noteHasTagId(note, parentId)) return false
+  const childIds = new Set(
+    getChildTags(parentId, tags, links).map((c) => c.id),
+  )
+  for (const nt of note.note_tags) {
+    const id = nt.tags?.id ?? nt.tag_id
+    if (id && childIds.has(id)) return false
+  }
+  return true
+}
+
 export function isParentTagRailActive(
   parentTagId: string,
   selectedTagId: string | null,

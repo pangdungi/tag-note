@@ -121,6 +121,19 @@ function formatNoteWhen(iso: string) {
   }
 }
 
+function resolveParentSheetLayout(
+  note: NoteWithTags,
+  hideParentTagId?: string,
+): 'parent-sheet' | 'parent-sheet-memo-only' {
+  const tagIds = note.note_tags
+    .map((nt) => nt.tags?.id ?? nt.tag_id)
+    .filter((id): id is string => Boolean(id))
+  const visibleTagIds = hideParentTagId
+    ? tagIds.filter((id) => id !== hideParentTagId)
+    : tagIds
+  return visibleTagIds.length === 0 ? 'parent-sheet-memo-only' : 'parent-sheet'
+}
+
 function NoteBoardCard({
   note,
   onView,
@@ -129,6 +142,7 @@ function NoteBoardCard({
   excludeTagId,
   hideTagIds,
   sourceLink = true,
+  layout = 'default',
 }: {
   note: NoteWithTags
   onView: (note: NoteWithTags, contextTagId?: string | null) => void
@@ -140,6 +154,8 @@ function NoteBoardCard({
   hideTagIds?: string[]
   /** false면 출처를 링크 없이 표시 (태그 뷰) */
   sourceLink?: boolean
+  /** 상위태그(책) 뷰 — 태그|메모 2열 시트 */
+  layout?: 'default' | 'parent-sheet' | 'parent-sheet-memo-only'
 }) {
   const tagLinks = note.note_tags
     .map((nt) => nt.tags)
@@ -157,6 +173,205 @@ function NoteBoardCard({
   const src = noteSourceLabel(note)
   const srcId = note.source_id ?? note.sources?.id ?? null
   const body = note.body?.trim() ?? ''
+
+  const sheetArticleProps = body
+    ? { role: 'button' as const, tabIndex: 0 }
+    : {}
+
+  const sheetMetaRow = (
+    <tr className="note-board-sheet-meta-row">
+      <td className="note-board-sheet-meta-cell" colSpan={2}>
+        <div className="note-board-sheet-meta">
+          <div className="note-board-sheet-meta-right">
+            {src ? (
+              sourceLink && srcId && onSourceFilter ? (
+                <button
+                  type="button"
+                  className="note-board-card-source note-board-card-source--link"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSourceFilter(srcId)
+                  }}
+                >
+                  {displaySourceTitle(src)}
+                </button>
+              ) : (
+                <span className="note-board-card-source">
+                  {displaySourceTitle(src)}
+                </span>
+              )
+            ) : (
+              <span className="note-board-sheet-meta-placeholder">
+                출처 없음
+              </span>
+            )}
+            <time
+              className="note-board-card-time note-board-sheet-meta-date"
+              dateTime={note.created_at}
+            >
+              {formatNoteWhen(note.created_at)}
+            </time>
+          </div>
+        </div>
+      </td>
+    </tr>
+  )
+
+  if (layout === 'parent-sheet-memo-only') {
+    return (
+      <article
+        className={`note-board-card note-board-card--parent-sheet note-board-card--parent-sheet-memo-only${
+          body ? ' note-board-card--viewable' : ''
+        }`}
+        onClick={() => {
+          if (body) onView(note, excludeTagId ?? null)
+        }}
+        onKeyDown={(e) => {
+          if (!body) return
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onView(note, excludeTagId ?? null)
+          }
+        }}
+        {...sheetArticleProps}
+      >
+        <table className="note-board-sheet-table note-board-sheet-table--memo-only">
+          <tbody>
+            <tr className="note-board-sheet-body-row">
+              <td className="note-board-sheet-memo-cell note-board-sheet-memo-cell--solo">
+                <div
+                  className={`note-board-sheet-memo${
+                    !body ? ' note-board-sheet-memo--empty' : ''
+                  }`}
+                >
+                  <MemoBodyContent as="span" body={body} emptyLabel="내용 없음" />
+                </div>
+              </td>
+            </tr>
+            <tr className="note-board-sheet-meta-row">
+              <td className="note-board-sheet-meta-cell">
+                <div className="note-board-sheet-meta">
+                  <div className="note-board-sheet-meta-right">
+                    {src ? (
+                      sourceLink && srcId && onSourceFilter ? (
+                        <button
+                          type="button"
+                          className="note-board-card-source note-board-card-source--link"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSourceFilter(srcId)
+                          }}
+                        >
+                          {displaySourceTitle(src)}
+                        </button>
+                      ) : (
+                        <span className="note-board-card-source">
+                          {displaySourceTitle(src)}
+                        </span>
+                      )
+                    ) : (
+                      <span className="note-board-sheet-meta-placeholder">
+                        출처 없음
+                      </span>
+                    )}
+                    <time
+                      className="note-board-card-time note-board-sheet-meta-date"
+                      dateTime={note.created_at}
+                    >
+                      {formatNoteWhen(note.created_at)}
+                    </time>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+    )
+  }
+
+  if (layout === 'parent-sheet') {
+    const sheetTags =
+      hidden.size > 0
+        ? sorted.filter((tg) => !hidden.has(tg.id))
+        : sorted
+
+    return (
+      <article
+        className={`note-board-card note-board-card--parent-sheet${
+          body ? ' note-board-card--viewable' : ''
+        }`}
+        onClick={() => {
+          if (body) onView(note, excludeTagId ?? null)
+        }}
+        onKeyDown={(e) => {
+          if (!body) return
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onView(note, excludeTagId ?? null)
+          }
+        }}
+        {...(body ? { role: 'button' as const, tabIndex: 0 } : {})}
+      >
+        <table className="note-board-sheet-table">
+          <thead>
+            <tr>
+              <th className="note-board-sheet-th note-board-sheet-th--tag">
+                태그
+              </th>
+              <th className="note-board-sheet-th note-board-sheet-th--memo">
+                메모
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="note-board-sheet-body-row">
+              <td className="note-board-sheet-tags-cell" valign="top">
+                {sheetTags.length > 0 ? (
+                  <ul className="note-board-sheet-tag-list">
+                    {sheetTags.map((tg) => (
+                      <li key={tg.id} className="note-board-sheet-tag-item">
+                        {onTagFilter ? (
+                          <button
+                            type="button"
+                            className="note-board-sheet-tag note-board-sheet-tag--link"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onTagFilter(tg.id)
+                            }}
+                          >
+                            {displayTagName(tg.name)}
+                          </button>
+                        ) : (
+                          <span className="note-board-sheet-tag">
+                            {displayTagName(tg.name)}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span className="note-board-sheet-tag note-board-sheet-tag--empty">
+                    태그 없음
+                  </span>
+                )}
+              </td>
+              <td className="note-board-sheet-memo-cell" valign="top">
+                <div
+                  className={`note-board-sheet-memo${
+                    !body ? ' note-board-sheet-memo--empty' : ''
+                  }`}
+                >
+                  <MemoBodyContent as="span" body={body} emptyLabel="내용 없음" />
+                </div>
+              </td>
+            </tr>
+            {sheetMetaRow}
+          </tbody>
+        </table>
+      </article>
+    )
+  }
 
   return (
     <article
@@ -238,6 +453,10 @@ type InlineRailNotesPanelProps = {
   onView: (note: NoteWithTags, contextTagId?: string | null) => void
   onTagFilter?: (tagId: string) => void
   hideTagIds?: string[]
+  /** 상위태그(책) 뷰 2열 시트 카드 */
+  sheetLayout?: boolean
+  /** 상위 spine 태그는 1열에서 숨김 — 다른 태그가 있으면 1열 표시 */
+  sheetHideParentTagId?: string
 }
 
 function InlineRailNotesPanel({
@@ -248,7 +467,13 @@ function InlineRailNotesPanel({
   onView,
   onTagFilter,
   hideTagIds,
+  sheetLayout = false,
+  sheetHideParentTagId,
 }: InlineRailNotesPanelProps) {
+  const sheetHiddenTagIds = useMemo(() => {
+    if (!sheetHideParentTagId) return hideTagIds
+    return [...(hideTagIds ?? []), sheetHideParentTagId]
+  }, [hideTagIds, sheetHideParentTagId])
   return (
     <div
       className="parent-tag-child-notes"
@@ -271,11 +496,16 @@ function InlineRailNotesPanel({
             <li key={note.id}>
               <NoteBoardCard
                 note={note}
-                excludeTagId={tagId}
-                hideTagIds={hideTagIds}
+                excludeTagId={sheetLayout ? null : tagId}
+                hideTagIds={sheetHiddenTagIds}
                 onView={onView}
                 onTagFilter={onTagFilter}
                 sourceLink={false}
+                layout={
+                  sheetLayout
+                    ? resolveParentSheetLayout(note, sheetHideParentTagId)
+                    : 'default'
+                }
               />
             </li>
           ))}
@@ -621,6 +851,7 @@ export function HomePage() {
   const [tagFilterNav, setTagFilterNav] = useState<HomeBrowseNavId>('tags')
   /** 검색 등에서 태그 선택 시 태그 목록 레일 숨기고 메모 목록만 */
   const [tagFilterFocusBoard, setTagFilterFocusBoard] = useState(false)
+  const [tagViewDrillDown, setTagViewDrillDown] = useState(false)
   const [mobileBrowseFabOpen, setMobileBrowseFabOpen] = useState(false)
 
   const [addParentTagRailOpen, setAddParentTagRailOpen] = useState(false)
@@ -1537,6 +1768,7 @@ export function HomePage() {
     setSearchError(null)
     setSelectedTagId(null)
     setTagFilterFocusBoard(false)
+    setTagViewDrillDown(false)
     setSearchOpen(false)
   }
 
@@ -1546,7 +1778,15 @@ export function HomePage() {
     setBooksMemoComposeTarget(null)
     setTagPullEntry(null)
     setTagFilterFocusBoard(false)
+    setTagViewDrillDown(false)
     setTagFilterNav(homeBrowseNav)
+  }
+
+  function goBackToTagList() {
+    setSelectedTagId(null)
+    setTagViewDrillDown(false)
+    setTagPullEntry(null)
+    setViewingNote(null)
   }
 
   function clearDateFilter() {
@@ -1565,6 +1805,7 @@ export function HomePage() {
     clearDateFilter()
     clearMainSearch()
     if (id === 'tags') {
+      setTagViewDrillDown(false)
       setBooksRailExpandedParentId(null)
       setTagPullEntry(null)
       setSelectedTagId((cur) => {
@@ -1585,6 +1826,7 @@ export function HomePage() {
   function toggleDateSelect(dateKey: string) {
     setSelectedDateKey((cur) => (cur === dateKey ? null : dateKey))
     setSelectedTagId(null)
+    setTagViewDrillDown(false)
     setSelectedSourceId(null)
     setSourceNotesHasMore(false)
     setViewingNote(null)
@@ -1684,11 +1926,25 @@ export function HomePage() {
 
     if (homeBrowseNav === 'tags') {
       if (selectedTagId === tagId) {
-        setSelectedTagId(null)
-        syncTagPullEntryForSelection(null)
         setViewingNote(null)
         return
       }
+      setSelectedSourceId(null)
+      setSourceNotesHasMore(false)
+      setTagViewDrillDown(true)
+      setTagFilterFocusBoard(false)
+      const filterTagIds = resolveSelectedTagFilterIds(
+        tagId,
+        homeBrowseNav,
+        booksFilterParentId,
+        allTags,
+        tagParentLinks,
+      )
+      syncTagPullEntryForSelection(tagId, filterTagIds, homeBrowseNav)
+      setTagFilterNav(homeBrowseNav)
+      setSelectedTagId(tagId)
+      setViewingNote(null)
+      return
     }
 
     const next = selectedTagId === tagId ? null : tagId
@@ -1721,6 +1977,7 @@ export function HomePage() {
         setSearchNotesResult(null)
         setSearchError(null)
         setSelectedTagId(null)
+        setTagViewDrillDown(false)
         setSearchOpen(false)
       }
       return next
@@ -1826,6 +2083,11 @@ export function HomePage() {
     setTagFilterNav(navForFilter)
     syncTagPullEntryForSelection(tagId, filterTagIds, navForFilter)
     setSelectedTagId(tagId)
+    setTagViewDrillDown(
+      navForFilter === 'tags' &&
+        !options?.keepSearch &&
+        !options?.focusNoteBoard,
+    )
   }
 
   function openTagViewFromNote(tagId: string) {
@@ -2230,11 +2492,27 @@ export function HomePage() {
           ? notes.length > 0
           : sourcesForLinkModeRail.length > 0)
 
-  const effectiveShowBrowseRail = showBrowseRail && !tagFilterFocusBoard
+  const effectiveShowBrowseRail =
+    showBrowseRail && !tagFilterFocusBoard && !tagViewDrillDown
+
+  const showTagViewDetail = Boolean(
+    homeBrowseNav === 'tags' &&
+      tagViewDrillDown &&
+      selectedTagId &&
+      !hasActiveSearch,
+  )
+
+  const tagViewDetailLabel =
+    selectedTagId === TAG_VIEW_NONE_ID
+      ? '태그 없음'
+      : selectedTag
+        ? displayTagName(selectedTag.name)
+        : '태그'
 
   const showTagFilteredNoteBoard = Boolean(
     selectedTagId &&
-      (tagFilterFocusBoard ||
+      (tagViewDrillDown ||
+        tagFilterFocusBoard ||
         hasActiveSearch ||
         !showBrowseRail ||
         !isSelectedTagShownInBrowseRail(
@@ -2291,7 +2569,12 @@ export function HomePage() {
   /** 태그·출처 필터 pill 바 (검색은 헤더 입력창) */
   const showHomeFilterBar = Boolean(
     (selectedSource && !effectiveShowBrowseRail) ||
-      (selectedTag && (showTagFilteredNoteBoard || !effectiveShowBrowseRail)),
+      (selectedTag &&
+        showTagFilteredNoteBoard &&
+        !showTagViewDetail &&
+        (tagFilterFocusBoard ||
+          hasActiveSearch ||
+          !effectiveShowBrowseRail)),
   )
 
   const showHeaderSearch = searchOpen
@@ -2581,7 +2864,7 @@ export function HomePage() {
           <>
             <header
             className={[
-              showHomeFilterBar
+              showHomeFilterBar || showTagViewDetail
                 ? 'home-top-tag-search home-top-tag-search--with-note-board'
                 : 'home-top-tag-search',
               !showHomeTagGrid ? 'home-top-tag-search--no-tag-grid' : '',
@@ -3067,7 +3350,6 @@ export function HomePage() {
                               : ''
                           }`}
                           aria-pressed={selectedTagId === TAG_VIEW_NONE_ID}
-                          aria-expanded={selectedTagId === TAG_VIEW_NONE_ID}
                           onClick={() => toggleTagSelect(TAG_VIEW_NONE_ID)}
                         >
                           <span className="tag-view-bar-label">태그 없음</span>
@@ -3075,22 +3357,6 @@ export function HomePage() {
                             {tagViewNoneMemoCount}
                           </span>
                         </button>
-                        {selectedTagId === TAG_VIEW_NONE_ID ? (
-                          <div
-                            ref={openTracksRef}
-                            className="tag-view-bar-notes"
-                            aria-label="태그 없음 메모"
-                          >
-                            <InlineRailNotesPanel
-                              tagLabel="태그 없음"
-                              tagId={TAG_VIEW_NONE_ID}
-                              notes={notesForSelectedTag}
-                              loading={tagPullLoading}
-                              onView={(note) => openViewNote(note, null)}
-                              onTagFilter={openTagViewFromNote}
-                            />
-                          </div>
-                        ) : null}
                       </div>
                       {tagsForTagModeRail.map((t) => {
                         const isSelected = selectedTagId === t.id
@@ -3111,7 +3377,6 @@ export function HomePage() {
                                 isSelected ? ' tag-view-bar--selected' : ''
                               }`}
                               aria-pressed={isSelected}
-                              aria-expanded={isSelected}
                               aria-label={displayTagName(t.name)}
                               title={displayTagName(t.name)}
                               onClick={() => toggleTagSelect(t.id)}
@@ -3123,22 +3388,6 @@ export function HomePage() {
                                 {memoCount}
                               </span>
                             </button>
-                            {isSelected ? (
-                              <div
-                                ref={openTracksRef}
-                                className="tag-view-bar-notes"
-                                aria-label={`${displayTagName(t.name)} 관련 메모`}
-                              >
-                                <InlineRailNotesPanel
-                                  tagLabel={displayTagName(t.name)}
-                                  tagId={t.id}
-                                  notes={notesForSelectedTag}
-                                  loading={tagPullLoading}
-                                  onView={openViewNote}
-                                  onTagFilter={openTagViewFromNote}
-                                />
-                              </div>
-                            ) : null}
                           </div>
                         )
                       })}
@@ -3316,6 +3565,7 @@ export function HomePage() {
                                                 loading={tagPullLoading}
                                                 onView={openViewNote}
                                                 onTagFilter={openTagViewFromNote}
+                                                sheetLayout
                                               />
                                             ) : null}
                                           </li>
@@ -3330,6 +3580,8 @@ export function HomePage() {
                                         loading={false}
                                         onView={openViewNote}
                                         onTagFilter={openTagViewFromNote}
+                                        sheetLayout
+                                        sheetHideParentTagId={t.id}
                                       />
                                     ) : null}
                                   </>
@@ -3349,6 +3601,8 @@ export function HomePage() {
                                     }
                                     onView={openViewNote}
                                     onTagFilter={openTagViewFromNote}
+                                    sheetLayout
+                                    sheetHideParentTagId={t.id}
                                   />
                                 ) : null}
                               </div>
@@ -3482,14 +3736,41 @@ export function HomePage() {
             />
           ) : null}
 
+          {!showBootstrap && showTagViewDetail ? (
+            <header className="tag-view-detail-head" aria-label="태그 메모">
+              <button
+                type="button"
+                className="tag-view-detail-back"
+                onClick={() => goBackToTagList()}
+              >
+                <span className="tag-view-detail-back-icon" aria-hidden="true">
+                  ←
+                </span>
+                태그 목록
+              </button>
+              <div className="tag-view-detail-title-wrap">
+                <h2 className="tag-view-detail-title">{tagViewDetailLabel}</h2>
+                <p className="tag-view-detail-desc">
+                  {selectedTagId === TAG_VIEW_NONE_ID
+                    ? '태그가 없는 메모'
+                    : selectedTagIsParent
+                      ? '이 상위 태그·하위 태그가 붙은 메모'
+                      : '이 태그가 붙은 메모'}
+                </p>
+              </div>
+            </header>
+          ) : null}
+
           {!showBootstrap && showTagFilteredNoteBoard ? (
             <section
               className="note-board-section"
               aria-busy={tagPullLoading}
               aria-label={
-                selectedTag
-                  ? `${displayTagName(selectedTag.name)} 관련 메모`
-                  : '선택한 태그의 메모'
+                selectedTagId === TAG_VIEW_NONE_ID
+                  ? '태그 없음 메모'
+                  : selectedTag
+                    ? `${displayTagName(selectedTag.name)} 관련 메모`
+                    : '선택한 태그의 메모'
               }
             >
               <TagNotesPullStatus
@@ -3654,6 +3935,7 @@ export function HomePage() {
       {user ? (
         <ParentTagBookReaderModal
           open={bookReaderParentId !== null}
+          parentTagId={bookReaderParentId ?? ''}
           parentTagName={bookReaderParentTag?.name ?? ''}
           notes={bookReaderNotes}
           onClose={() => setBookReaderParentId(null)}
