@@ -215,16 +215,6 @@ export function ParentTagBookReaderModal({
                   </table>
                 ) : (
                   <table className="note-board-sheet-table note-board-sheet-table--book">
-                    <thead>
-                      <tr>
-                        <th className="note-board-sheet-th note-board-sheet-th--tag">
-                          태그
-                        </th>
-                        <th className="note-board-sheet-th note-board-sheet-th--memo">
-                          메모
-                        </th>
-                      </tr>
-                    </thead>
                     <tbody>
                       <tr className="note-board-sheet-body-row">
                         <td className="note-board-sheet-tags-cell" valign="top">

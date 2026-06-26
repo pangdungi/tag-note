@@ -220,6 +220,14 @@ export function AddNoteModal({
         </div>
         <div className="edit-note-modal-body">
           <div className="composer-stack">
+            {showParentPicker ? (
+              <MemoParentTagSelect
+                allTags={allTags}
+                tagParentLinks={tagParentLinks}
+                value={parentTagId}
+                onChange={setParentTagId}
+              />
+            ) : null}
             <TagComposer
               allTags={allTags}
               selected={tags}
@@ -235,14 +243,6 @@ export function AddNoteModal({
                 ) : undefined
               }
             />
-            {showParentPicker ? (
-              <MemoParentTagSelect
-                allTags={allTags}
-                tagParentLinks={tagParentLinks}
-                value={parentTagId}
-                onChange={setParentTagId}
-              />
-            ) : null}
             <div className="composer-field">
               <label className="composer-label" htmlFor={bodyId}>
                 메모

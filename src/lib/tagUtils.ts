@@ -21,7 +21,7 @@ export function normalizeTagInput(raw: string): string {
 }
 
 export function displayTagName(storedName: string): string {
-  return storedName.startsWith('#') ? storedName : `#${storedName}`
+  return normalizeTagInput(storedName)
 }
 
 /** 세로 북스파인 — 괄호·부등호 제거 (세로 표시 불편) */
@@ -36,12 +36,12 @@ export function formatSpineLabel(raw: string): string {
   return formatSpineText(normalizeTagInput(raw))
 }
 
-/** 태그 뷰·검색 — 세로 스파인 (#로 상위태그·출처와 구분) */
+/** 태그 뷰·검색 — 세로 스파인 */
 export function formatTagViewSpineLabel(raw: string): string {
   return formatSpineText(displayTagName(raw))
 }
 
-/** 검색 결과 — 일반 태그 스파인 (#로 상위태그와 구분) */
+/** 검색 결과 — 일반 태그 스파인 */
 export function formatSearchTagSpineLabel(raw: string): string {
   return formatTagViewSpineLabel(raw)
 }

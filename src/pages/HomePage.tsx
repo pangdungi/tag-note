@@ -5,7 +5,7 @@ import { AddParentTagModal } from '../components/AddParentTagModal'
 import { EditSourceModal } from '../components/EditSourceModal'
 import { EditParentTagModal } from '../components/EditParentTagModal'
 import { EditTagModal } from '../components/EditTagModal'
-import { HomeBrowseNavButtons, HomeMobileBrowseFab, type HomeBrowseNavId } from '../components/HomeBrowseNav'
+import { HomeBrowseNavButtons, type HomeBrowseNavId } from '../components/HomeBrowseNav'
 import { HomeSearchResultsRail } from '../components/HomeSearchResultsRail'
 import { EditNoteModal } from '../components/EditNoteModal'
 import { NoteViewModal } from '../components/NoteViewModal'
@@ -124,14 +124,20 @@ function formatNoteWhen(iso: string) {
 function resolveParentSheetLayout(
   note: NoteWithTags,
   hideParentTagId?: string,
+  hideContextTagId?: string,
 ): 'parent-sheet' | 'parent-sheet-memo-only' {
   const tagIds = note.note_tags
     .map((nt) => nt.tags?.id ?? nt.tag_id)
     .filter((id): id is string => Boolean(id))
-  const visibleTagIds = hideParentTagId
-    ? tagIds.filter((id) => id !== hideParentTagId)
-    : tagIds
-  return visibleTagIds.length === 0 ? 'parent-sheet-memo-only' : 'parent-sheet'
+  const hidden = new Set<string>()
+  if (hideParentTagId) hidden.add(hideParentTagId)
+  if (hideContextTagId) hidden.add(hideContextTagId)
+  const visibleTagIds = tagIds.filter((id) => !hidden.has(id))
+  // 멀티태그이고, 맥락(상위·선택 태그) 밖에 표시할 태그가 있을 때만 1열
+  if (tagIds.length <= 1 || visibleTagIds.length === 0) {
+    return 'parent-sheet-memo-only'
+  }
+  return 'parent-sheet'
 }
 
 function NoteBoardCard({
@@ -143,6 +149,8 @@ function NoteBoardCard({
   hideTagIds,
   sourceLink = true,
   layout = 'default',
+  hideSourceInMeta = false,
+  hideDateInMeta = false,
 }: {
   note: NoteWithTags
   onView: (note: NoteWithTags, contextTagId?: string | null) => void
@@ -156,6 +164,10 @@ function NoteBoardCard({
   sourceLink?: boolean
   /** 상위태그(책) 뷰 — 태그|메모 2열 시트 */
   layout?: 'default' | 'parent-sheet' | 'parent-sheet-memo-only'
+  /** 출처 그룹 헤더에 표시할 때 카드 하단 출처 숨김 */
+  hideSourceInMeta?: boolean
+  /** 상위태그 시트 — 날짜는 보기 모달에서만 */
+  hideDateInMeta?: boolean
 }) {
   const tagLinks = note.note_tags
     .map((nt) => nt.tags)
@@ -178,43 +190,57 @@ function NoteBoardCard({
     ? { role: 'button' as const, tabIndex: 0 }
     : {}
 
-  const sheetMetaRow = (
-    <tr className="note-board-sheet-meta-row">
-      <td className="note-board-sheet-meta-cell" colSpan={2}>
-        <div className="note-board-sheet-meta">
-          <div className="note-board-sheet-meta-right">
-            {src ? (
-              sourceLink && srcId && onSourceFilter ? (
-                <button
-                  type="button"
-                  className="note-board-card-source note-board-card-source--link"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onSourceFilter(srcId)
-                  }}
-                >
-                  {displaySourceTitle(src)}
-                </button>
-              ) : (
-                <span className="note-board-card-source">
-                  {displaySourceTitle(src)}
-                </span>
-              )
-            ) : (
-              <span className="note-board-sheet-meta-placeholder">
-                출처 없음
-              </span>
-            )}
-            <time
-              className="note-board-card-time note-board-sheet-meta-date"
-              dateTime={note.created_at}
+  const showSheetSourceInMeta = !hideSourceInMeta
+  const showSheetDateInMeta = !hideDateInMeta
+
+  const sheetInlineSource = showSheetSourceInMeta
+    ? src
+      ? sourceLink && srcId && onSourceFilter
+        ? (
+            <button
+              type="button"
+              className="note-board-sheet-memo-source note-board-sheet-memo-source--link"
+              onClick={(e) => {
+                e.stopPropagation()
+                onSourceFilter(srcId)
+              }}
             >
-              {formatNoteWhen(note.created_at)}
-            </time>
-          </div>
-        </div>
-      </td>
-    </tr>
+              &lt;{displaySourceTitle(src)}&gt;
+            </button>
+          )
+        : (
+            <span className="note-board-sheet-memo-source">
+              &lt;{displaySourceTitle(src)}&gt;
+            </span>
+          )
+      : (
+          <span className="note-board-sheet-memo-source note-board-sheet-memo-source--muted">
+            &lt;출처 없음&gt;
+          </span>
+        )
+    : null
+
+  const sheetMemoContent = (
+    <div
+      className={`note-board-sheet-memo${
+        !body && !src ? ' note-board-sheet-memo--empty' : ''
+      }`}
+    >
+      {body ? (
+        <MemoBodyContent as="span" body={body} emptyLabel="내용 없음" />
+      ) : !sheetInlineSource ? (
+        <span>내용 없음</span>
+      ) : null}
+      {sheetInlineSource}
+      {showSheetDateInMeta ? (
+        <time
+          className="note-board-sheet-memo-date"
+          dateTime={note.created_at}
+        >
+          {formatNoteWhen(note.created_at)}
+        </time>
+      ) : null}
+    </div>
   )
 
   if (layout === 'parent-sheet-memo-only') {
@@ -239,49 +265,7 @@ function NoteBoardCard({
           <tbody>
             <tr className="note-board-sheet-body-row">
               <td className="note-board-sheet-memo-cell note-board-sheet-memo-cell--solo">
-                <div
-                  className={`note-board-sheet-memo${
-                    !body ? ' note-board-sheet-memo--empty' : ''
-                  }`}
-                >
-                  <MemoBodyContent as="span" body={body} emptyLabel="내용 없음" />
-                </div>
-              </td>
-            </tr>
-            <tr className="note-board-sheet-meta-row">
-              <td className="note-board-sheet-meta-cell">
-                <div className="note-board-sheet-meta">
-                  <div className="note-board-sheet-meta-right">
-                    {src ? (
-                      sourceLink && srcId && onSourceFilter ? (
-                        <button
-                          type="button"
-                          className="note-board-card-source note-board-card-source--link"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onSourceFilter(srcId)
-                          }}
-                        >
-                          {displaySourceTitle(src)}
-                        </button>
-                      ) : (
-                        <span className="note-board-card-source">
-                          {displaySourceTitle(src)}
-                        </span>
-                      )
-                    ) : (
-                      <span className="note-board-sheet-meta-placeholder">
-                        출처 없음
-                      </span>
-                    )}
-                    <time
-                      className="note-board-card-time note-board-sheet-meta-date"
-                      dateTime={note.created_at}
-                    >
-                      {formatNoteWhen(note.created_at)}
-                    </time>
-                  </div>
-                </div>
+                {sheetMemoContent}
               </td>
             </tr>
           </tbody>
@@ -314,16 +298,6 @@ function NoteBoardCard({
         {...(body ? { role: 'button' as const, tabIndex: 0 } : {})}
       >
         <table className="note-board-sheet-table">
-          <thead>
-            <tr>
-              <th className="note-board-sheet-th note-board-sheet-th--tag">
-                태그
-              </th>
-              <th className="note-board-sheet-th note-board-sheet-th--memo">
-                메모
-              </th>
-            </tr>
-          </thead>
           <tbody>
             <tr className="note-board-sheet-body-row">
               <td className="note-board-sheet-tags-cell" valign="top">
@@ -357,16 +331,9 @@ function NoteBoardCard({
                 )}
               </td>
               <td className="note-board-sheet-memo-cell" valign="top">
-                <div
-                  className={`note-board-sheet-memo${
-                    !body ? ' note-board-sheet-memo--empty' : ''
-                  }`}
-                >
-                  <MemoBodyContent as="span" body={body} emptyLabel="내용 없음" />
-                </div>
+                {sheetMemoContent}
               </td>
             </tr>
-            {sheetMetaRow}
           </tbody>
         </table>
       </article>
@@ -451,12 +418,14 @@ type InlineRailNotesPanelProps = {
   notes: NoteWithTags[]
   loading: boolean
   onView: (note: NoteWithTags, contextTagId?: string | null) => void
-  onTagFilter?: (tagId: string) => void
+  onTagFilter?: (tagId: string, contextParentId?: string) => void
   hideTagIds?: string[]
   /** 상위태그(책) 뷰 2열 시트 카드 */
   sheetLayout?: boolean
   /** 상위 spine 태그는 1열에서 숨김 — 다른 태그가 있으면 1열 표시 */
   sheetHideParentTagId?: string
+  /** 시트에서 태그 클릭 시 상위 컨텍스트(펼친 상위태그 id) */
+  sheetParentTagId?: string
 }
 
 function InlineRailNotesPanel({
@@ -469,11 +438,47 @@ function InlineRailNotesPanel({
   hideTagIds,
   sheetLayout = false,
   sheetHideParentTagId,
+  sheetParentTagId,
 }: InlineRailNotesPanelProps) {
   const sheetHiddenTagIds = useMemo(() => {
-    if (!sheetHideParentTagId) return hideTagIds
-    return [...(hideTagIds ?? []), sheetHideParentTagId]
-  }, [hideTagIds, sheetHideParentTagId])
+    const ids = [...(hideTagIds ?? [])]
+    if (sheetHideParentTagId) ids.push(sheetHideParentTagId)
+    if (sheetLayout && tagId && tagId !== TAG_VIEW_NONE_ID) ids.push(tagId)
+    return ids.length > 0 ? ids : hideTagIds
+  }, [hideTagIds, sheetHideParentTagId, sheetLayout, tagId])
+
+  const sheetContextTagId =
+    sheetLayout && tagId && tagId !== TAG_VIEW_NONE_ID ? tagId : undefined
+
+  const noteCard = (note: NoteWithTags) => (
+    <NoteBoardCard
+      note={note}
+      excludeTagId={sheetLayout ? null : tagId}
+      hideTagIds={sheetHiddenTagIds}
+      onView={onView}
+      onTagFilter={
+        sheetLayout && onTagFilter
+          ? (clickedTagId) =>
+              onTagFilter(
+                clickedTagId,
+                sheetParentTagId ?? sheetHideParentTagId,
+              )
+          : onTagFilter
+      }
+      sourceLink={false}
+      hideDateInMeta={sheetLayout}
+      layout={
+        sheetLayout
+          ? resolveParentSheetLayout(
+              note,
+              sheetHideParentTagId,
+              sheetContextTagId,
+            )
+          : 'default'
+      }
+    />
+  )
+
   return (
     <div
       className="parent-tag-child-notes"
@@ -493,21 +498,7 @@ function InlineRailNotesPanel({
       ) : notes.length > 0 ? (
         <ul className="note-board-list parent-tag-child-note-list">
           {notes.map((note) => (
-            <li key={note.id}>
-              <NoteBoardCard
-                note={note}
-                excludeTagId={sheetLayout ? null : tagId}
-                hideTagIds={sheetHiddenTagIds}
-                onView={onView}
-                onTagFilter={onTagFilter}
-                sourceLink={false}
-                layout={
-                  sheetLayout
-                    ? resolveParentSheetLayout(note, sheetHideParentTagId)
-                    : 'default'
-                }
-              />
-            </li>
+            <li key={note.id}>{noteCard(note)}</li>
           ))}
         </ul>
       ) : null}
@@ -846,13 +837,13 @@ export function HomePage() {
 
   const [addNoteOpen, setAddNoteOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const [homeBrowseNav, setHomeBrowseNav] = useState<HomeBrowseNavId>('tags')
+  const [homeBrowseNav, setHomeBrowseNav] = useState<HomeBrowseNavId>('books')
   /** 태그 필터·pull에 쓰는 뷰 맥락 (browse nav와 다를 수 있음) */
-  const [tagFilterNav, setTagFilterNav] = useState<HomeBrowseNavId>('tags')
+  const [tagFilterNav, setTagFilterNav] = useState<HomeBrowseNavId>('books')
   /** 검색 등에서 태그 선택 시 태그 목록 레일 숨기고 메모 목록만 */
   const [tagFilterFocusBoard, setTagFilterFocusBoard] = useState(false)
+  const [booksTagFocusBoard, setBooksTagFocusBoard] = useState(false)
   const [tagViewDrillDown, setTagViewDrillDown] = useState(false)
-  const [mobileBrowseFabOpen, setMobileBrowseFabOpen] = useState(false)
 
   const [addParentTagRailOpen, setAddParentTagRailOpen] = useState(false)
   const [railEditingTag, setRailEditingTag] = useState<TagRow | null>(null)
@@ -1295,7 +1286,6 @@ export function HomePage() {
 
       const parentId = result.parent.id
       setHomeBrowseNav('books')
-      setMobileBrowseFabOpen(false)
       setSelectedSourceId(null)
       setSourceNotesHasMore(false)
       setBooksRailExpandedParentId(parentId)
@@ -1749,6 +1739,20 @@ export function HomePage() {
     if (hasActiveSearch) {
       return visibleTags
     }
+    if (
+      homeBrowseNav === 'books' &&
+      booksRailExpandedParentId &&
+      !selectedSourceId
+    ) {
+      const children = getChildTags(
+        booksRailExpandedParentId,
+        allTags,
+        tagParentLinks,
+      )
+      if (children.length > 0) return children
+      const parent = allTags.find((t) => t.id === booksRailExpandedParentId)
+      return parent ? [parent] : []
+    }
     if (selectedTagId && tagHasChildren(selectedTagId, allTags, tagParentLinks)) {
       return visibleTags.filter((t) => t.parent_id === selectedTagId)
     }
@@ -1760,6 +1764,8 @@ export function HomePage() {
     hasActiveSearch,
     selectedTagId,
     allTags,
+    homeBrowseNav,
+    booksRailExpandedParentId,
   ])
 
   function clearMainSearch() {
@@ -1768,6 +1774,7 @@ export function HomePage() {
     setSearchError(null)
     setSelectedTagId(null)
     setTagFilterFocusBoard(false)
+    setBooksTagFocusBoard(false)
     setTagViewDrillDown(false)
     setSearchOpen(false)
   }
@@ -1778,7 +1785,7 @@ export function HomePage() {
     setBooksMemoComposeTarget(null)
     setTagPullEntry(null)
     setTagFilterFocusBoard(false)
-    setTagViewDrillDown(false)
+    setBooksTagFocusBoard(false)
     setTagFilterNav(homeBrowseNav)
   }
 
@@ -1787,6 +1794,15 @@ export function HomePage() {
     setTagViewDrillDown(false)
     setTagPullEntry(null)
     setViewingNote(null)
+  }
+
+  function collapseBooksParentRail() {
+    setBooksRailExpandedParentId(null)
+    setBooksMemoComposeTarget(null)
+    setSelectedTagId(null)
+    setTagPullEntry(null)
+    setViewingNote(null)
+    syncTagPullEntryForSelection(null)
   }
 
   function clearDateFilter() {
@@ -1800,7 +1816,6 @@ export function HomePage() {
 
   function selectBrowseNav(id: HomeBrowseNavId) {
     setHomeBrowseNav(id)
-    setMobileBrowseFabOpen(false)
     clearSourceFilter()
     clearDateFilter()
     clearMainSearch()
@@ -1817,10 +1832,6 @@ export function HomePage() {
     } else {
       clearTagFilter()
     }
-  }
-
-  function toggleMobileBrowseFab() {
-    setMobileBrowseFabOpen((open) => !open)
   }
 
   function toggleDateSelect(dateKey: string) {
@@ -1895,6 +1906,7 @@ export function HomePage() {
         syncTagPullEntryForSelection(null)
       } else {
         const children = getChildTags(tagId, allTags, tagParentLinks)
+        setBooksTagFocusBoard(false)
         setBooksRailExpandedParentId(tagId)
         setBooksMemoComposeTarget('parent')
         if (children.length === 0) {
@@ -1910,7 +1922,8 @@ export function HomePage() {
     }
 
     let booksFilterParentId = booksRailExpandedParentId
-    if (homeBrowseNav === 'books' && tag) {
+    if (homeBrowseNav === 'books' && tag && !booksTagFocusBoard) {
+      setBooksTagFocusBoard(false)
       const parentId = resolveBooksRailExpandedParentForTag(
         tagId,
         allTags,
@@ -1988,7 +2001,6 @@ export function HomePage() {
 
   function openSourceViewFromNote(sourceId: string) {
     setHomeBrowseNav('links')
-    setMobileBrowseFabOpen(false)
     setSelectedSourceId(sourceId)
     setSelectedTagId(null)
     setBooksRailExpandedParentId(null)
@@ -2008,8 +2020,8 @@ export function HomePage() {
   ) {
     if (options?.focusNoteBoard || options?.keepSearch) {
       setTagFilterFocusBoard(true)
+      setBooksTagFocusBoard(false)
     }
-    setMobileBrowseFabOpen(false)
     setSelectedSourceId(null)
     setSourceNotesHasMore(false)
     clearDateFilter()
@@ -2088,6 +2100,7 @@ export function HomePage() {
         !options?.keepSearch &&
         !options?.focusNoteBoard,
     )
+    setBooksTagFocusBoard(false)
   }
 
   function openTagViewFromNote(tagId: string) {
@@ -2096,6 +2109,43 @@ export function HomePage() {
       keepSearch,
       focusNoteBoard: keepSearch,
     })
+  }
+
+  function openBooksTagFromSheet(
+    tagId: string,
+    contextParentId?: string | null,
+  ) {
+    const parentId = contextParentId ?? booksRailExpandedParentId
+
+    if (homeBrowseNav === 'books' && parentId) {
+      setBooksTagFocusBoard(true)
+      setTagFilterFocusBoard(false)
+      setTagViewDrillDown(false)
+      setSelectedSourceId(null)
+      setSourceNotesHasMore(false)
+      setViewingNote(null)
+      setViewingNoteContextTagId(null)
+      setViewNoteLoading(false)
+      setHomeBrowseNav('books')
+      setBooksRailExpandedParentId(parentId)
+      setBooksMemoComposeTarget(
+        tagId === parentId ? 'parent' : 'child',
+      )
+      setTagFilterNav('books')
+      const filterTagIds = resolveSelectedTagFilterIds(
+        tagId,
+        'books',
+        parentId,
+        allTags,
+        tagParentLinks,
+      )
+      tagFilterNavRef.current = 'books'
+      syncTagPullEntryForSelection(tagId, filterTagIds, 'books')
+      setSelectedTagId(tagId)
+      return
+    }
+
+    openTagViewFromNote(tagId)
   }
 
   function filterBySourceFromCard(sourceId: string) {
@@ -2395,6 +2445,17 @@ export function HomePage() {
     [allTags, tagParentLinks],
   )
 
+  /** 상위태그(책) 뷰 — 펼친 상위태그만 표시 (가로 스크롤으로 다른 spine 보기 방지) */
+  const booksParentTagsForRail = useMemo(() => {
+    if (homeBrowseNav !== 'books') return parentTagsForRail
+    if (!booksRailExpandedParentId) return parentTagsForRail
+    return parentTagsForRail.filter((t) => t.id === booksRailExpandedParentId)
+  }, [homeBrowseNav, booksRailExpandedParentId, parentTagsForRail])
+
+  const booksParentRailLocked = Boolean(
+    homeBrowseNav === 'books' && booksRailExpandedParentId,
+  )
+
   const tagsForTagModeRail = useMemo(
     () => getTagsForTagViewRail(allTags, tagParentLinks),
     [allTags, tagParentLinks],
@@ -2479,6 +2540,10 @@ export function HomePage() {
     selectedSource,
   ])
 
+  const showBooksNavBackMode = Boolean(
+    homeBrowseNav === 'books' && booksRailExpandedParentId,
+  )
+
   const showBrowseRail =
     !showBootstrap &&
     !loading &&
@@ -2493,7 +2558,10 @@ export function HomePage() {
           : sourcesForLinkModeRail.length > 0)
 
   const effectiveShowBrowseRail =
-    showBrowseRail && !tagFilterFocusBoard && !tagViewDrillDown
+    showBrowseRail &&
+    !tagFilterFocusBoard &&
+    !tagViewDrillDown &&
+    !booksTagFocusBoard
 
   const showTagViewDetail = Boolean(
     homeBrowseNav === 'tags' &&
@@ -2513,6 +2581,7 @@ export function HomePage() {
     selectedTagId &&
       (tagViewDrillDown ||
         tagFilterFocusBoard ||
+        booksTagFocusBoard ||
         hasActiveSearch ||
         !showBrowseRail ||
         !isSelectedTagShownInBrowseRail(
@@ -2572,6 +2641,7 @@ export function HomePage() {
       (selectedTag &&
         showTagFilteredNoteBoard &&
         !showTagViewDetail &&
+        !booksTagFocusBoard &&
         (tagFilterFocusBoard ||
           hasActiveSearch ||
           !effectiveShowBrowseRail)),
@@ -2742,7 +2812,7 @@ export function HomePage() {
   useParentRailHorizontalTouch(
     parentTagRailScrollRef,
     openTracksRef,
-    railSectionOpen,
+    railSectionOpen && !booksParentRailLocked,
   )
 
   function openAddParentTag() {
@@ -2869,25 +2939,13 @@ export function HomePage() {
                 : 'home-top-tag-search',
               !showHomeTagGrid ? 'home-top-tag-search--no-tag-grid' : '',
               showHomeCompactHeader ? 'home-top-tag-search--compact' : '',
-              'home-top-tag-search--icons-only',
             ]
               .filter(Boolean)
               .join(' ')}
           >
             <div className="home-top-tag-search-inner">
-              <div
-                className={`home-header-actions-row${
-                  showHeaderSearch ? ' home-header-actions-row--search' : ''
-                }`}
-              >
-                <div className="home-desktop-browse-nav">
-                  <HomeBrowseNavButtons
-                    activeId={homeBrowseNav}
-                    disabled={!canUseCompose}
-                    onSelect={selectBrowseNav}
-                  />
-                </div>
-                {showHeaderSearch ? (
+              {showHeaderSearch ? (
+                <div className="home-header-search-row">
                   <div className="home-header-search-slot">
                     <HomeInlineSearchField
                       inputRef={searchInputRef}
@@ -2895,24 +2953,8 @@ export function HomePage() {
                       onChange={handleSearchChange}
                     />
                   </div>
-                ) : null}
-                <div className="home-desktop-quick-actions">
-                  <HomeQuickActionButtons
-                    canUseCompose={canUseCompose}
-                    addNoteOpen={addNoteOpen}
-                    showAddParentTagCompose={showAddParentTagCompose}
-                    searchActive={searchOpen || hasActiveSearch}
-                    user={user}
-                    showRailSettings={Boolean(railEditContext)}
-                    railSettingsLabel={railSettingsLabel}
-                    onOpenRailSettings={openRailSettings}
-                    onToggleSearch={() => toggleSearch()}
-                    onToggleAddNote={() => toggleAddNote()}
-                    onAddParentTag={() => openAddParentTag()}
-                    onOpenAccount={() => setAccountModalOpen(true)}
-                  />
                 </div>
-              </div>
+              ) : null}
               {showHomeFilterBar ? (
                 <div
                   className={`home-filter-mode${
@@ -3054,7 +3096,16 @@ export function HomePage() {
                             }`}
                             aria-pressed={selectedTagId === t.id}
                             aria-current={selectedTagId === t.id ? 'true' : undefined}
-                            onClick={() => toggleTagSelect(t.id)}
+                            onClick={() => {
+                              if (booksTagFocusBoard && homeBrowseNav === 'books') {
+                                openBooksTagFromSheet(
+                                  t.id,
+                                  booksRailExpandedParentId,
+                                )
+                              } else {
+                                toggleTagSelect(t.id)
+                              }
+                            }}
                           >
                             {displayTagName(t.name)}
                           </button>
@@ -3125,35 +3176,6 @@ export function HomePage() {
               ) : null}
               </div>
             </header>
-
-            <nav
-              className="home-mobile-quick-actions"
-              aria-label="빠른 작업"
-            >
-              <HomeQuickActionButtons
-                canUseCompose={canUseCompose}
-                addNoteOpen={addNoteOpen}
-                showAddParentTagCompose={showAddParentTagCompose}
-                searchActive={searchOpen || hasActiveSearch}
-                user={user}
-                showRailSettings={Boolean(railEditContext)}
-                railSettingsLabel={railSettingsLabel}
-                onOpenRailSettings={openRailSettings}
-                onToggleSearch={() => toggleSearch()}
-                onToggleAddNote={() => toggleAddNote()}
-                onAddParentTag={() => openAddParentTag()}
-                onOpenAccount={() => setAccountModalOpen(true)}
-                mobileBrowseFab={
-                  <HomeMobileBrowseFab
-                    open={mobileBrowseFabOpen}
-                    activeId={homeBrowseNav}
-                    disabled={!canUseCompose}
-                    onToggle={toggleMobileBrowseFab}
-                    onSelect={selectBrowseNav}
-                  />
-                }
-              />
-            </nav>
           </>
         ) : null}
 
@@ -3245,6 +3267,8 @@ export function HomePage() {
                 homeBrowseNav === 'dates' ? ' parent-tag-rail-section--date-view' : ''
               }${
                 homeBrowseNav === 'books' ? ' parent-tag-rail-section--books-view' : ''
+              }${
+                homeBrowseNav === 'links' ? ' parent-tag-rail-section--links-view' : ''
               }`}
               aria-label={browseRailAriaLabel}
             >
@@ -3414,7 +3438,7 @@ export function HomePage() {
                 <div ref={parentTagRailScrollRef} className="parent-tag-rail-scroll">
               <ul className="parent-tag-rail">
                 {homeBrowseNav === 'books'
-                  ? parentTagsForRail.map((t) => {
+                  ? booksParentTagsForRail.map((t) => {
                       const isOpen = booksRailExpandedParentId === t.id
                       const active = isParentTagRailActive(
                         t.id,
@@ -3564,8 +3588,9 @@ export function HomePage() {
                                                 notes={notesForSelectedTag}
                                                 loading={tagPullLoading}
                                                 onView={openViewNote}
-                                                onTagFilter={openTagViewFromNote}
+                                                onTagFilter={openBooksTagFromSheet}
                                                 sheetLayout
+                                                sheetParentTagId={t.id}
                                               />
                                             ) : null}
                                           </li>
@@ -3579,8 +3604,9 @@ export function HomePage() {
                                         notes={parentDirectNotes}
                                         loading={false}
                                         onView={openViewNote}
-                                        onTagFilter={openTagViewFromNote}
+                                        onTagFilter={openBooksTagFromSheet}
                                         sheetLayout
+                                        sheetParentTagId={t.id}
                                         sheetHideParentTagId={t.id}
                                       />
                                     ) : null}
@@ -3600,8 +3626,9 @@ export function HomePage() {
                                       parentDirectNotes.length === 0
                                     }
                                     onView={openViewNote}
-                                    onTagFilter={openTagViewFromNote}
+                                    onTagFilter={openBooksTagFromSheet}
                                     sheetLayout
+                                    sheetParentTagId={t.id}
                                     sheetHideParentTagId={t.id}
                                   />
                                 ) : null}
@@ -3788,7 +3815,12 @@ export function HomePage() {
                       <NoteBoardCard
                         note={note}
                         onView={(n) => openViewNote(n, selectedTagId)}
-                        onTagFilter={openTagViewFromNote}
+                        onTagFilter={(clickedTagId) =>
+                          openBooksTagFromSheet(
+                            clickedTagId,
+                            booksRailExpandedParentId,
+                          )
+                        }
                         sourceLink={false}
                       />
                     </li>
@@ -3843,6 +3875,38 @@ export function HomePage() {
             </section>
           ) : null}
         </main>
+
+        {!showBootstrap ? (
+          <nav className="home-bottom-menu-bar" aria-label="메뉴">
+            <div className="home-bottom-menu-bar-inner">
+              <div className="home-bottom-browse-nav">
+                <HomeBrowseNavButtons
+                  activeId={homeBrowseNav}
+                  disabled={!canUseCompose}
+                  onSelect={selectBrowseNav}
+                  booksBackMode={showBooksNavBackMode}
+                  onBooksBack={collapseBooksParentRail}
+                />
+              </div>
+              <div className="home-bottom-quick-actions">
+                <HomeQuickActionButtons
+                  canUseCompose={canUseCompose}
+                  addNoteOpen={addNoteOpen}
+                  showAddParentTagCompose={showAddParentTagCompose}
+                  searchActive={searchOpen || hasActiveSearch}
+                  user={user}
+                  showRailSettings={Boolean(railEditContext)}
+                  railSettingsLabel={railSettingsLabel}
+                  onOpenRailSettings={openRailSettings}
+                  onToggleSearch={() => toggleSearch()}
+                  onToggleAddNote={() => toggleAddNote()}
+                  onAddParentTag={() => openAddParentTag()}
+                  onOpenAccount={() => setAccountModalOpen(true)}
+                />
+              </div>
+            </div>
+          </nav>
+        ) : null}
       </div>
 
       {user ? (

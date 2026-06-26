@@ -1,14 +1,6 @@
 @font-face {
-  font-family: 'TagNote DOSGothic';
-  src: url('/fonts/DOSGothic.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: 'TagNote SpoqaHanSansNeo';
-  src: url('/fonts/SpoqaHanSansNeo-Regular.otf') format('opentype');
+  font-family: 'TagNote GriunMyoenHeullim';
+  src: url('/fonts/GriunMyoenHeullim.ttf') format('truetype');
   font-weight: 400;
   font-style: normal;
   font-display: block;
@@ -46,14 +38,17 @@
   --note-paper-edge: #d1d5db;
   --note-paper-line: #ececef;
 
-  --app-font-family: 'TagNote SpoqaHanSansNeo', -apple-system, BlinkMacSystemFont,
+  --app-font-family: 'TagNote GriunMyoenHeullim', -apple-system, BlinkMacSystemFont,
     'SF Pro Text', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
 
   --memo-font-family: var(--app-font-family);
 
-  --spine-font-family: 'TagNote DOSGothic', var(--app-font-family);
+  --spine-font-family: var(--app-font-family);
 
-  --tag-font-family: var(--spine-font-family);
+  --tag-font-family: var(--app-font-family);
+
+  /* rem 기준 — 전체 UI 글자 크기 (기본 16px → 18px) */
+  --app-root-font-size: 18px;
 
   font-family: var(--app-font-family);
   line-height: 1.5;
@@ -66,6 +61,7 @@
 }
 
 html {
+  font-size: var(--app-root-font-size);
   background-color: var(--bg);
   color-scheme: light;
   -webkit-text-size-adjust: 100%;
@@ -750,6 +746,43 @@ body::-webkit-scrollbar,
   height: 1.3rem;
 }
 
+.home-browse-nav-icon-slot {
+  position: relative;
+  width: 1.15rem;
+  height: 1.15rem;
+  display: block;
+  flex-shrink: 0;
+}
+
+.home-browse-nav-icon-slot .home-browse-nav-icon {
+  position: absolute;
+  inset: 0;
+  width: 1.15rem;
+  height: 1.15rem;
+  object-fit: contain;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.home-browse-nav-icon--back {
+  opacity: 0;
+  transform: scale(0.88);
+  pointer-events: none;
+}
+
+.home-browse-nav-icon--back.home-browse-nav-icon--in {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.home-browse-nav-icon--out {
+  opacity: 0;
+  transform: scale(0.88);
+  pointer-events: none;
+}
+
 .btn--icon-addbook:not(:disabled) {
   font-size: 0;
 }
@@ -810,6 +843,15 @@ body:has(.home-main--parent-rail-hero) {
   flex-shrink: 0;
 }
 
+.home-layout:has(.home-main--parent-rail-hero) .home-bottom-menu-bar {
+  flex-shrink: 0;
+  border-top: none;
+}
+
+.home-rail-viewport > .home-bottom-menu-bar {
+  flex-shrink: 0;
+}
+
 .home-page-shell {
   display: contents;
 }
@@ -832,15 +874,6 @@ body:has(.home-main--parent-rail-hero) {
   flex: 1 1 0;
   height: 0;
   min-height: 0;
-}
-
-@media (max-width: 640px) {
-  .home-layout:has(.home-main--parent-rail-hero) {
-    --home-mobile-footer-reserve: calc(
-      3.5rem + env(safe-area-inset-bottom, 0px)
-    );
-    --home-mobile-spine-v-gap: 0.35rem;
-  }
 }
 
 .home-top {
@@ -965,14 +998,14 @@ body:has(.home-main--parent-rail-hero) {
 }
 
 .home-main--tags {
-  padding: 1rem 1rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  padding: 1rem 1rem calc(4.75rem + env(safe-area-inset-bottom, 0px));
   max-width: 720px;
   margin: 0 auto;
   width: 100%;
 }
 
 .home-main--parent-rail-hero.home-main--tags {
-  padding: 0 0 calc(env(safe-area-inset-bottom, 0px));
+  padding: 0;
   max-width: none;
 }
 
@@ -984,7 +1017,7 @@ body:has(.home-main--parent-rail-hero) {
   position: sticky;
   top: 0;
   z-index: 15;
-  padding: calc(2.45rem + env(safe-area-inset-top, 0px)) 1rem 0.75rem;
+  padding: calc(0.65rem + env(safe-area-inset-top, 0px)) 1rem 0.75rem;
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -1000,9 +1033,61 @@ body:has(.home-main--parent-rail-hero) {
   margin: 0 auto;
 }
 
-.home-top-tag-search--icons-only {
-  padding-top: calc(0.85rem + env(safe-area-inset-top, 0px));
-  padding-bottom: 0.5rem;
+.home-header-search-row {
+  margin-bottom: 0.55rem;
+}
+
+.home-header-search-row .home-header-search-slot {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.home-bottom-menu-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  padding: 0.5rem 1rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
+.home-bottom-menu-bar-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+@media (min-width: 641px) {
+  .home-bottom-menu-bar-inner {
+    width: 100vw;
+    max-width: none;
+    margin-left: calc(50% - 50vw);
+    padding-inline: max(1rem, env(safe-area-inset-left, 0px))
+      max(1rem, env(safe-area-inset-right, 0px));
+    box-sizing: border-box;
+  }
+}
+
+.home-bottom-browse-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-shrink: 0;
+}
+
+.home-bottom-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-shrink: 0;
 }
 
 .home-header-actions-row {
@@ -1024,14 +1109,19 @@ body:has(.home-main--parent-rail-hero) {
 
 .home-desktop-browse-nav {
   display: none;
-  align-items: center;
-  gap: 0.55rem;
-  flex-shrink: 0;
 }
 
-@media (min-width: 641px) {
-  .home-desktop-browse-nav {
-    display: flex;
+.home-desktop-quick-actions {
+  display: none;
+}
+
+.home-mobile-quick-actions {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .home-main--tags.home-main--compose-open {
+    padding-top: 0.45rem;
   }
 }
 
@@ -1085,52 +1175,6 @@ body:has(.home-main--parent-rail-hero) {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-}
-
-.home-desktop-quick-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-}
-
-.home-mobile-quick-actions {
-  display: none;
-}
-
-@media (max-width: 640px) {
-  .home-desktop-quick-actions {
-    display: none;
-  }
-
-  .home-mobile-quick-actions {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.35rem;
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 40;
-    padding: 0.5rem 1.25rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
-    background: rgba(255, 255, 255, 0.94);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-top: 1px solid var(--border);
-    box-sizing: border-box;
-  }
-
-  .home-main--tags {
-    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
-  }
-
-  .home-main--parent-rail-hero.home-main--tags {
-    padding-bottom: 0;
-  }
-
-  .home-main--tags.home-main--compose-open {
-    padding-top: 0.45rem;
-  }
 }
 
 .home-inline-compose {
@@ -1407,7 +1451,9 @@ body:has(.home-main--parent-rail-hero) {
   min-height: 0;
   max-height: 100%;
   overflow: hidden;
-  --parent-spine-bottom-gap: 0.4rem;
+  --home-bottom-menu-reserve: calc(
+    3.5rem + env(safe-area-inset-bottom, 0px)
+  );
 }
 
 .home-main--parent-rail-hero .parent-tag-rail-section:not(.search-results-rail-section) {
@@ -1416,7 +1462,7 @@ body:has(.home-main--parent-rail-hero) {
   min-height: 0;
   max-height: 100%;
   align-self: stretch;
-  padding-bottom: var(--parent-spine-bottom-gap);
+  padding-bottom: 0;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -1429,7 +1475,7 @@ body:has(.home-main--parent-rail-hero) {
   min-height: 0;
   max-height: 100%;
   align-self: stretch;
-  padding-bottom: var(--parent-spine-bottom-gap);
+  padding-bottom: 0;
   box-sizing: border-box;
   overflow-x: auto;
   overflow-y: hidden;
@@ -1479,7 +1525,7 @@ body:has(.home-main--parent-rail-hero) {
   flex: none;
   width: max-content;
   min-width: 100%;
-  height: calc(100% - var(--parent-spine-bottom-gap));
+  height: 100%;
   min-height: 0;
   align-items: stretch;
 }
@@ -1501,17 +1547,9 @@ body:has(.home-main--parent-rail-hero) {
 }
 
 @media (max-width: 640px) {
-  .home-main--parent-rail-hero {
-    --parent-spine-bottom-gap: 0;
-  }
-
   .home-main--parent-rail-hero .parent-tag-rail-section,
   .home-main--parent-rail-hero .search-results-rail-section {
     padding-top: 0;
-    padding-bottom: calc(
-      var(--home-mobile-spine-v-gap, 0.35rem) +
-        var(--home-mobile-footer-reserve, 3.5rem)
-    );
   }
 
   .home-main--parent-rail-hero .parent-tag-rail,
@@ -1525,13 +1563,26 @@ body:has(.home-main--parent-rail-hero) {
   }
 
   .parent-tag-child-note-list {
-    padding: 0.5rem 0.5rem 0.25rem;
+    padding: 0;
   }
 
   .parent-tag-child-load-more {
     margin-inline: 0.5rem;
     width: calc(100% - 1rem);
   }
+}
+
+.parent-tag-rail-section--books-view.parent-tag-rail-section--open,
+.parent-tag-rail-section--links-view.parent-tag-rail-section--open {
+  overflow-x: hidden;
+}
+
+.parent-tag-rail-section--books-view.parent-tag-rail-section--open
+  .parent-tag-rail-scroll,
+.parent-tag-rail-section--links-view.parent-tag-rail-section--open
+  .parent-tag-rail-scroll {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 
 .parent-tag-rail-section {
@@ -1665,6 +1716,7 @@ body:has(.home-main--parent-rail-hero) {
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
+  gap: 0;
 }
 
 .parent-tag-spine-slot--open .parent-tag-card {
@@ -1675,6 +1727,22 @@ body:has(.home-main--parent-rail-hero) {
   flex: 1 1 0;
   min-width: 0;
   max-width: 100%;
+  margin-left: 0;
+}
+
+/* 펼친 북스파인 ↔ 태그·메모 시트 — 사이 여백·그림자 제거 */
+.parent-tag-spine-slot--open .parent-tag-card,
+.parent-tag-spine-slot--open .parent-tag-card--selected,
+.parent-tag-spine-slot--open .parent-tag-card--selected.parent-tag-card--expanded,
+.parent-tag-spine-slot--open .parent-tag-card--selected:hover,
+.parent-tag-spine-slot--open .parent-tag-card--selected.parent-tag-card--expanded:hover {
+  transform: none;
+  box-shadow: none;
+  border-right-width: 0;
+}
+
+.parent-tag-spine-slot--open .parent-tag-card--selected + .parent-tag-inline-tracks {
+  border-left: 1px solid #111111;
 }
 
 .parent-tag-spine-group {
@@ -2054,6 +2122,9 @@ body:has(.home-main--parent-rail-hero) {
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
+  padding-bottom: var(--home-bottom-menu-reserve, 0);
+  scroll-padding-bottom: var(--home-bottom-menu-reserve, 0);
+  box-sizing: border-box;
 }
 
 .parent-tag-child-list {
@@ -2101,7 +2172,7 @@ body:has(.home-main--parent-rail-hero) {
 }
 
 .parent-tag-child-note-list {
-  padding: 0.65rem 0.85rem 0.25rem;
+  padding: 0;
   gap: 0.65rem;
   min-width: 0;
   max-width: 100%;
@@ -2209,9 +2280,12 @@ body:has(.home-main--parent-rail-hero) {
   width: clamp(3.25rem, 13vw, 4.85rem);
 }
 
-/* 상위태그(책) 뷰 — 북스파인 너비만 약간 축소 */
+/* 상위태그·출처 뷰 — 북스파인 너비·글자 통일 */
 .home-main--parent-rail-hero
   .parent-tag-rail-section--books-view
+  .parent-tag-card,
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
   .parent-tag-card {
   width: clamp(2.5rem, 9.5vw, 3.65rem);
   padding: 0.85rem 0.32rem;
@@ -2219,12 +2293,18 @@ body:has(.home-main--parent-rail-hero) {
 
 .home-main--parent-rail-hero
   .parent-tag-rail-section--books-view
+  .parent-tag-card--selected:not(.parent-tag-card--expanded),
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
   .parent-tag-card--selected:not(.parent-tag-card--expanded) {
   width: clamp(2.65rem, 10.5vw, 3.85rem);
 }
 
 .home-main--parent-rail-hero
   .parent-tag-rail-section--books-view
+  .parent-tag-card-label,
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
   .parent-tag-card-label {
   font-size: clamp(0.9rem, 3.1vw, 1.15rem);
 }
@@ -2245,6 +2325,16 @@ body:has(.home-main--parent-rail-hero) {
 .home-main--parent-rail-hero .parent-tag-child-empty {
   font-size: clamp(0.98rem, 3.5vw, 1.28rem);
   letter-spacing: 0.1em;
+}
+
+.home-main--parent-rail-hero .parent-tag-inline-tracks {
+  border-bottom: none;
+}
+
+.home-main--parent-rail-hero .tag-view-bar-scroll {
+  padding-bottom: var(--home-bottom-menu-reserve);
+  scroll-padding-bottom: var(--home-bottom-menu-reserve);
+  box-sizing: border-box;
 }
 
 /* 태그·날짜 뷰 — 세로 목록 + 아래 메모 (내부 세로 스크롤) */
@@ -2498,6 +2588,21 @@ button.parent-tag-card {
     transform: translateX(-3px);
   }
 
+  .home-main--parent-rail-hero
+    .parent-tag-spine-slot--open
+    .parent-tag-card--expanded,
+  .home-main--parent-rail-hero
+    .parent-tag-spine-slot--open
+    .parent-tag-card:hover:not(.parent-tag-card--selected) {
+    transform: none;
+  }
+
+  .home-main--parent-rail-hero
+    .parent-tag-spine-slot--open
+    .parent-tag-card:active {
+    transform: none;
+  }
+
   .home-main--parent-rail-hero .parent-tag-card:active {
     transform: translateX(-1px) scale(0.985);
     transition-duration: 0.08s;
@@ -2595,7 +2700,10 @@ button.parent-tag-card {
 
 .parent-tag-card-label {
   display: block;
+  width: max-content;
+  max-width: 100%;
   max-height: 100%;
+  margin-inline: auto;
   overflow: hidden;
   writing-mode: vertical-rl;
   text-orientation: upright;
@@ -3407,7 +3515,7 @@ button.note-board-tag-pill--link:focus-visible {
 .note-board-sheet-table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
   font-size: 0.88rem;
 }
 
@@ -3424,7 +3532,7 @@ button.note-board-tag-pill--link:focus-visible {
 }
 
 .note-board-card--parent-sheet-memo-only .note-board-sheet-memo-cell--solo {
-  border-top: none;
+  border-top: 1px solid #d8dce2;
 }
 
 .note-board-sheet-th {
@@ -3456,19 +3564,34 @@ button.note-board-tag-pill--link:focus-visible {
 .note-board-sheet-tags-cell {
   padding: 0;
   background: #fafafa;
-  border-top: none;
+  width: auto;
+  min-width: 3.25rem;
+  max-width: 36%;
+  vertical-align: middle;
+  text-align: left;
 }
 
 .note-board-sheet-memo-cell {
   padding: 0;
-  border-top: none;
   border-left: none;
+  width: 100%;
+  min-width: 0;
 }
 
 .note-board-sheet-tag-list {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+
+.note-board-sheet-tag-item {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
 }
 
 .note-board-sheet-tag-item + .note-board-sheet-tag-item {
@@ -3477,19 +3600,21 @@ button.note-board-tag-pill--link:focus-visible {
 
 .note-board-sheet-tag {
   display: block;
-  width: 100%;
   box-sizing: border-box;
-  padding: 0.48rem 0.55rem;
-  font-family: var(--tag-font-family);
+  width: 100%;
+  padding: 0.45rem 0.5rem;
+  font-family: var(--spine-font-family);
   font-size: 0.74rem;
   font-weight: 500;
   line-height: 1.35;
+  letter-spacing: 0.02em;
   color: var(--text-strong);
   text-align: left;
+  white-space: normal;
+  word-break: keep-all;
 }
 
 .note-board-sheet-tag--link {
-  margin: 0;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -3515,6 +3640,44 @@ button.note-board-tag-pill--link:focus-visible {
 
 .note-board-sheet-memo--empty {
   color: var(--muted);
+}
+
+.note-board-sheet-memo-source {
+  display: block;
+  margin-top: 0.35rem;
+  font-family: inherit;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: inherit;
+  text-align: right;
+}
+
+.note-board-sheet-memo-source--muted {
+  color: var(--muted);
+}
+
+.note-board-sheet-memo-source--link {
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+  text-align: right;
+  width: 100%;
+}
+
+.note-board-sheet-memo-source--link:hover {
+  text-decoration: underline;
+}
+
+.note-board-sheet-memo-date {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .note-board-sheet-meta-row td {
@@ -3562,8 +3725,57 @@ button.note-board-tag-pill--link:focus-visible {
 }
 
 .parent-tag-child-note-list .note-board-card--parent-sheet {
-  border-radius: 2px;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
   max-width: 100%;
+}
+
+/* 상위태그 시트 — 메모 행 사이 여백·이중 테두리 제거 */
+.parent-tag-child-note-list:has(.note-board-card--parent-sheet) {
+  padding: 0;
+  gap: 0;
+}
+
+.parent-tag-child-note-list--by-source {
+  gap: 0.45rem;
+}
+
+.parent-tag-source-group {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.parent-tag-source-group-head {
+  margin: 0;
+  padding: 0.35rem 0.55rem 0.25rem;
+  text-align: right;
+}
+
+.parent-tag-source-group-label {
+  font-family: var(--spine-font-family);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.parent-tag-source-group-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: #fff;
+}
+
+.parent-tag-child-note-list:has(.note-board-card--parent-sheet) > li + li
+  .note-board-sheet-body-row td,
+.parent-tag-source-group-notes > li + li .note-board-sheet-body-row td {
+  border-top: none;
 }
 
 .parent-tag-book-text-wrap {
@@ -4074,7 +4286,7 @@ button.note-board-tag-pill--link:focus-visible {
   overflow: hidden;
 }
 
-/* 모달 UI는 북스파인 폰트 — 메모 본문·입력만 Spoqa 유지 */
+/* 메모 본문·입력 — 그리운묘은흘림체 */
 .tag-manage-dialog :is(
   .composer-note,
   .memo-note-editor,
