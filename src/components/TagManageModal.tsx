@@ -22,9 +22,13 @@ type Props = {
   tags: TagRow[]
   tagParentLinks?: TagParentLink[]
   userId: string | null
-  onTagCreated: (row: TagRow) => void
   onTagsAssigned: (rows: TagRow[]) => void
   onTagUpdated: (row: TagRow) => void
+  onTagParentSynced?: (
+    tagId: string,
+    parentId: string | null,
+    row: TagRow,
+  ) => void
   onTagsPromoted?: (result: PromoteTagToParentResult) => void
   onTagDeleted: (payload: { tagId: string; deletedNoteIds: string[] }) => void
   onTagError?: (message: string) => void
@@ -47,9 +51,9 @@ export function TagManageModal({
   tags,
   tagParentLinks = [],
   userId,
-  onTagCreated,
   onTagsAssigned,
   onTagUpdated,
+  onTagParentSynced,
   onTagsPromoted,
   onTagDeleted,
   onTagError,
@@ -183,7 +187,7 @@ export function TagManageModal({
                 disabled={!userId}
                 onClick={() => setAddParentOpen(true)}
               >
-                상위태그 추가
+                메인태그 추가
               </button>
             </div>
 
@@ -361,11 +365,11 @@ export function TagManageModal({
       {userId ? (
         <AddParentTagModal
           open={open && addParentOpen}
-          userId={userId}
           allTags={tags}
+          tagParentLinks={tagParentLinks}
           onClose={() => setAddParentOpen(false)}
-          onCreated={(row) => {
-            onTagCreated(row)
+          onPromoted={(row) => {
+            onTagUpdated(row)
             setAddParentOpen(false)
             setSelectedParentId(row.id)
             setAssignParentTag(row)
@@ -391,8 +395,10 @@ export function TagManageModal({
         open={open && editingTag !== null}
         tag={editingTag}
         tags={tags}
+        tagParentLinks={tagParentLinks}
         onClose={() => setEditingTag(null)}
         onTagUpdated={onTagUpdated}
+        onTagParentSynced={onTagParentSynced}
         onTagDeleted={onTagDeleted}
         onTagsPromoted={onTagsPromoted}
         onTagError={onTagError}

@@ -87,6 +87,11 @@ export const MEMO_EMOJI_TOKEN_RE = new RegExp(
   'g',
 )
 
+/** 형광펜 — :m/hi:내용:/m/hi: */
+export const MEMO_HIGHLIGHT_OPEN = ':m/hi:'
+export const MEMO_HIGHLIGHT_CLOSE = ':/m/hi:'
+const MEMO_HIGHLIGHT_PARSE_MAX_DEPTH = 24
+
 export function memoEmojiToken(id: string): string {
   return `:m/${id}:`
 }
@@ -127,26 +132,46 @@ function createMemoEmojiImg(emoji: MemoQuickEmoji): HTMLImageElement {
 }
 
 /** 텍스트 조각 → DOM (바 클릭과 동일한 img 삽입) */
-function appendMemoSegmentsToFragment(
-  frag: DocumentFragment,
-  text: string,
+function appendParsedSegmentsToParent(
+  parent: Node,
+  segments: MemoBodySegment[],
 ): Node | null {
   let last: Node | null = null
-  const segments = parseMemoBody(text)
   for (const seg of segments) {
     if (seg.type === 'text') {
       if (!seg.value) continue
       last = document.createTextNode(seg.value)
-      frag.appendChild(last)
+      parent.appendChild(last)
+      continue
+    }
+    if (seg.type === 'highlight') {
+      const mark = document.createElement('mark')
+      mark.className = 'memo-body-highlight'
+      mark.dataset.memoHighlight = '1'
+      parent.appendChild(mark)
+      const innerLast = appendParsedSegmentsToParent(mark, seg.children)
+      last = innerLast ?? mark
       continue
     }
     const img = createMemoEmojiImg(seg.emoji)
-    frag.appendChild(img)
+    parent.appendChild(img)
     const caret = document.createTextNode(MEMO_EDITOR_ZWSP)
-    frag.appendChild(caret)
+    parent.appendChild(caret)
     last = caret
   }
   return last
+}
+
+function appendMemoSegmentsToFragment(
+  frag: DocumentFragment,
+  text: string,
+): Node | null {
+  return appendParsedSegmentsToParent(frag, parseMemoBody(text))
+}
+
+function textHasMemoInlineMarkup(text: string): boolean {
+  if (text.includes(MEMO_HIGHLIGHT_OPEN)) return true
+  return textHasQuickEmojiMarkup(text)
 }
 
 /** 입력·붙여넣기 텍스트의 유니코드/토큰 → 바와 같은 img */
@@ -155,8 +180,12 @@ export function normalizeQuickEmojisInEditor(root: HTMLElement): boolean {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   let node: Node | null
   while ((node = walker.nextNode())) {
+    const parentEl =
+      node.parentElement?.closest('mark.memo-body-highlight') ?? null
+    if (parentEl) continue
+
     const text = stripEditorZwsp(node.textContent ?? '')
-    if (text && textHasQuickEmojiMarkup(text)) {
+    if (text && textHasMemoInlineMarkup(text)) {
       textNodes.push(node as Text)
     }
   }
@@ -166,7 +195,7 @@ export function normalizeQuickEmojisInEditor(root: HTMLElement): boolean {
   for (const textNode of textNodes) {
     const raw = textNode.textContent ?? ''
     const text = stripEditorZwsp(raw)
-    if (!text || !textHasQuickEmojiMarkup(text)) continue
+    if (!text || !textHasMemoInlineMarkup(text)) continue
 
     const parent = textNode.parentNode
     if (!parent) continue
@@ -195,16 +224,28 @@ function flattenMemoEditorLists(root: HTMLElement): boolean {
 
 /** 에디터 DOM → 저장 문자열 */
 export function serializeMemoEditor(root: HTMLElement): string {
-  normalizeQuickEmojisInEditor(root)
-  if (flattenMemoEditorLists(root)) {
-    const sel = window.getSelection()
-    if (sel && sel.rangeCount > 0 && root.contains(sel.anchorNode)) {
-      setSelectionAtSerializedOffset(root, memoBodyFromEditor(root).length)
+  try {
+    normalizeQuickEmojisInEditor(root)
+    if (flattenMemoEditorLists(root)) {
+      const sel = window.getSelection()
+      if (sel && sel.rangeCount > 0 && root.contains(sel.anchorNode)) {
+        setSelectionAtSerializedOffset(root, memoBodyFromEditor(root).length)
+      }
     }
+    return normalizeLegacyUnicodeInString(
+      normalizeMemoBodyStorage(memoBodyFromEditor(root)),
+    )
+  } catch {
+    return normalizeLegacyUnicodeInString(
+      normalizeMemoBodyStorage(memoBodyFromEditor(root)),
+    )
   }
-  return normalizeLegacyUnicodeInString(
-    normalizeMemoBodyStorage(memoBodyFromEditor(root)),
-  )
+}
+
+/** 저장 직전 — contenteditable에서 본문 읽기 */
+export function readMemoEditorBody(root: HTMLElement | null): string {
+  if (!root) return ''
+  return serializeMemoEditor(root)
 }
 
 export function memoEmojiById(id: string): MemoQuickEmoji | undefined {
@@ -215,11 +256,10 @@ export function memoEmojiById(id: string): MemoQuickEmoji | undefined {
 export type MemoBodySegment =
   | { type: 'text'; value: string }
   | { type: 'emoji'; id: string; emoji: MemoQuickEmoji }
+  | { type: 'highlight'; children: MemoBodySegment[] }
 
-/** 본문을 텍스트·고정 아이콘 구간으로 나눔 (토큰 + 예전 유니코드) */
-export function parseMemoBody(body: string): MemoBodySegment[] {
-  const normalized = normalizeMemoBodyStorage(body)
-  if (!normalized) {
+function parseMemoBodyEmojiOnly(text: string): MemoBodySegment[] {
+  if (!text) {
     return []
   }
 
@@ -228,7 +268,7 @@ export function parseMemoBody(body: string): MemoBodySegment[] {
 
   MEMO_EMOJI_TOKEN_RE.lastIndex = 0
   let tokenMatch: RegExpExecArray | null
-  while ((tokenMatch = MEMO_EMOJI_TOKEN_RE.exec(normalized)) !== null) {
+  while ((tokenMatch = MEMO_EMOJI_TOKEN_RE.exec(text)) !== null) {
     marks.push({
       index: tokenMatch.index,
       length: tokenMatch[0].length,
@@ -239,8 +279,8 @@ export function parseMemoBody(body: string): MemoBodySegment[] {
   for (const emoji of MEMO_QUICK_EMOJIS) {
     if (!emoji.legacyUnicode) continue
     let from = 0
-    while (from < normalized.length) {
-      const idx = normalized.indexOf(emoji.legacyUnicode, from)
+    while (from < text.length) {
+      const idx = text.indexOf(emoji.legacyUnicode, from)
       if (idx === -1) break
       marks.push({
         index: idx,
@@ -265,7 +305,7 @@ export function parseMemoBody(body: string): MemoBodySegment[] {
   let pos = 0
   for (const mark of picked) {
     if (mark.index > pos) {
-      segments.push({ type: 'text', value: normalized.slice(pos, mark.index) })
+      segments.push({ type: 'text', value: text.slice(pos, mark.index) })
     }
     const emoji = memoEmojiById(mark.id)
     if (emoji) {
@@ -273,17 +313,64 @@ export function parseMemoBody(body: string): MemoBodySegment[] {
     } else {
       segments.push({
         type: 'text',
-        value: normalized.slice(mark.index, mark.index + mark.length),
+        value: text.slice(mark.index, mark.index + mark.length),
       })
     }
     pos = mark.index + mark.length
   }
 
-  if (pos < normalized.length) {
-    segments.push({ type: 'text', value: normalized.slice(pos) })
+  if (pos < text.length) {
+    segments.push({ type: 'text', value: text.slice(pos) })
   }
 
   return segments
+}
+
+function parseMemoBodySegments(text: string, depth = 0): MemoBodySegment[] {
+  if (!text) return []
+  if (depth > MEMO_HIGHLIGHT_PARSE_MAX_DEPTH) {
+    return parseMemoBodyEmojiOnly(text)
+  }
+
+  const segments: MemoBodySegment[] = []
+  let pos = 0
+
+  while (pos < text.length) {
+    const openIdx = text.indexOf(MEMO_HIGHLIGHT_OPEN, pos)
+    if (openIdx === -1) {
+      segments.push(...parseMemoBodyEmojiOnly(text.slice(pos)))
+      break
+    }
+
+    if (openIdx > pos) {
+      segments.push(...parseMemoBodyEmojiOnly(text.slice(pos, openIdx)))
+    }
+
+    const afterOpen = openIdx + MEMO_HIGHLIGHT_OPEN.length
+    const closeIdx = text.indexOf(MEMO_HIGHLIGHT_CLOSE, afterOpen)
+    if (closeIdx === -1) {
+      segments.push(...parseMemoBodyEmojiOnly(text.slice(openIdx)))
+      break
+    }
+
+    const inner = text.slice(afterOpen, closeIdx)
+    segments.push({
+      type: 'highlight',
+      children: parseMemoBodySegments(inner, depth + 1),
+    })
+    pos = closeIdx + MEMO_HIGHLIGHT_CLOSE.length
+  }
+
+  return segments
+}
+
+/** 본문을 텍스트·형광·고정 아이콘 구간으로 나눔 */
+export function parseMemoBody(body: string): MemoBodySegment[] {
+  const normalized = normalizeMemoBodyStorage(body)
+  if (!normalized) {
+    return []
+  }
+  return parseMemoBodySegments(normalized)
 }
 
 export function escapeHtml(text: string): string {
@@ -294,16 +381,25 @@ export function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
-export function memoBodyToEditorHtml(body: string): string {
-  return parseMemoBody(body)
+function segmentsToEditorHtml(segments: MemoBodySegment[]): string {
+  return segments
     .map((seg) => {
       if (seg.type === 'text') {
         return escapeHtml(seg.value).replace(/\n/g, '<br>')
+      }
+      if (seg.type === 'highlight') {
+        return `<mark class="memo-body-highlight" data-memo-highlight="1">${segmentsToEditorHtml(
+          seg.children,
+        )}</mark>`
       }
       const { emoji } = seg
       return `<img class="memo-body-inline-icon" data-memo-emoji="${emoji.id}" src="${emoji.iconSrc}" alt="${emoji.label}" draggable="false" contenteditable="false" />`
     })
     .join('')
+}
+
+export function memoBodyToEditorHtml(body: string): string {
+  return segmentsToEditorHtml(parseMemoBody(body))
 }
 
 function stripEditorZwsp(text: string): string {
@@ -312,6 +408,7 @@ function stripEditorZwsp(text: string): string {
 
 function blockHasMeaningfulContent(el: HTMLElement): boolean {
   if (el.querySelector('img[data-memo-emoji]')) return true
+  if (el.querySelector('mark.memo-body-highlight')) return true
   return stripEditorZwsp(el.textContent ?? '').length > 0
 }
 
@@ -343,6 +440,17 @@ export function memoBodyFromEditor(root: HTMLElement): string {
     }
     if (el.tagName === 'IMG' && el.dataset.memoEmoji) {
       out += memoEmojiToken(el.dataset.memoEmoji)
+      return
+    }
+    if (
+      el.tagName === 'MARK' &&
+      el.classList.contains('memo-body-highlight')
+    ) {
+      out += MEMO_HIGHLIGHT_OPEN
+      for (const child of el.childNodes) {
+        walk(child)
+      }
+      out += MEMO_HIGHLIGHT_CLOSE
       return
     }
 
@@ -485,6 +593,27 @@ export function setSelectionAtSerializedOffset(
         return
       }
       pos += len
+      return
+    }
+
+    if (
+      el.tagName === 'MARK' &&
+      el.classList.contains('memo-body-highlight')
+    ) {
+      if (pos + MEMO_HIGHLIGHT_OPEN.length >= target) {
+        markFound(el, 0)
+        return
+      }
+      pos += MEMO_HIGHLIGHT_OPEN.length
+      for (const child of el.childNodes) {
+        walk(child)
+        if (foundNode) return
+      }
+      if (pos + MEMO_HIGHLIGHT_CLOSE.length >= target) {
+        markFound(el, el.childNodes.length)
+        return
+      }
+      pos += MEMO_HIGHLIGHT_CLOSE.length
       return
     }
 
@@ -675,6 +804,92 @@ export function insertMemoEmojiInEditor(root: HTMLElement, id: string): boolean 
   sel.removeAllRanges()
   sel.addRange(range)
   return true
+}
+
+function findHighlightMark(root: HTMLElement, node: Node): HTMLElement | null {
+  let el: HTMLElement | null =
+    node.nodeType === Node.ELEMENT_NODE
+      ? (node as HTMLElement)
+      : node.parentElement
+  while (el && el !== root) {
+    if (
+      el.tagName === 'MARK' &&
+      el.classList.contains('memo-body-highlight')
+    ) {
+      return el
+    }
+    el = el.parentElement
+  }
+  return null
+}
+
+function unwrapHighlightMark(mark: HTMLElement): void {
+  const parent = mark.parentNode
+  if (!parent) return
+  while (mark.firstChild) {
+    parent.insertBefore(mark.firstChild, mark)
+  }
+  parent.removeChild(mark)
+}
+
+function rangeSelectsEntireHighlight(range: Range, mark: HTMLElement): boolean {
+  const markRange = document.createRange()
+  markRange.selectNodeContents(mark)
+  return (
+    range.compareBoundaryPoints(Range.START_TO_START, markRange) === 0 &&
+    range.compareBoundaryPoints(Range.END_TO_END, markRange) === 0
+  )
+}
+
+/** 선택 영역 형광펜 — 다시 누르면(전체 선택 시) 제거 */
+export function toggleMemoHighlightInEditor(root: HTMLElement): boolean {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return false
+  const range = sel.getRangeAt(0)
+  if (!isRangeInsideMemoEditor(root, range)) return false
+  if (range.collapsed) return false
+
+  root.focus()
+
+  const startMark = findHighlightMark(root, range.startContainer)
+  const endMark = findHighlightMark(root, range.endContainer)
+  if (
+    startMark &&
+    startMark === endMark &&
+    rangeSelectsEntireHighlight(range, startMark)
+  ) {
+    unwrapHighlightMark(startMark)
+    sel.removeAllRanges()
+    return true
+  }
+
+  const mark = document.createElement('mark')
+  mark.className = 'memo-body-highlight'
+  mark.dataset.memoHighlight = '1'
+
+  try {
+    const extracted = range.extractContents()
+    range.insertNode(mark)
+    mark.appendChild(extracted)
+    const caret = document.createRange()
+    caret.setStartAfter(mark)
+    caret.collapse(true)
+    sel.removeAllRanges()
+    sel.addRange(caret)
+    return true
+  } catch {
+    try {
+      range.surroundContents(mark)
+      const caret = document.createRange()
+      caret.setStartAfter(mark)
+      caret.collapse(true)
+      sel.removeAllRanges()
+      sel.addRange(caret)
+      return true
+    } catch {
+      return false
+    }
+  }
 }
 
 /** 저장된 본문 정리 — 줄바꿈은 유지 */

@@ -16,7 +16,9 @@ import {
   displayTagName,
   getParentTagCandidates,
   normalizeTagInput,
+  resolveTagEditParentId,
   tagHasChildren,
+  type TagParentLink,
 } from '../lib/tagUtils'
 
 type Props = {
@@ -24,7 +26,13 @@ type Props = {
   onClose: () => void
   tag: TagRow | null
   tags: TagRow[]
+  tagParentLinks?: TagParentLink[]
   onTagUpdated: (row: TagRow) => void
+  onTagParentSynced?: (
+    tagId: string,
+    parentId: string | null,
+    row: TagRow,
+  ) => void
   onTagDeleted: (payload: { tagId: string; deletedNoteIds: string[] }) => void
   /** 상위태그 승격 후 하위로 편입된 태그 */
   onTagsPromoted?: (result: PromoteTagToParentResult) => void
@@ -39,7 +47,9 @@ export function EditTagModal({
   onClose,
   tag,
   tags,
+  tagParentLinks = [],
   onTagUpdated,
+  onTagParentSynced,
   onTagDeleted,
   onTagsPromoted,
   onTagError,
@@ -50,6 +60,7 @@ export function EditTagModal({
   const parentFieldId = useId()
   const [name, setName] = useState('')
   const [parentId, setParentId] = useState<string>('')
+  const [baselineParentId, setBaselineParentId] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [promoteConfirmOpen, setPromoteConfirmOpen] = useState(false)
@@ -58,19 +69,21 @@ export function EditTagModal({
   useEffect(() => {
     if (!open || !tag) return
     startTransition(() => {
+      const resolvedParent = resolveTagEditParentId(tag, tagParentLinks)
       setName(tag.name)
-      setParentId(tag.parent_id ?? '')
+      setParentId(resolvedParent)
+      setBaselineParentId(resolvedParent)
       setError(null)
       setDeleteConfirmOpen(false)
       setPromoteConfirmOpen(false)
       setSaving(false)
     })
-  }, [open, tag])
+  }, [open, tag, tagParentLinks])
 
   const parentCandidates = useMemo(() => {
     if (!tag) return []
-    return getParentTagCandidates(tag, tags)
-  }, [tag, tags])
+    return getParentTagCandidates(tag, tags, tagParentLinks)
+  }, [tag, tags, tagParentLinks])
 
   const parentSelectOptions = useMemo(
     () =>
@@ -88,7 +101,7 @@ export function EditTagModal({
   const canPromote = canPromoteTagToParent(tag, tags)
 
   const nameChanged = normalizeTagInput(name) !== normalizeTagInput(tag.name)
-  const parentChanged = (parentId || null) !== (tag.parent_id ?? null)
+  const parentChanged = (parentId || null) !== (baselineParentId || null)
   const canSave =
     normalizeTagInput(name).length > 0 && (nameChanged || parentChanged)
 
@@ -187,11 +200,16 @@ export function EditTagModal({
                 const saveName = name
                 const nextParentId = parentId || null
                 const label = normalizeTagInput(saveName)
-                onTagUpdated({
+                const optimisticRow = {
                   ...tag,
                   name: label,
                   parent_id: nextParentId,
-                })
+                }
+                if (parentChanged) {
+                  onTagParentSynced?.(tagId, nextParentId, optimisticRow)
+                } else {
+                  onTagUpdated(optimisticRow)
+                }
                 onClose()
                 void (async () => {
                   try {
@@ -201,8 +219,10 @@ export function EditTagModal({
                     }
                     if (parentChanged) {
                       row = await updateTagParent(tagId, nextParentId)
+                      onTagParentSynced?.(tagId, nextParentId, row)
+                    } else if (nameChanged) {
+                      onTagUpdated(row)
                     }
-                    onTagUpdated(row)
                   } catch (e) {
                     console.error('[태그노트] EditTagModal 저장 실패', {
                       tagId,

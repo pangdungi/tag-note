@@ -2,34 +2,32 @@ import { useId, useLayoutEffect, useState } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
 import { SourceComposer, type SelectedSource } from './SourceComposer'
 import { ConfirmModal } from './ConfirmModal'
-import { MemoParentTagSelect } from './MemoParentTagSelect'
 import {
   deleteNote,
   updateNoteWithTags,
+  buildTagCatalogMap,
+  resolveNoteTagChips,
+  resolveNoteSourceTitle,
   type NoteWithTags,
   type SourceRow,
   type TagRow,
 } from '../lib/notesApi'
-import {
-  inferParentTagIdFromTagIds,
-  type TagParentLink,
-} from '../lib/tagUtils'
 import { MemoNoteEditor } from './MemoNoteEditor'
+import { readMemoEditorBody } from '../lib/memoQuickEmojis'
 
-function noteToSelectedTags(note: NoteWithTags): SelectedTag[] {
-  return (
-    note.note_tags
-      .map((nt) => nt.tags)
-      .filter(Boolean) as { id: string; name: string; color_index: number }[]
-  ).map((t) => ({
+function noteToSelectedTags(note: NoteWithTags, allTags: TagRow[]): SelectedTag[] {
+  return resolveNoteTagChips(note, buildTagCatalogMap(allTags)).map((t) => ({
     id: t.id,
     name: t.name,
     color_index: t.color_index,
   }))
 }
 
-function noteToSelectedSource(note: NoteWithTags): SelectedSource | null {
-  const title = (note.sources?.title ?? note.source ?? '').trim()
+function noteToSelectedSource(
+  note: NoteWithTags,
+  allSources: SourceRow[],
+): SelectedSource | null {
+  const title = resolveNoteSourceTitle(note, allSources).trim()
   if (!title) return null
   return {
     id: note.source_id ?? note.sources?.id,
@@ -69,10 +67,7 @@ type Props = {
   open: boolean
   onClose: () => void
   note: NoteWithTags | null
-  /** 상위태그 spine 클릭 맥락 — 상위 선택 UI 숨김 */
-  lockedParentTagId?: string | null
   allTags: TagRow[]
-  tagParentLinks?: TagParentLink[]
   allSources: SourceRow[]
   userId: string
   onNoteUpdated: (note: NoteWithTags) => void | Promise<void>
@@ -86,9 +81,7 @@ export function EditNoteModal({
   open,
   onClose,
   note,
-  lockedParentTagId = null,
   allTags,
-  tagParentLinks,
   allSources,
   userId,
   onNoteUpdated,
@@ -99,35 +92,27 @@ export function EditNoteModal({
 }: Props) {
   const titleId = useId()
   const [tags, setTags] = useState<SelectedTag[]>([])
-  const [parentTagId, setParentTagId] = useState('')
   const [body, setBody] = useState('')
   const [selectedSource, setSelectedSource] = useState<SelectedSource | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
 
-  const showParentPicker = !lockedParentTagId
-
   useLayoutEffect(() => {
     if (!open || !note) {
       return
     }
-    const noteTags = noteToSelectedTags(note)
-    const tagIds = noteTags.map((t) => t.id).filter(Boolean) as string[]
-    setTags(noteTags)
-    setParentTagId(
-      inferParentTagIdFromTagIds(tagIds, allTags, tagParentLinks),
-    )
+    setTags(noteToSelectedTags(note, allTags))
     setBody(note.body ?? '')
-    setSelectedSource(noteToSelectedSource(note))
+    setSelectedSource(noteToSelectedSource(note, allSources))
     setError(null)
     setDeleteConfirmOpen(false)
-  }, [open, note?.id, note?.body, allTags, tagParentLinks])
+  }, [open, note?.id, note?.body, allTags, allSources])
 
   if (!open || !note) return null
 
   return (
     <>
-      <div className="tag-manage-overlay" role="presentation">
+      <div className="tag-manage-overlay tag-manage-overlay--edit-note" role="presentation">
       <div className="tag-manage-backdrop" aria-hidden="true" />
       <div
         className="tag-manage-dialog tag-manage-dialog--edit-note"
@@ -148,16 +133,9 @@ export function EditNoteModal({
             ×
           </button>
         </div>
-        <div className="edit-note-modal-body">
+        <div className="edit-note-modal-scroll">
+          <div className="edit-note-modal-body">
           <div className="composer-stack">
-            {showParentPicker ? (
-              <MemoParentTagSelect
-                allTags={allTags}
-                tagParentLinks={tagParentLinks}
-                value={parentTagId}
-                onChange={setParentTagId}
-              />
-            ) : null}
             <TagComposer allTags={allTags} selected={tags} onChange={setTags} />
             <div className="composer-field">
               <label className="composer-label" htmlFor="edit-note-body">
@@ -176,20 +154,21 @@ export function EditNoteModal({
                   setSelectedSource(t ? { title: t } : null)
                 }}
                 placeholder="내용을 입력하세요"
-                rows={6}
+                rows={5}
                 scrollClamp
               />
             </div>
           </div>
           {error ? <p className="composer-error">{error}</p> : null}
-        </div>
-        <div className="edit-note-modal-source">
-          <SourceComposer
-            allSources={allSources}
-            selected={selectedSource}
-            onChange={setSelectedSource}
-            suggestPlacement="up"
-          />
+          </div>
+          <div className="edit-note-modal-source">
+            <SourceComposer
+              allSources={allSources}
+              selected={selectedSource}
+              onChange={setSelectedSource}
+              suggestPlacement="up"
+            />
+          </div>
         </div>
         <div className="edit-note-modal-actions">
           <button
@@ -206,8 +185,11 @@ export function EditNoteModal({
             disabled={tags.length === 0}
             onClick={() => {
                 setError(null)
+                const editorEl = document.getElementById(
+                  'edit-note-body',
+                ) as HTMLDivElement | null
+                const saveBody = readMemoEditorBody(editorEl) || body
                 const noteId = note.id
-                const saveBody = body
                 const saveTags = tags.map((t) => t.name)
                 const saveSource = selectedSource?.title ?? ''
                 const preview = buildLocalPreviewNote(

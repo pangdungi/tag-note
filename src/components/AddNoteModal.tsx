@@ -14,6 +14,7 @@ import {
   type TagParentLink,
 } from '../lib/tagUtils'
 import { MemoNoteEditor } from './MemoNoteEditor'
+import { readMemoEditorBody } from '../lib/memoQuickEmojis'
 
 type SavedOptions = {
   /** 서버 저장 성공 후 임시(로컬) 메모 id를 교체할 때 */
@@ -197,7 +198,7 @@ export function AddNoteModal({
   const modalTitle = lockedParentName || '메모 추가'
 
   return (
-    <div className="tag-manage-overlay" role="presentation">
+    <div className="tag-manage-overlay tag-manage-overlay--edit-note" role="presentation">
       <div className="tag-manage-backdrop" aria-hidden="true" />
       <div
         className="tag-manage-dialog tag-manage-dialog--edit-note"
@@ -218,7 +219,8 @@ export function AddNoteModal({
             ×
           </button>
         </div>
-        <div className="edit-note-modal-body">
+        <div className="edit-note-modal-scroll">
+          <div className="edit-note-modal-body">
           <div className="composer-stack">
             {showParentPicker ? (
               <MemoParentTagSelect
@@ -261,7 +263,7 @@ export function AddNoteModal({
                   setSelectedSource(t ? { title: t } : null)
                 }}
                 placeholder="내용을 입력하세요"
-                rows={6}
+                rows={5}
                 scrollClamp
               />
               {fieldHint === 'body' ? (
@@ -272,14 +274,15 @@ export function AddNoteModal({
             </div>
           </div>
           {error ? <p className="composer-error">{error}</p> : null}
-        </div>
-        <div className="edit-note-modal-source">
-          <SourceComposer
-            allSources={allSources}
-            selected={selectedSource}
-            onChange={setSelectedSource}
-            suggestPlacement="up"
-          />
+          </div>
+          <div className="edit-note-modal-source">
+            <SourceComposer
+              allSources={allSources}
+              selected={selectedSource}
+              onChange={setSelectedSource}
+              suggestPlacement="up"
+            />
+          </div>
         </div>
         <div className="edit-note-modal-actions edit-note-modal-actions--add-only">
           <button
@@ -289,6 +292,10 @@ export function AddNoteModal({
             }`}
             onClick={() => {
                 setError(null)
+                const editorEl = document.getElementById(
+                  bodyId,
+                ) as HTMLDivElement | null
+                const saveBody = readMemoEditorBody(editorEl) || body
                 const saveTags = resolveSaveTagNames(
                   tags,
                   lockedParentTagId,
@@ -298,12 +305,11 @@ export function AddNoteModal({
                   setFieldHint('tags')
                   return
                 }
-                if (!body.trim()) {
+                if (!saveBody.trim()) {
                   setFieldHint('body')
                   return
                 }
                 setFieldHint(null)
-                const saveBody = body
                 const saveSource = selectedSource?.title ?? ''
                 const tempId = crypto.randomUUID()
                 const previewTags: SelectedTag[] = saveTags.map((name) => {

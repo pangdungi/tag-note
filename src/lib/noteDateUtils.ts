@@ -33,7 +33,20 @@ export type NotesByDateGroup = {
   notes: NoteWithTags[]
 }
 
-/** 최신 날짜부터 묶음 */
+export function compareNotesOldestFirst(
+  a: { created_at: string },
+  b: { created_at: string },
+): number {
+  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+}
+
+export function sortNotesOldestFirst<T extends { created_at: string }>(
+  rows: T[],
+): T[] {
+  return [...rows].sort(compareNotesOldestFirst)
+}
+
+/** 날짜별 묶음 — 오래된 날짜·메모가 위, 최신이 아래 */
 export function groupNotesByDate(notes: NoteWithTags[]): NotesByDateGroup[] {
   const map = new Map<string, NoteWithTags[]>()
   for (const note of notes) {
@@ -47,10 +60,7 @@ export function groupNotesByDate(notes: NoteWithTags[]): NotesByDateGroup[] {
     .map(([dateKey, dayNotes]) => ({
       dateKey,
       label: formatNoteDateLabel(dateKey),
-      notes: dayNotes.sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      ),
+      notes: sortNotesOldestFirst(dayNotes),
     }))
-    .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
+    .sort((a, b) => a.dateKey.localeCompare(b.dateKey))
 }

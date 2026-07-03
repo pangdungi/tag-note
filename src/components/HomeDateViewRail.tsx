@@ -1,10 +1,12 @@
 import type { ComponentType, RefObject } from 'react'
-import type { NoteWithTags } from '../lib/notesApi'
+import type { NoteWithTags, SourceRow, TagRow } from '../lib/notesApi'
 import type { NotesByDateGroup } from '../lib/noteDateUtils'
 
 type InlineNotesPanelProps = {
   tagLabel: string
   tagId: string
+  tagCatalog: Map<string, TagRow>
+  sourceCatalog: Map<string, SourceRow>
   notes: NoteWithTags[]
   loading: boolean
   onView: (note: NoteWithTags, contextTagId?: string | null) => void
@@ -14,6 +16,8 @@ type InlineNotesPanelProps = {
 type Props = {
   groups: NotesByDateGroup[]
   selectedDateKey: string | null
+  tagCatalog: Map<string, TagRow>
+  sourceCatalog: Map<string, SourceRow>
   scrollRef: RefObject<HTMLDivElement | null>
   openTracksRef: RefObject<HTMLDivElement | null>
   slotRef: (dateKey: string, el: HTMLButtonElement | null) => void
@@ -26,6 +30,8 @@ type Props = {
 export function HomeDateViewRail({
   groups,
   selectedDateKey,
+  tagCatalog,
+  sourceCatalog,
   scrollRef,
   openTracksRef,
   slotRef,
@@ -77,6 +83,8 @@ export function HomeDateViewRail({
                       <InlineNotesPanel
                         tagLabel={group.label}
                         tagId={group.dateKey}
+                        tagCatalog={tagCatalog}
+                        sourceCatalog={sourceCatalog}
                         notes={group.notes}
                         loading={false}
                         onView={onViewNote}

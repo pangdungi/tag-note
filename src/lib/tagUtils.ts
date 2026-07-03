@@ -229,15 +229,15 @@ export function getParentTags(
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
-/** 책(상위태그) 레일에 올릴 상위 태그 — 하위가 있거나 is_parent로 지정된 태그 */
+/** 책(폴더) 레일 — is_parent로 지정된 태그만 */
 export function isBooksRailParentTag(
   tag: TagHierarchyRow,
-  tags: TagHierarchyRow[],
-  links?: TagParentLink[],
+  _tags?: TagHierarchyRow[],
+  _links?: TagParentLink[],
 ): boolean {
-  if (tag.parent_id) return false
-  if (isTagLinkedAsChild(tag.id, tags, links)) return false
-  return tagHasChildren(tag.id, tags, links) || Boolean(tag.is_parent)
+  void _tags
+  void _links
+  return Boolean(tag.is_parent)
 }
 
 /** 태그 뷰 레일 — 「태그 없음」 가상 항목 id */
@@ -265,17 +265,13 @@ export function getIndependentTags(
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
-/** 태그 뷰 레일 — 지정된 하위태그·하위가 있는 상위태그는 제외, 솔로 상위태그는 포함 */
+/** 태그 뷰 레일 — 폴더(is_parent) 태그만 제외 */
 export function getTagsForTagViewRail(
   tags: TagHierarchyRow[],
   links?: TagParentLink[],
 ): TagHierarchyRow[] {
   return tags
-    .filter((t) => {
-      if (isTagLinkedAsChild(t.id, tags, links)) return false
-      if (tagHasChildren(t.id, tags, links)) return false
-      return true
-    })
+    .filter((t) => !isBooksRailParentTag(t, tags, links))
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
@@ -315,7 +311,7 @@ export function filterNotesForParentTagTree<
     )
     .sort(
       (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     )
 }
 
@@ -343,7 +339,7 @@ export function resolveBooksTagFilterTagIds(
   return [selectedTagId]
 }
 
-/** 선택 태그에 맞는 메모 필터 id (상위·하위·책 뷰 맥락 포함) */
+/** 선택 태그에 맞는 메모 필터 id */
 export function resolveSelectedTagFilterIds(
   selectedTagId: string,
   nav: HomeBrowseNavMode,
@@ -361,19 +357,6 @@ export function resolveSelectedTagFilterIds(
       tags,
       links,
     )
-  }
-
-  const tag = tags.find((t) => t.id === selectedTagId)
-  if (
-    tag &&
-    isBooksRailParentTag(tag, tags, links) &&
-    tagHasChildren(selectedTagId, tags, links)
-  ) {
-    return resolveTagFilterIds(selectedTagId, tags, links)
-  }
-
-  if (tagHasChildren(selectedTagId, tags, links)) {
-    return resolveTagFilterIds(selectedTagId, tags, links)
   }
 
   return [selectedTagId]
@@ -412,14 +395,14 @@ export function filterNotesForAllTagIds<
       )
       .sort(
         (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
       )
   }
   return notes
     .filter((n) => noteHasAllTagIds(n, ids))
     .sort(
       (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     )
 }
 
@@ -444,7 +427,7 @@ export function filterNotesForAnyTagIds<
     )
     .sort(
       (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     )
 }
 
@@ -486,7 +469,7 @@ export function filterNotesForParentOnlyUnderParent<
     })
     .sort(
       (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     )
 }
 
@@ -515,21 +498,12 @@ export function isNoteParentOnlyUnderParent<
 export function isParentTagRailActive(
   parentTagId: string,
   selectedTagId: string | null,
-  tags: TagHierarchyRow[],
-  links?: TagParentLink[],
+  _tags: TagHierarchyRow[],
+  _links?: TagParentLink[],
 ): boolean {
-  if (!selectedTagId) return false
-  if (parentTagId === selectedTagId) return true
-  const selected = tags.find((t) => t.id === selectedTagId)
-  if (selected?.parent_id === parentTagId) return true
-  if (
-    links?.some(
-      (l) => l.tag_id === selectedTagId && l.parent_tag_id === parentTagId,
-    )
-  ) {
-    return true
-  }
-  return false
+  void _tags
+  void _links
+  return parentTagId === selectedTagId
 }
 
 /** 특정 상위 spine 아래에 붙은 하위 태그인지 (parent_id 또는 tag_parent_links) */
@@ -652,7 +626,6 @@ export function resolveAddNoteComposeState(
   homeBrowseNav: HomeBrowseNavMode,
   selectedTagId: string | null,
   booksRailExpandedParentId: string | null,
-  booksMemoComposeTarget: BooksMemoComposeTarget | null,
   tags: TagHierarchyRow[],
   links?: TagParentLink[],
 ): AddNoteComposeState {
@@ -670,23 +643,7 @@ export function resolveAddNoteComposeState(
   }
 
   if (homeBrowseNav === 'books' && booksRailExpandedParentId) {
-    const parentId = booksRailExpandedParentId
-    if (
-      booksMemoComposeTarget === 'child' &&
-      selectedTagId &&
-      isTagChildOfParent(selectedTagId, parentId, tags, links)
-    ) {
-      const child = tags.find((t) => t.id === selectedTagId)
-      if (!child) return empty
-      const chip = tagToAddNoteInitialChip(child)
-      if (!chip) return empty
-      return {
-        initialTags: [chip],
-        lockedParentTagId: null,
-        childTagCompose: true,
-      }
-    }
-    const locked = asLockedParent(parentId)
+    const locked = asLockedParent(booksRailExpandedParentId)
     if (!locked) return empty
     return {
       initialTags: [],
@@ -722,13 +679,6 @@ export function resolveAddNoteComposeState(
     }
     const chip = tagToAddNoteInitialChip(selected)
     if (!chip) return empty
-    if (isTagAssignedUnderParent(selectedTagId, tags, links)) {
-      return {
-        initialTags: [chip],
-        lockedParentTagId: null,
-        childTagCompose: true,
-      }
-    }
     return {
       initialTags: [chip],
       lockedParentTagId: null,
@@ -820,6 +770,16 @@ export function inferParentTagIdFromTagIds(
   }
   if (parents.size === 1) return [...parents][0]
   return ''
+}
+
+/** 태그 수정 UI — 현재 지정된 상위태그 (parent_id 우선, 없으면 link) */
+export function resolveTagEditParentId(
+  tag: TagHierarchyRow,
+  links?: TagParentLink[],
+): string {
+  if (tag.parent_id) return tag.parent_id
+  const link = links?.find((l) => l.tag_id === tag.id)
+  return link?.parent_tag_id ?? ''
 }
 
 /** 상위태그 아래로 편입할 태그 id (상위·다른 상위태그 제외) */
@@ -966,7 +926,17 @@ export function tagRailIndexHasTags(
   tags: readonly { name: string }[],
   key: TagRailIndexKey,
 ): boolean {
-  return tags.some((tag) => tagRailIndexKey(tag.name) === key)
+  return railIndexHasItems(tags, key)
+}
+
+/** 태그·상위태그·출처 등 레일 항목 — name 또는 title 첫 글자 기준 */
+export function railIndexHasItems(
+  items: readonly { name?: string; title?: string }[],
+  key: TagRailIndexKey,
+): boolean {
+  return items.some(
+    (item) => tagRailIndexKey(item.name ?? item.title ?? '') === key,
+  )
 }
 
 /** 태그 목록에 실제로 존재하는 인덱스 키 (0-9 → ㄱ→ㅎ → A→Z 순) */
@@ -984,5 +954,16 @@ export function firstTagIdForRailIndexKey(
   tags: readonly { id: string; name: string }[],
   key: TagRailIndexKey,
 ): string | null {
-  return tags.find((tag) => tagRailIndexKey(tag.name) === key)?.id ?? null
+  return firstRailItemIdForIndexKey(tags, key)
+}
+
+export function firstRailItemIdForIndexKey(
+  items: readonly { id: string; name?: string; title?: string }[],
+  key: TagRailIndexKey,
+): string | null {
+  return (
+    items.find(
+      (item) => tagRailIndexKey(item.name ?? item.title ?? '') === key,
+    )?.id ?? null
+  )
 }

@@ -6,6 +6,7 @@ import {
   useRef,
   type ClipboardEvent,
   type FocusEvent,
+  type KeyboardEvent,
 } from 'react'
 import {
   applyStructuredNotePaste,
@@ -24,6 +25,7 @@ import {
   serializeMemoEditor,
   serializedLengthOfMemoPrefix,
   setSelectionAtSerializedOffset,
+  toggleMemoHighlightInEditor,
 } from '../lib/memoQuickEmojis'
 import { MemoEmojiBar } from './MemoEmojiBar'
 
@@ -43,6 +45,18 @@ type Props = {
   scrollClamp?: boolean
 }
 
+type MemoEditorHistoryEntry = {
+  body: string
+  start: number
+  end: number
+}
+
+const MEMO_EDITOR_HISTORY_MAX = 100
+
+function normalizeEditorBody(body: string): string {
+  return normalizeLegacyUnicodeInString(normalizeMemoBodyStorage(body))
+}
+
 export function MemoNoteEditor({
   id,
   value,
@@ -60,16 +74,49 @@ export function MemoNoteEditor({
   const lastSerializedRef = useRef<string | null>(null)
   const savedRangeRef = useRef<Range | null>(null)
   const isComposingRef = useRef(false)
+  const isHistoryActionRef = useRef(false)
+  const historyRef = useRef<MemoEditorHistoryEntry[]>([])
+  const historyIndexRef = useRef(0)
   const fallbackId = useId()
   const editorId = id ?? fallbackId
+
+  const resetHistory = useCallback((body: string) => {
+    const normalized = normalizeEditorBody(body)
+    historyRef.current = [
+      {
+        body: normalized,
+        start: normalized.length,
+        end: normalized.length,
+      },
+    ]
+    historyIndexRef.current = 0
+  }, [])
+
+  const recordHistory = useCallback(
+    (next: string, start: number, end: number) => {
+      if (isHistoryActionRef.current || isComposingRef.current) return
+      const idx = historyIndexRef.current
+      const stack = historyRef.current
+      const top = stack[idx]
+      if (top && top.body === next && top.start === start && top.end === end) {
+        return
+      }
+      const trimmed = stack.slice(0, idx + 1)
+      trimmed.push({ body: next, start, end })
+      while (trimmed.length > MEMO_EDITOR_HISTORY_MAX) {
+        trimmed.shift()
+      }
+      historyRef.current = trimmed
+      historyIndexRef.current = trimmed.length - 1
+    },
+    [],
+  )
 
   const syncEditorFromValue = useCallback(
     (body: string, cursorOffset?: number) => {
       const el = editorRef.current
       if (!el) return
-      const normalized = normalizeLegacyUnicodeInString(
-        normalizeMemoBodyStorage(body),
-      )
+      const normalized = normalizeEditorBody(body)
       lastSerializedRef.current = normalized
       el.innerHTML = normalized ? memoBodyToEditorHtml(normalized) : ''
       if (cursorOffset != null) {
@@ -81,27 +128,56 @@ export function MemoNoteEditor({
     [],
   )
 
+  const applyHistoryEntry = useCallback(
+    (entry: MemoEditorHistoryEntry) => {
+      isHistoryActionRef.current = true
+      syncEditorFromValue(entry.body, entry.end)
+      lastSerializedRef.current = entry.body
+      onChange(entry.body)
+      requestAnimationFrame(() => {
+        isHistoryActionRef.current = false
+      })
+    },
+    [onChange, syncEditorFromValue],
+  )
+
+  const undo = useCallback(() => {
+    if (historyIndexRef.current <= 0) return
+    historyIndexRef.current -= 1
+    applyHistoryEntry(historyRef.current[historyIndexRef.current])
+  }, [applyHistoryEntry])
+
+  const redo = useCallback(() => {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return
+    historyIndexRef.current += 1
+    applyHistoryEntry(historyRef.current[historyIndexRef.current])
+  }, [applyHistoryEntry])
+
   useLayoutEffect(() => {
     if (lastSerializedRef.current === value) {
       return
     }
     syncEditorFromValue(value)
-  }, [value, resetKey, syncEditorFromValue])
+    resetHistory(value)
+  }, [value, resetKey, syncEditorFromValue, resetHistory])
 
   useEffect(() => {
     if (lastSerializedRef.current !== null) {
       return
     }
     syncEditorFromValue(value)
-  }, [value, syncEditorFromValue])
+    resetHistory(value)
+  }, [value, syncEditorFromValue, resetHistory])
 
   const emitChange = useCallback(() => {
     const el = editorRef.current
     if (!el) return
     const next = serializeMemoEditor(el)
+    const { start, end } = getMemoEditorSelectionOffsets(el)
     lastSerializedRef.current = next
+    recordHistory(next, start, end)
     onChange(next)
-  }, [onChange])
+  }, [onChange, recordHistory])
 
   const rememberEditorSelection = useCallback(() => {
     const el = editorRef.current
@@ -170,6 +246,14 @@ export function MemoNoteEditor({
     }
   }
 
+  const handleHighlight = () => {
+    const el = editorRef.current
+    if (!el || disabled) return
+    if (toggleMemoHighlightInEditor(el)) {
+      emitChange()
+    }
+  }
+
   const handlePaste = (e: ClipboardEvent<HTMLDivElement>) => {
     if (disabled) return
     const el = editorRef.current
@@ -210,6 +294,8 @@ export function MemoNoteEditor({
         structured.body.slice(0, structured.body.length - tailLen),
       )
       syncEditorFromValue(normalized, cursorOffset)
+      lastSerializedRef.current = normalized
+      recordHistory(normalized, cursorOffset, cursorOffset)
       onChange(normalized)
       if (structured.source && onSourceChange) {
         onSourceChange(structured.source)
@@ -224,6 +310,27 @@ export function MemoNoteEditor({
   }
 
   const boxHeight = `${Math.max(rows, 3) * 1.5 + 1.5}rem`
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (disabled || isComposingRef.current) return
+    const mod = e.metaKey || e.ctrlKey
+    if (!mod) return
+    const key = e.key.toLowerCase()
+    if (key === 'z' && !e.shiftKey) {
+      e.preventDefault()
+      undo()
+      return
+    }
+    if (key === 'z' && e.shiftKey) {
+      e.preventDefault()
+      redo()
+      return
+    }
+    if (key === 'y') {
+      e.preventDefault()
+      redo()
+    }
+  }
 
   return (
     <>
@@ -241,6 +348,7 @@ export function MemoNoteEditor({
           ...(scrollClamp ? { maxHeight: boxHeight } : {}),
         }}
         data-placeholder={placeholder}
+        onKeyDown={handleKeyDown}
         onInput={handleInput}
         onMouseUp={rememberEditorSelection}
         onKeyUp={rememberEditorSelection}
@@ -259,7 +367,11 @@ export function MemoNoteEditor({
         }}
         onPaste={handlePaste}
       />
-      <MemoEmojiBar onInsert={handleEmojiInsert} disabled={disabled} />
+      <MemoEmojiBar
+        onInsert={handleEmojiInsert}
+        onHighlight={handleHighlight}
+        disabled={disabled}
+      />
     </>
   )
 }

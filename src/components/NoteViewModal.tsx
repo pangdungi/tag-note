@@ -1,7 +1,10 @@
 import { useId, useMemo } from 'react'
 import {
-  noteSourceLabel,
+  resolveNoteTagChips,
+  resolveNoteSourceTitle,
   type NoteWithTags,
+  type SourceRow,
+  type TagRow,
 } from '../lib/notesApi'
 import { displayTagName, normalizeTagInput } from '../lib/tagUtils'
 import { displaySourceTitle } from '../lib/sourceUtils'
@@ -22,6 +25,8 @@ type Props = {
   open: boolean
   onClose: () => void
   note: NoteWithTags | null
+  tagCatalog: Map<string, TagRow>
+  sourceCatalog: Map<string, SourceRow>
   /** 클릭한 태그 맥락 — 제목에 표시 */
   primaryTagId?: string | null
   loading?: boolean
@@ -34,6 +39,8 @@ export function NoteViewModal({
   open,
   onClose,
   note,
+  tagCatalog,
+  sourceCatalog,
   primaryTagId = null,
   loading = false,
   onEdit,
@@ -46,11 +53,7 @@ export function NoteViewModal({
     if (!note) {
       return { titleTag: null, otherTags: [] as { id: string; name: string; color_index: number }[] }
     }
-    const tagLinks = note.note_tags
-      .map((nt) => nt.tags)
-      .filter(Boolean) as { id: string; name: string; color_index: number }[]
-
-    const sortedTags = [...tagLinks].sort((a, b) =>
+    const sortedTags = [...resolveNoteTagChips(note, tagCatalog)].sort((a, b) =>
       a.name.localeCompare(b.name, 'ko'),
     )
 
@@ -64,11 +67,11 @@ export function NoteViewModal({
       : []
 
     return { titleTag: resolvedPrimary, otherTags: rest }
-  }, [note, primaryTagId])
+  }, [note, primaryTagId, tagCatalog])
 
   if (!open || !note) return null
 
-  const src = noteSourceLabel(note)
+  const src = note ? resolveNoteSourceTitle(note, sourceCatalog) : ''
   const srcId = note.source_id ?? note.sources?.id ?? null
   const body = note.body?.trim() ?? ''
   const titleLabel = titleTag

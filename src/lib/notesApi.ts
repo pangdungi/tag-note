@@ -103,6 +103,27 @@ export function noteSourceLabel(note: NoteWithTags): string {
   return (note.sources?.title ?? note.source ?? '').trim()
 }
 
+export function buildSourceCatalogMap(
+  sources: SourceRow[],
+): Map<string, SourceRow> {
+  return new Map(sources.map((s) => [s.id, s]))
+}
+
+/** source_id → sources 카탈로그 제목. note에 박힌 source는 fallback만 */
+export function resolveNoteSourceTitle(
+  note: NoteWithTags,
+  catalog: Map<string, SourceRow> | SourceRow[],
+): string {
+  const srcId = note.source_id ?? note.sources?.id
+  if (srcId) {
+    const map =
+      catalog instanceof Map ? catalog : buildSourceCatalogMap(catalog)
+    const row = map.get(srcId)
+    if (row?.title.trim()) return row.title.trim()
+  }
+  return noteSourceLabel(note)
+}
+
 /** 홈 목록 첫 페이지·더보기 */
 export const NOTES_LIST_PAGE_SIZE = 50
 
@@ -446,10 +467,15 @@ export function mergeSourcesFromNoteIntoAllSources(
   prev: SourceRow[],
   note: NoteWithTags,
 ): SourceRow[] {
-  const src = note.sources
-  if (!src?.id) return prev
+  const srcId = note.source_id ?? note.sources?.id
+  if (!srcId) return prev
+  const embedTitle = (note.sources?.title ?? note.source ?? '').trim()
   const byId = new Map(prev.map((s) => [s.id, s]))
-  byId.set(src.id, { id: src.id, title: src.title })
+  const cur = byId.get(srcId)
+  byId.set(srcId, {
+    id: srcId,
+    title: cur?.title ?? embedTitle,
+  })
   return [...byId.values()].sort((a, b) => a.title.localeCompare(b.title, 'ko'))
 }
 
@@ -1378,6 +1404,7 @@ export async function updateTagParent(
   if (parentId === null) {
     return unassignTagFromParent(tagId)
   }
+  await unassignTagFromParent(tagId)
   await assignTagsToParent([tagId], parentId)
   const tags = await fetchTags()
   const tag = tags.find((t) => t.id === tagId)
@@ -1409,7 +1436,7 @@ export async function promoteTagToParent(
     throw new Error('태그를 찾을 수 없습니다.')
   }
   if (tag.is_parent) {
-    throw new Error('이미 상위태그입니다.')
+    throw new Error('이미 메인태그입니다.')
   }
 
   if (tag.parent_id) {
@@ -1430,7 +1457,7 @@ export async function promoteTagToParent(
     throw new Error(
       supabaseErrorMessage(
         parentErr,
-        '상위태그로 표시하지 못했습니다. Supabase에 011_tag_is_parent 마이그레이션이 적용되었는지 확인하세요.',
+        '메인태그로 지정하지 못했습니다. Supabase에 011_tag_is_parent 마이그레이션이 적용되었는지 확인하세요.',
       ),
     )
   }
@@ -1707,7 +1734,7 @@ export async function deleteParentTag(tagId: string): Promise<TagDeleteResult> {
   return { deletedTagId: tagId, deletedNoteIds: [] }
 }
 
-/** note에 붙은 태그 메타를 allTags 맵에 반영(추가·이름 갱신). */
+/** note에 붙은 태그 메타를 allTags 맵에 반영 — 기존 카탈로그(서버) 이름·색은 유지 */
 export function mergeTagsFromNoteIntoAllTags(
   prev: TagRow[],
   note: NoteWithTags,
@@ -1717,16 +1744,66 @@ export function mergeTagsFromNoteIntoAllTags(
     const tg = nt.tags
     if (!tg || !isPersistedTagId(tg.id)) continue
     const cur = byId.get(tg.id)
-    byId.set(tg.id, {
-      id: tg.id,
-      name: tg.name,
-      color_index: tg.color_index,
-      parent_id: tg.parent_id ?? cur?.parent_id ?? null,
-      is_parent: cur?.is_parent,
-      created_at: cur?.created_at,
-    })
+    if (cur) {
+      byId.set(tg.id, {
+        ...cur,
+        parent_id: tg.parent_id ?? cur.parent_id ?? null,
+      })
+    } else {
+      byId.set(tg.id, {
+        id: tg.id,
+        name: tg.name,
+        color_index: tg.color_index,
+        parent_id: tg.parent_id ?? null,
+        is_parent: undefined,
+        created_at: undefined,
+      })
+    }
   }
   return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+}
+
+export type TagChipDisplay = {
+  id: string
+  name: string
+  color_index: number
+}
+
+export function buildTagCatalogMap(tags: TagRow[]): Map<string, TagRow> {
+  return new Map(tags.map((t) => [t.id, t]))
+}
+
+/** note_tags id → tags 테이블(카탈로그) 이름·색. note에 박힌 이름은 fallback만 */
+export function resolveNoteTagChips(
+  note: NoteWithTags,
+  catalog: Map<string, TagRow> | TagRow[],
+): TagChipDisplay[] {
+  const map =
+    catalog instanceof Map ? catalog : buildTagCatalogMap(catalog)
+  const chips: TagChipDisplay[] = []
+  for (const nt of note.note_tags) {
+    const id = nt.tags?.id ?? nt.tag_id
+    if (!id || id.startsWith('pending-')) continue
+    const row = map.get(id)
+    chips.push({
+      id,
+      name: row?.name ?? nt.tags?.name ?? id,
+      color_index: row?.color_index ?? nt.tags?.color_index ?? 0,
+    })
+  }
+  return chips
+}
+
+export function refreshTagChipsFromCatalog(
+  chips: TagChipDisplay[],
+  catalog: Map<string, TagRow>,
+): TagChipDisplay[] {
+  return chips.map((chip) => {
+    const row = catalog.get(chip.id)
+    return row
+      ? { id: row.id, name: row.name, color_index: row.color_index }
+      : chip
+  })
 }
 
 /** 태그 이름 변경 시 모든 메모 카드에 반영 */

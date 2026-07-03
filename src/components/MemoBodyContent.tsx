@@ -26,6 +26,13 @@ function renderSegments(segments: MemoBodySegment[], keyPrefix: string) {
     if (seg.type === 'text') {
       return renderTextWithLineBreaks(seg.value, `${keyPrefix}-t-${i}`)
     }
+    if (seg.type === 'highlight') {
+      return (
+        <mark key={`${keyPrefix}-h-${i}`} className="memo-body-highlight">
+          {renderSegments(seg.children, `${keyPrefix}-h-${i}`)}
+        </mark>
+      )
+    }
     return (
       <img
         key={`${keyPrefix}-e-${i}`}
