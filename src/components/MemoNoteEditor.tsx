@@ -10,12 +10,14 @@ import {
 } from 'react'
 import {
   applyStructuredNotePaste,
+  cleanPastedMemoText,
   clipboardHtmlToPlainMemoText,
 } from '../lib/pasteNoteFormat'
 import {
   getMemoEditorSelectionOffsets,
+  getMemoEditorPasteOffsets,
   insertMemoEmojiInEditor,
-  insertPlainTextInMemoEditor,
+  insertMemoPlainTextInEditor,
   isRangeInsideMemoEditor,
   memoBodyFromEditor,
   memoBodyToEditorHtml,
@@ -242,6 +244,15 @@ export function MemoNoteEditor({
     const el = editorRef.current
     if (!el || disabled) return
     if (insertMemoEmojiInEditor(el, emojiId)) {
+      rememberEditorSelection()
+      emitChange()
+    }
+  }
+
+  const handleCircledNumberInsert = (char: string) => {
+    const el = editorRef.current
+    if (!el || disabled) return
+    if (insertMemoPlainTextInEditor(el, char)) {
       emitChange()
     }
   }
@@ -267,16 +278,23 @@ export function MemoNoteEditor({
     if (!pasted) return
 
     const insertRange = resolveEditorInsertRange(el)
+    const { start: selectionStart, end: selectionEnd } =
+      getMemoEditorPasteOffsets(el, insertRange)
+
     el.focus()
     const sel = window.getSelection()
     if (sel) {
       sel.removeAllRanges()
-      sel.addRange(insertRange)
+      const caret = insertRange.cloneRange()
+      if (!caret.collapsed) {
+        caret.collapse(false)
+      }
+      sel.addRange(caret)
     }
 
-    const currentBody = normalizeMemoBodyStorage(memoBodyFromEditor(el))
-    const { start: selectionStart, end: selectionEnd } =
-      getMemoEditorSelectionOffsets(el, insertRange)
+    const currentBody = normalizeEditorBody(
+      normalizeMemoBodyStorage(memoBodyFromEditor(el)),
+    )
 
     const structured = applyStructuredNotePaste(
       currentBody,
@@ -304,8 +322,19 @@ export function MemoNoteEditor({
       return
     }
 
-    insertPlainTextInMemoEditor(el, insertRange, pasted)
-    emitChange()
+    const pastedClean = cleanPastedMemoText(
+      pasted.replace(/\r\n/g, '\n').replace(/\r/g, '\n'),
+      { trimWhole: false },
+    )
+    const before = currentBody.slice(0, selectionStart)
+    const after = currentBody.slice(selectionEnd)
+    const merged = `${before}${pastedClean}${after}`
+    const normalized = normalizeEditorBody(merged)
+    const cursorOffset = serializedLengthOfMemoPrefix(`${before}${pastedClean}`)
+    syncEditorFromValue(normalized, cursorOffset)
+    lastSerializedRef.current = normalized
+    recordHistory(normalized, cursorOffset, cursorOffset)
+    onChange(normalized)
     rememberEditorSelection()
   }
 
@@ -369,6 +398,7 @@ export function MemoNoteEditor({
       />
       <MemoEmojiBar
         onInsert={handleEmojiInsert}
+        onInsertCircledNumber={handleCircledNumberInsert}
         onHighlight={handleHighlight}
         disabled={disabled}
       />

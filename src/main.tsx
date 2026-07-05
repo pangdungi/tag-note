@@ -3,9 +3,9 @@ import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import App from './App.tsx'
-import { applyAppFontsToDocument, waitForAppFonts } from './lib/appFont'
+import { applyAppFontToDocument, getStoredAppFontId, waitForAppFonts } from './lib/appFont'
 
-applyAppFontsToDocument()
+applyAppFontToDocument(getStoredAppFontId())
 
 registerSW({ immediate: true })
 

@@ -1486,10 +1486,29 @@ export function HomePage() {
       ])
       setAllTags(tags)
       setTagParentLinks(links)
+      return { tags, links }
     } catch (e) {
       console.warn('[태그노트] 태그·상위 링크 갱신 실패', e)
+      return null
     }
   }, [])
+
+  const syncTagsAfterDelete = useCallback(async () => {
+    const synced = await refreshTagsAndLinks()
+    const uid = user?.id
+    if (!uid) return
+    if (synced) {
+      writeHomeSnapshotCache(uid, {
+        tags: synced.tags,
+        tagParentLinks: synced.links,
+        sources: allSourcesRef.current,
+        notes: notesRef.current,
+        tagMemoCounts: tagMemoCountByIdRef.current,
+        sourceTagCounts: sourceTagCountByIdRef.current,
+      })
+    }
+    await refreshHomeTagCounts()
+  }, [refreshTagsAndLinks, refreshHomeTagCounts, user?.id])
 
   const applyNoteCreated = useCallback(
     (note: NoteWithTags, opts?: { replacingId?: string }) => {
@@ -1600,7 +1619,10 @@ export function HomePage() {
 
   const applyTagUpdated = useCallback((row: TagRow) => {
     setAllTags((prev) => {
-      const next = prev.map((t) => (t.id === row.id ? row : t))
+      const exists = prev.some((t) => t.id === row.id)
+      const next = exists
+        ? prev.map((t) => (t.id === row.id ? row : t))
+        : [...prev, row]
       return [...next].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
     })
     setNotes((prev) =>
@@ -1721,18 +1743,29 @@ export function HomePage() {
 
   const applyTagPromoted = useCallback(
     (result: PromoteTagToParentResult) => {
-      applyTagUpdated(result.parent)
-      applyTagsAssigned(result.assignedChildren, result.parent.id)
+      const parent: TagRow = {
+        ...result.parent,
+        is_parent: true,
+        parent_id: null,
+      }
+      applyTagUpdated(parent)
+      applyTagsAssigned(result.assignedChildren, parent.id)
       clearTagPullCache()
 
-      const parentId = result.parent.id
+      const parentId = parent.id
       setHomeBrowseNav('books')
+      setTagFilterNav('books')
+      tagFilterNavRef.current = 'books'
       setSelectedSourceId(null)
       setSourceNotesHasMore(false)
+      setTagFilterFocusBoard(false)
+      setTagViewDrillDown(false)
+      setBooksTagFocusBoard(false)
       setBooksRailExpandedParentId(parentId)
       setSelectedTagId(parentId)
       setViewingNote(null)
       setRailEditingTag(null)
+      syncTagPullEntryForSelection(parentId, [parentId], 'books')
     },
     [applyTagUpdated, applyTagsAssigned, clearTagPullCache],
   )
@@ -1743,7 +1776,9 @@ export function HomePage() {
       invalidateTagPullRequests()
       setSelectedTagId((s) => (s === tagId ? null : s))
       setBooksRailExpandedParentId((s) => (s === tagId ? null : s))
-        setAllTags((prev) =>
+      setRailEditingTag((s) => (s?.id === tagId ? null : s))
+      setRailEditingParentTag((s) => (s?.id === tagId ? null : s))
+      setAllTags((prev) =>
         prev
           .filter((t) => t.id !== tagId)
           .map((t) =>
@@ -1781,13 +1816,11 @@ export function HomePage() {
         return unlinkTagFromNote(cur)
       })
       void refreshHomeTagCounts()
-      void refreshTagsAndLinks()
     },
     [
       invalidateTagPullRequests,
       reconcileTagPullForNotes,
       refreshHomeTagCounts,
-      refreshTagsAndLinks,
     ],
   )
 
@@ -2906,17 +2939,31 @@ export function HomePage() {
       const itemId = firstRailItemIdForIndexKey(browseRailIndexItems, key)
       if (!itemId) return
       const slot = tagSpineSlotRefs.current.get(itemId)
+      if (!slot) return
+
+      if (homeBrowseNav === 'tags') {
+        const scroller = parentTagRailScrollRef.current
+        if (!scroller) return
+        const scrollerRect = scroller.getBoundingClientRect()
+        const slotRect = slot.getBoundingClientRect()
+        scroller.scrollTo({
+          top: scroller.scrollTop + slotRect.top - scrollerRect.top - 12,
+          behavior: 'smooth',
+        })
+        return
+      }
+
       const scroller =
         parentTagRailScrollRef.current ?? parentTagRailSectionRef.current
-      if (!slot || !scroller) return
+      if (!scroller) return
       const scrollerRect = scroller.getBoundingClientRect()
       const slotRect = slot.getBoundingClientRect()
       scroller.scrollTo({
-        top: scroller.scrollTop + slotRect.top - scrollerRect.top - 12,
+        left: scroller.scrollLeft + slotRect.left - scrollerRect.left - 12,
         behavior: 'smooth',
       })
     },
-    [browseRailIndexItems],
+    [browseRailIndexItems, homeBrowseNav],
   )
 
   const showHomeTagGrid = Boolean(
@@ -4107,6 +4154,7 @@ export function HomePage() {
         onTagUpdated={applyTagUpdated}
         onTagParentSynced={applyTagParentSynced}
         onTagDeleted={applyTagDeleted}
+        onAfterTagDeleted={syncTagsAfterDelete}
         onTagsPromoted={applyTagPromoted}
         onTagError={(message) => setSaveError(message)}
         onSyncFromServer={syncAllFromServer}
@@ -4118,8 +4166,11 @@ export function HomePage() {
           open={addParentTagRailOpen}
           allTags={allTags}
           tagParentLinks={tagParentLinks}
+          userId={user?.id ?? null}
           onClose={() => setAddParentTagRailOpen(false)}
-          onPromoted={(row) => applyTagUpdated(row)}
+          onPromoted={(row) =>
+            applyTagPromoted({ parent: row, assignedChildren: [] })
+          }
           onError={(message) => setSaveError(message)}
         />
       ) : null}
@@ -4132,6 +4183,7 @@ export function HomePage() {
         onClose={() => setRailEditingParentTag(null)}
         onTagUpdated={applyTagUpdated}
         onTagDeleted={applyTagDeleted}
+        onAfterTagDeleted={syncTagsAfterDelete}
         onChildrenSynced={(payload) => {
           applyChildrenSynced(payload)
           const parentId = railEditingParentTag?.id

@@ -367,6 +367,7 @@ export function TagManageModal({
           open={open && addParentOpen}
           allTags={tags}
           tagParentLinks={tagParentLinks}
+          userId={userId}
           onClose={() => setAddParentOpen(false)}
           onPromoted={(row) => {
             onTagUpdated(row)

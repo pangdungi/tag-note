@@ -40,6 +40,7 @@ type Props = {
   /** 저장·삭제 실패 시 서버 기준으로 다시 불러옴 */
   onSyncFromServer?: () => void | Promise<void>
   onSourcesChanged?: () => void | Promise<void>
+  onAfterTagDeleted?: () => void | Promise<void>
 }
 
 export function EditTagModal({
@@ -55,6 +56,7 @@ export function EditTagModal({
   onTagError,
   onSyncFromServer,
   onSourcesChanged,
+  onAfterTagDeleted,
 }: Props) {
   const titleId = useId()
   const parentFieldId = useId()
@@ -63,6 +65,7 @@ export function EditTagModal({
   const [baselineParentId, setBaselineParentId] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
   const [promoteConfirmOpen, setPromoteConfirmOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -75,6 +78,7 @@ export function EditTagModal({
       setBaselineParentId(resolvedParent)
       setError(null)
       setDeleteConfirmOpen(false)
+      setDeleteBusy(false)
       setPromoteConfirmOpen(false)
       setSaving(false)
     })
@@ -294,33 +298,42 @@ export function EditTagModal({
         title="태그 삭제"
         message={deleteConfirmMessage}
         cancelLabel="취소"
-        confirmLabel="삭제"
+        confirmLabel={deleteBusy ? '삭제 중…' : '삭제'}
         danger
-        onCancel={() => setDeleteConfirmOpen(false)}
-        onConfirm={() => {
-          setError(null)
-          const tagId = tag.id
-          onTagDeleted({ tagId, deletedNoteIds: [] })
+        busy={deleteBusy}
+        onCancel={() => {
+          if (deleteBusy) return
           setDeleteConfirmOpen(false)
-          onClose()
-          void (async () => {
-            try {
-              if (isParentTag) {
-                await deleteParentTag(tagId)
-              } else {
-                await deleteTag(tagId)
-                await onSourcesChanged?.()
-              }
-            } catch (e) {
-              console.error('[태그노트] EditTagModal 태그 삭제 실패', {
-                tagId,
-              }, e)
-              await onSyncFromServer?.()
-              onTagError?.(
-                e instanceof Error ? e.message : '삭제하지 못했습니다.',
-              )
+        }}
+        onConfirm={async () => {
+          if (deleteBusy) return
+          setError(null)
+          setDeleteBusy(true)
+          const tagId = tag.id
+          try {
+            if (isParentTag) {
+              await deleteParentTag(tagId)
+            } else {
+              await deleteTag(tagId)
+              await onSourcesChanged?.()
             }
-          })()
+            if (isParentTag) {
+              await onAfterTagDeleted?.()
+            }
+            onTagDeleted({ tagId, deletedNoteIds: [] })
+            setDeleteConfirmOpen(false)
+            onClose()
+          } catch (e) {
+            console.error('[태그노트] EditTagModal 태그 삭제 실패', {
+              tagId,
+            }, e)
+            await onSyncFromServer?.()
+            onTagError?.(
+              e instanceof Error ? e.message : '삭제하지 못했습니다.',
+            )
+          } finally {
+            setDeleteBusy(false)
+          }
         }}
       />
     </>

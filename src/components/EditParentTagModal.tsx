@@ -31,6 +31,8 @@ type Props = {
   onTagError?: (message: string) => void
   onSyncFromServer?: () => void | Promise<void>
   onSourcesChanged?: () => void | Promise<void>
+  /** 상위태그 삭제 직후 서버 태그 목록 재동기화 */
+  onAfterTagDeleted?: () => void | Promise<void>
 }
 
 function sameIdSet(a: string[], b: string[]): boolean {
@@ -51,6 +53,7 @@ export function EditParentTagModal({
   onTagError,
   onSyncFromServer,
   onSourcesChanged,
+  onAfterTagDeleted,
 }: Props) {
   const titleId = useId()
   const pickSearchId = useId()
@@ -60,6 +63,7 @@ export function EditParentTagModal({
   const [pickSearch, setPickSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const wasOpenRef = useRef(false)
 
@@ -104,6 +108,7 @@ export function EditParentTagModal({
       setPickSearch('')
       setError(null)
       setDeleteConfirmOpen(false)
+      setDeleteBusy(false)
       setSaving(false)
     })
   }, [open, tag, tags, links])
@@ -358,31 +363,38 @@ export function EditParentTagModal({
         title="상위태그 삭제"
         message={`「${displayTagName(tag.name)}」 상위태그를 삭제할까요? 하위 태그는 삭제되지 않고 미분류(상위 미지정) 태그로 남습니다. 메모는 삭제되지 않고, 이 상위태그와의 연결만 제거됩니다. 삭제 후에는 다시 복구할 수 없습니다.`}
         cancelLabel="취소"
-        confirmLabel="삭제"
+        confirmLabel={deleteBusy ? '삭제 중…' : '삭제'}
         danger
-        onCancel={() => setDeleteConfirmOpen(false)}
-        onConfirm={() => {
-          setError(null)
-          const tagId = tag.id
-          onTagDeleted({ tagId, deletedNoteIds: [] })
+        busy={deleteBusy}
+        onCancel={() => {
+          if (deleteBusy) return
           setDeleteConfirmOpen(false)
-          onClose()
-          void (async () => {
-            try {
-              await deleteParentTag(tagId)
-              await onSourcesChanged?.()
-            } catch (e) {
-              console.error(
-                '[태그노트] EditParentTagModal 상위태그 삭제 실패',
-                { tagId },
-                e,
-              )
-              await onSyncFromServer?.()
-              onTagError?.(
-                e instanceof Error ? e.message : '삭제하지 못했습니다.',
-              )
-            }
-          })()
+        }}
+        onConfirm={async () => {
+          if (deleteBusy) return
+          setError(null)
+          setDeleteBusy(true)
+          const tagId = tag.id
+          try {
+            await deleteParentTag(tagId)
+            await onSourcesChanged?.()
+            await onAfterTagDeleted?.()
+            onTagDeleted({ tagId, deletedNoteIds: [] })
+            setDeleteConfirmOpen(false)
+            onClose()
+          } catch (e) {
+            console.error(
+              '[태그노트] EditParentTagModal 상위태그 삭제 실패',
+              { tagId },
+              e,
+            )
+            await onSyncFromServer?.()
+            onTagError?.(
+              e instanceof Error ? e.message : '삭제하지 못했습니다.',
+            )
+          } finally {
+            setDeleteBusy(false)
+          }
         }}
       />
     </>

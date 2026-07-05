@@ -64,6 +64,19 @@ export const MEMO_QUICK_EMOJIS: MemoQuickEmoji[] = [
   { id: 'face', label: '얼굴', iconSrc: faceIcon },
 ]
 
+/** 메모 바 — ①~⑨ 빠른 삽입 */
+export const MEMO_CIRCLED_NUMBERS = [
+  { char: '①', label: '1' },
+  { char: '②', label: '2' },
+  { char: '③', label: '3' },
+  { char: '④', label: '4' },
+  { char: '⑤', label: '5' },
+  { char: '⑥', label: '6' },
+  { char: '⑦', label: '7' },
+  { char: '⑧', label: '8' },
+  { char: '⑨', label: '9' },
+] as const
+
 /** 예전 :m/lightbulb: 등 DB 토큰 → 새 아이콘 */
 const MEMO_EMOJI_LEGACY_IDS: Record<string, string> = {
   lightbulb: 'start',
@@ -703,6 +716,44 @@ export function getMemoEditorSelectionOffsets(
   }
 }
 
+/** Range 안의 직렬화 텍스트 (붙여넣기 선택 판별용) */
+export function serializedTextInEditorRange(range: Range): string {
+  const tmp = document.createElement('div')
+  tmp.appendChild(range.cloneContents())
+  return memoBodyFromEditor(tmp)
+}
+
+function isStructuralOnlyEditorSelection(text: string): boolean {
+  const stripped = text
+    .replaceAll(MEMO_EDITOR_ZWSP, '')
+    .replace(new RegExp(MEMO_EMOJI_TOKEN_RE.source, 'g'), '')
+  return stripped.length === 0 || /^[\n\s]*$/.test(stripped)
+}
+
+/**
+ * 붙여넣기 삽입 위치 — 빈 줄·ZWSP만 가리키는 비접힘 Range는
+ * focus 끝으로 접어서 줄바꿈이 잘리지 않게 함.
+ */
+export function getMemoEditorPasteOffsets(
+  root: HTMLElement,
+  range: Range,
+): { start: number; end: number } {
+  if (range.collapsed) {
+    const point = getMemoEditorSelectionOffsets(root, range).start
+    return { start: point, end: point }
+  }
+
+  const selected = serializedTextInEditorRange(range)
+  if (isStructuralOnlyEditorSelection(selected)) {
+    const collapsed = range.cloneRange()
+    collapsed.collapse(false)
+    const point = getMemoEditorSelectionOffsets(root, collapsed).start
+    return { start: point, end: point }
+  }
+
+  return getMemoEditorSelectionOffsets(root, range)
+}
+
 /** 커서·선택 위치에 평문 붙여넣기 — 커서 위치에 그대로 삽입 */
 export function insertPlainTextInMemoEditor(
   root: HTMLElement,
@@ -767,6 +818,45 @@ export function insertPlainTextInMemoEditor(
   sel.addRange(caret)
 }
 
+function resolveMemoEditorInsertRange(
+  root: HTMLElement,
+  sel: Selection,
+): Range {
+  if (
+    sel.rangeCount === 0 ||
+    !sel.anchorNode ||
+    !isRangeInsideMemoEditor(root, sel.getRangeAt(0))
+  ) {
+    const range = document.createRange()
+    range.selectNodeContents(root)
+    range.collapse(false)
+    return range
+  }
+  return sel.getRangeAt(0)
+}
+
+export function insertMemoPlainTextInEditor(
+  root: HTMLElement,
+  text: string,
+): boolean {
+  if (!text) return false
+
+  root.focus()
+  const sel = window.getSelection()
+  if (!sel) return false
+
+  const range = resolveMemoEditorInsertRange(root, sel)
+  range.deleteContents()
+
+  const node = document.createTextNode(text)
+  range.insertNode(node)
+  range.setStartAfter(node)
+  range.collapse(true)
+  sel.removeAllRanges()
+  sel.addRange(range)
+  return true
+}
+
 export function insertMemoEmojiInEditor(root: HTMLElement, id: string): boolean {
   const emoji = memoEmojiById(id)
   if (!emoji) {
@@ -779,19 +869,7 @@ export function insertMemoEmojiInEditor(root: HTMLElement, id: string): boolean 
     return false
   }
 
-  let range: Range
-  if (
-    sel.rangeCount === 0 ||
-    !sel.anchorNode ||
-    !isRangeInsideMemoEditor(root, sel.getRangeAt(0))
-  ) {
-    range = document.createRange()
-    range.selectNodeContents(root)
-    range.collapse(false)
-  } else {
-    range = sel.getRangeAt(0)
-  }
-
+  const range = resolveMemoEditorInsertRange(root, sel)
   range.deleteContents()
 
   const img = createMemoEmojiImg(emoji)

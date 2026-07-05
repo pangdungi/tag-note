@@ -1,12 +1,13 @@
 import { supabase } from './supabase'
 import {
-  applyAppFontsToDocument,
+  applyAppFontToDocument,
+  DEFAULT_APP_FONT_ID,
+  getStoredAppFontId,
   normalizeLegacyAppFontId,
   setStoredAppFontId,
+  waitForAppFonts,
   type AppFontChoiceId,
 } from './appFont'
-
-const DEFAULT_FONT: AppFontChoiceId = 'spoqa'
 
 export async function fetchUserAppFontId(
   userId: string,
@@ -22,7 +23,7 @@ export async function fetchUserAppFontId(
   return normalizeLegacyAppFontId(data.app_font_id)
 }
 
-/** 행이 없으면 삽입 후 기본 글꼴을 돌려줍니다. (사용자 설정 저장 시에만 호출) */
+/** 행이 없으면 삽입 후 기본 글꼴을 돌려줍니다. */
 export async function ensureUserAppFontRow(
   userId: string,
 ): Promise<AppFontChoiceId> {
@@ -31,12 +32,12 @@ export async function ensureUserAppFontRow(
 
   const { error } = await supabase
     .from('user_preferences')
-    .insert({ user_id: userId })
+    .insert({ user_id: userId, app_font_id: DEFAULT_APP_FONT_ID })
 
   if (error && error.code !== '23505') throw error
 
   const after = await fetchUserAppFontId(userId)
-  return after ?? DEFAULT_FONT
+  return after ?? DEFAULT_APP_FONT_ID
 }
 
 export async function upsertUserAppFontId(
@@ -53,11 +54,11 @@ export async function upsertUserAppFontId(
   if (error) throw error
 }
 
-/** 로그인 시 글꼴만 로컬 적용 — 서버 user_preferences는 읽지·쓰지 않음 */
 export async function loadAndApplyUserAppFont(userId: string): Promise<void> {
-  void userId
-  applyAppFontsToDocument()
-  setStoredAppFontId(DEFAULT_FONT)
+  const id = (await fetchUserAppFontId(userId)) ?? DEFAULT_APP_FONT_ID
+  applyAppFontToDocument(id)
+  setStoredAppFontId(id)
+  await waitForAppFonts(id)
 }
 
 export async function loadAndApplyUserAppFontSafe(
@@ -66,7 +67,18 @@ export async function loadAndApplyUserAppFontSafe(
   try {
     await loadAndApplyUserAppFont(userId)
   } catch {
-    applyAppFontsToDocument()
-    setStoredAppFontId(DEFAULT_FONT)
+    const fallback = getStoredAppFontId()
+    applyAppFontToDocument(fallback)
+    setStoredAppFontId(fallback)
   }
+}
+
+export async function saveUserAppFontChoice(
+  userId: string,
+  id: AppFontChoiceId,
+): Promise<void> {
+  applyAppFontToDocument(id)
+  setStoredAppFontId(id)
+  await upsertUserAppFontId(userId, id)
+  await waitForAppFonts(id)
 }
