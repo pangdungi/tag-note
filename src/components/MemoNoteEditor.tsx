@@ -9,23 +9,22 @@ import {
   type KeyboardEvent,
 } from 'react'
 import {
-  applyStructuredNotePaste,
   cleanPastedMemoText,
   clipboardHtmlToPlainMemoText,
+  parseNotePasteWithTrailingUrl,
 } from '../lib/pasteNoteFormat'
 import {
-  getMemoEditorSelectionOffsets,
+  coalesceMemoEditorBody,
   getMemoEditorPasteOffsets,
   insertMemoEmojiInEditor,
   insertMemoPlainTextInEditor,
+  insertPlainTextInMemoEditor,
   isRangeInsideMemoEditor,
-  memoBodyFromEditor,
   memoBodyToEditorHtml,
   normalizeLegacyUnicodeInString,
   normalizeMemoBodyStorage,
   normalizeQuickEmojisInEditor,
   serializeMemoEditor,
-  serializedLengthOfMemoPrefix,
   setSelectionAtSerializedOffset,
   toggleMemoHighlightInEditor,
 } from '../lib/memoQuickEmojis'
@@ -59,6 +58,14 @@ function normalizeEditorBody(body: string): string {
   return normalizeLegacyUnicodeInString(normalizeMemoBodyStorage(body))
 }
 
+function collapseRangeToFocusEnd(range: Range): Range {
+  const collapsed = range.cloneRange()
+  if (!collapsed.collapsed) {
+    collapsed.collapse(false)
+  }
+  return collapsed
+}
+
 export function MemoNoteEditor({
   id,
   value,
@@ -67,7 +74,7 @@ export function MemoNoteEditor({
   className = '',
   rows = 6,
   disabled = false,
-  source = '',
+  source: _source = '',
   onSourceChange,
   resetKey,
   scrollClamp = false,
@@ -75,6 +82,7 @@ export function MemoNoteEditor({
   const editorRef = useRef<HTMLDivElement>(null)
   const lastSerializedRef = useRef<string | null>(null)
   const savedRangeRef = useRef<Range | null>(null)
+  const savedSerializedOffsetRef = useRef(0)
   const isComposingRef = useRef(false)
   const isHistoryActionRef = useRef(false)
   const historyRef = useRef<MemoEditorHistoryEntry[]>([])
@@ -159,6 +167,13 @@ export function MemoNoteEditor({
     if (lastSerializedRef.current === value) {
       return
     }
+    if (
+      lastSerializedRef.current != null &&
+      coalesceMemoEditorBody(value, lastSerializedRef.current) ===
+        normalizeEditorBody(lastSerializedRef.current)
+    ) {
+      return
+    }
     syncEditorFromValue(value)
     resetHistory(value)
   }, [value, resetKey, syncEditorFromValue, resetHistory])
@@ -174,10 +189,28 @@ export function MemoNoteEditor({
   const emitChange = useCallback(() => {
     const el = editorRef.current
     if (!el) return
-    const next = serializeMemoEditor(el)
-    const { start, end } = getMemoEditorSelectionOffsets(el)
-    lastSerializedRef.current = next
-    recordHistory(next, start, end)
+    const rawNext = serializeMemoEditor(el)
+    const next = normalizeEditorBody(
+      coalesceMemoEditorBody(lastSerializedRef.current, rawNext),
+    )
+    const sel = window.getSelection()
+    const range =
+      sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
+    if (range && isRangeInsideMemoEditor(el, range)) {
+      const caret = collapseRangeToFocusEnd(range)
+      savedRangeRef.current = caret.cloneRange()
+      savedSerializedOffsetRef.current = getMemoEditorPasteOffsets(
+        el,
+        caret,
+      ).start
+      const { start, end } = getMemoEditorPasteOffsets(el, range)
+      lastSerializedRef.current = next
+      recordHistory(next, start, end)
+    } else {
+      lastSerializedRef.current = next
+      savedSerializedOffsetRef.current = next.length
+      recordHistory(next, next.length, next.length)
+    }
     onChange(next)
   }, [onChange, recordHistory])
 
@@ -188,7 +221,9 @@ export function MemoNoteEditor({
     if (!sel || sel.rangeCount === 0) return
     const range = sel.getRangeAt(0)
     if (!isRangeInsideMemoEditor(el, range)) return
-    savedRangeRef.current = range.cloneRange()
+    const caret = collapseRangeToFocusEnd(range)
+    savedRangeRef.current = caret.cloneRange()
+    savedSerializedOffsetRef.current = getMemoEditorPasteOffsets(el, caret).start
   }, [disabled])
 
   const resolveEditorInsertRange = useCallback((el: HTMLDivElement): Range => {
@@ -243,8 +278,15 @@ export function MemoNoteEditor({
   const handleEmojiInsert = (emojiId: string) => {
     const el = editorRef.current
     if (!el || disabled) return
+
+    el.focus()
+    const sel = window.getSelection()
+    if (sel && savedRangeRef.current && isRangeInsideMemoEditor(el, savedRangeRef.current)) {
+      sel.removeAllRanges()
+      sel.addRange(savedRangeRef.current.cloneRange())
+    }
+
     if (insertMemoEmojiInEditor(el, emojiId)) {
-      rememberEditorSelection()
       emitChange()
     }
   }
@@ -278,63 +320,32 @@ export function MemoNoteEditor({
     if (!pasted) return
 
     const insertRange = resolveEditorInsertRange(el)
-    const { start: selectionStart, end: selectionEnd } =
-      getMemoEditorPasteOffsets(el, insertRange)
+    const caret = collapseRangeToFocusEnd(insertRange)
 
     el.focus()
     const sel = window.getSelection()
     if (sel) {
       sel.removeAllRanges()
-      const caret = insertRange.cloneRange()
-      if (!caret.collapsed) {
-        caret.collapse(false)
-      }
       sel.addRange(caret)
     }
 
-    const currentBody = normalizeEditorBody(
-      normalizeMemoBodyStorage(memoBodyFromEditor(el)),
-    )
-
-    const structured = applyStructuredNotePaste(
-      currentBody,
-      source,
-      pasted,
-      selectionStart,
-      selectionEnd,
-    )
-    if (structured.handled) {
-      const tailLen = currentBody.length - selectionEnd
-      const normalized = normalizeLegacyUnicodeInString(
-        normalizeMemoBodyStorage(structured.body),
+    const parsedKyobo = parseNotePasteWithTrailingUrl(pasted)
+    if (parsedKyobo) {
+      insertPlainTextInMemoEditor(
+        el,
+        caret,
+        cleanPastedMemoText(parsedKyobo.body, { trimWhole: false }),
       )
-      const cursorOffset = serializedLengthOfMemoPrefix(
-        structured.body.slice(0, structured.body.length - tailLen),
-      )
-      syncEditorFromValue(normalized, cursorOffset)
-      lastSerializedRef.current = normalized
-      recordHistory(normalized, cursorOffset, cursorOffset)
-      onChange(normalized)
-      if (structured.source && onSourceChange) {
-        onSourceChange(structured.source)
+      emitChange()
+      if (parsedKyobo.source && onSourceChange) {
+        onSourceChange(parsedKyobo.source)
       }
       rememberEditorSelection()
       return
     }
 
-    const pastedClean = cleanPastedMemoText(
-      pasted.replace(/\r\n/g, '\n').replace(/\r/g, '\n'),
-      { trimWhole: false },
-    )
-    const before = currentBody.slice(0, selectionStart)
-    const after = currentBody.slice(selectionEnd)
-    const merged = `${before}${pastedClean}${after}`
-    const normalized = normalizeEditorBody(merged)
-    const cursorOffset = serializedLengthOfMemoPrefix(`${before}${pastedClean}`)
-    syncEditorFromValue(normalized, cursorOffset)
-    lastSerializedRef.current = normalized
-    recordHistory(normalized, cursorOffset, cursorOffset)
-    onChange(normalized)
+    insertPlainTextInMemoEditor(el, caret, pasted)
+    emitChange()
     rememberEditorSelection()
   }
 
@@ -389,8 +400,12 @@ export function MemoNoteEditor({
           emitChange()
         }}
         onBlur={(e: FocusEvent<HTMLDivElement>) => {
-          if (e.currentTarget.innerHTML === '<br>') {
-            e.currentTarget.innerHTML = ''
+          const related = e.relatedTarget
+          if (
+            related instanceof HTMLElement &&
+            related.closest('.memo-emoji-bar-wrap')
+          ) {
+            return
           }
           emitChange()
         }}

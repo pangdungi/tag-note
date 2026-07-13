@@ -8,7 +8,7 @@ export function AppBrand({ className }: Props) {
   return (
     <img
       src={appLogoUrl}
-      alt="태그노트"
+      alt="두들노트"
       className={className ? `app-brand-mark ${className}` : 'app-brand-mark'}
       width={512}
       height={512}

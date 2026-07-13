@@ -464,6 +464,72 @@ function getVisibleSheetTags(
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
+function sheetTagGroupsShareAnyTagId(
+  tagIdsA: Set<string>,
+  tagIdsB: Set<string>,
+): boolean {
+  if (tagIdsA.size === 0 || tagIdsB.size === 0) return false
+  for (const id of tagIdsA) {
+    if (tagIdsB.has(id)) return true
+  }
+  return false
+}
+
+/** 태그 id가 하나라도 겹치면 시트 블록을 붙여서 배치 (각 행의 태그 목록은 그대로) */
+function clusterSheetGroupsBySharedTags<
+  T extends { tags: SheetTagChip[] },
+>(groups: T[]): T[] {
+  if (groups.length <= 1) return groups
+
+  const tagSets = groups.map((g) => new Set(g.tags.map((t) => t.id)))
+  const parent = groups.map((_, i) => i)
+
+  const findRoot = (i: number): number => {
+    let cur = i
+    while (parent[cur] !== cur) {
+      const next = parent[cur]!
+      parent[cur] = next
+      cur = next
+    }
+    return cur
+  }
+
+  const unionRoots = (a: number, b: number) => {
+    const ra = findRoot(a)
+    const rb = findRoot(b)
+    if (ra !== rb) parent[ra] = rb
+  }
+
+  for (let i = 0; i < groups.length; i++) {
+    for (let j = i + 1; j < groups.length; j++) {
+      if (sheetTagGroupsShareAnyTagId(tagSets[i]!, tagSets[j]!)) {
+        unionRoots(i, j)
+      }
+    }
+  }
+
+  const clusterMap = new Map<number, number[]>()
+  for (let i = 0; i < groups.length; i++) {
+    const root = findRoot(i)
+    const list = clusterMap.get(root)
+    if (list) list.push(i)
+    else clusterMap.set(root, [i])
+  }
+
+  const clusterRoots = [...clusterMap.keys()].sort(
+    (a, b) => Math.min(...clusterMap.get(a)!) - Math.min(...clusterMap.get(b)!),
+  )
+
+  const clustered: T[] = []
+  for (const root of clusterRoots) {
+    const indices = clusterMap.get(root)!.sort((a, b) => a - b)
+    for (const i of indices) {
+      clustered.push(groups[i]!)
+    }
+  }
+  return clustered
+}
+
 function groupNotesByVisibleSheetTags(
   notes: NoteWithTags[],
   tagCatalog: Map<string, TagRow>,
@@ -495,7 +561,7 @@ function groupNotesByVisibleSheetTags(
     }
   }
 
-  return groupOrder.map((key) => {
+  const groups = groupOrder.map((key) => {
     const group = map.get(key)!
     group.notes.sort(compareNotesOldestFirst)
     return {
@@ -507,6 +573,8 @@ function groupNotesByVisibleSheetTags(
           : `__memo_only__:${group.notes[0]?.id ?? 'empty'}`,
     }
   })
+
+  return clusterSheetGroupsBySharedTags(groups)
 }
 
 function NoteBoardSheetTagLine({
@@ -4133,7 +4201,6 @@ export function HomePage() {
           lockedParentTagId={addNoteCompose.lockedParentTagId}
           childTagCompose={addNoteCompose.childTagCompose}
           allTags={allTags}
-          tagParentLinks={tagParentLinks}
           allSources={allSources}
           userId={user.id}
           onSaved={applyNoteCreated}

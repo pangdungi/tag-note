@@ -1,18 +1,13 @@
 import { useEffect, useId, useRef, useState, startTransition } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
 import { SourceComposer, type SelectedSource } from './SourceComposer'
-import { MemoParentTagSelect } from './MemoParentTagSelect'
 import {
   createNoteWithTags,
   type NoteWithTags,
   type SourceRow,
   type TagRow,
 } from '../lib/notesApi'
-import {
-  inferParentTagIdFromTagIds,
-  normalizeTagInput,
-  type TagParentLink,
-} from '../lib/tagUtils'
+import { normalizeTagInput } from '../lib/tagUtils'
 import { MemoNoteEditor } from './MemoNoteEditor'
 import { readMemoEditorBody } from '../lib/memoQuickEmojis'
 
@@ -31,7 +26,6 @@ type Props = {
   /** 상위 아래 하위 a 선택 후 + — a만 태그, 상위 지정 UI 숨김 */
   childTagCompose?: boolean
   allTags: TagRow[]
-  tagParentLinks?: TagParentLink[]
   allSources: SourceRow[]
   userId: string
   onSaved: (note: NoteWithTags, options?: SavedOptions) => void | Promise<void>
@@ -121,7 +115,6 @@ export function AddNoteModal({
   lockedParentTagId = null,
   childTagCompose = false,
   allTags,
-  tagParentLinks,
   allSources,
   userId,
   onSaved,
@@ -133,7 +126,6 @@ export function AddNoteModal({
   const bodyId = `${idBase}-body`
 
   const [tags, setTags] = useState<SelectedTag[]>([])
-  const [parentTagId, setParentTagId] = useState('')
   const [body, setBody] = useState('')
   const [selectedSource, setSelectedSource] = useState<SelectedSource | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -141,12 +133,9 @@ export function AddNoteModal({
   const wasOpenRef = useRef(false)
   const allTagsRef = useRef(allTags)
   const initialTagsRef = useRef(initialTags)
-  const tagParentLinksRef = useRef(tagParentLinks)
   allTagsRef.current = allTags
   initialTagsRef.current = initialTags
-  tagParentLinksRef.current = tagParentLinks
 
-  const showParentPicker = !lockedParentTagId && !childTagCompose
   const lockedParent = lockedParentTagId
     ? allTags.find((t) => t.id === lockedParentTagId)
     : null
@@ -168,20 +157,8 @@ export function AddNoteModal({
       lockedParentTagId,
       allTagsRef.current,
     )
-    const seedIds = seed.map((t) => t.id).filter(Boolean) as string[]
     startTransition(() => {
       setTags(seed)
-      setParentTagId(
-        lockedParentTagId
-          ? lockedParentTagId
-          : childTagCompose
-            ? ''
-            : inferParentTagIdFromTagIds(
-                seedIds,
-                allTagsRef.current,
-                tagParentLinksRef.current,
-              ),
-      )
       setBody('')
       setSelectedSource(null)
       setError(null)
@@ -222,14 +199,6 @@ export function AddNoteModal({
         <div className="edit-note-modal-scroll">
           <div className="edit-note-modal-body">
           <div className="composer-stack">
-            {showParentPicker ? (
-              <MemoParentTagSelect
-                allTags={allTags}
-                tagParentLinks={tagParentLinks}
-                value={parentTagId}
-                onChange={setParentTagId}
-              />
-            ) : null}
             <TagComposer
               allTags={allTags}
               selected={tags}

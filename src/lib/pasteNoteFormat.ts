@@ -170,6 +170,28 @@ export function parseNotePasteWithTrailingUrl(
   return { body, source }
 }
 
+/** 메모 저장 토큰(:m/id:)·ZWSP 제외하고 줄바꿈·공백만인 선택 구간 */
+function isStructuralOnlyBodySlice(text: string): boolean {
+  const stripped = text
+    .replace(/\u200B/g, '')
+    .replace(/:m\/[\w-]+:/g, '')
+  return stripped.length === 0 || /^[\n\s]*$/.test(stripped)
+}
+
+function collapsePasteSelectionInBody(
+  body: string,
+  selectionStart: number,
+  selectionEnd: number,
+): { start: number; end: number } {
+  const len = body.length
+  let start = Math.max(0, Math.min(selectionStart, len))
+  let end = Math.max(start, Math.min(selectionEnd, len))
+  if (end > start && isStructuralOnlyBodySlice(body.slice(start, end))) {
+    end = start
+  }
+  return { start, end }
+}
+
 export function applyStructuredNotePaste(
   currentBody: string,
   currentSource: string,
@@ -182,9 +204,16 @@ export function applyStructuredNotePaste(
     return { body: currentBody, source: currentSource, handled: false }
   }
 
-  const before = currentBody.slice(0, selectionStart)
-  const after = currentBody.slice(selectionEnd)
-  const newBody = cleanPastedMemoText(`${before}${parsed.body}${after}`)
+  const { start, end } = collapsePasteSelectionInBody(
+    currentBody,
+    selectionStart,
+    selectionEnd,
+  )
+  const before = currentBody.slice(0, start)
+  const after = currentBody.slice(end)
+  const newBody = cleanPastedMemoText(`${before}${parsed.body}${after}`, {
+    trimWhole: false,
+  })
 
   let newSource = currentSource
   if (parsed.source) {

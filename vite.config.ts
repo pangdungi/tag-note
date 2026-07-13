@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'pwa-192.png', 'pwa-512.png'],
       manifest: {
-        name: '태그노트',
-        short_name: '태그노트',
+        name: '두들노트',
+        short_name: '두들노트',
         description: '태그로 정리하는 메모',
         theme_color: '#ffffff',
         background_color: '#ffffff',
