@@ -28,6 +28,9 @@ type HomeBrowseNavButtonsProps = {
   /** 상위태그 spine 펼침 — 책 아이콘을 뒤로가기로 표시 */
   booksBackMode?: boolean
   onBooksBack?: () => void
+  /** 출처 spine 펼침 — 출처 아이콘을 뒤로가기로 표시 */
+  linksBackMode?: boolean
+  onLinksBack?: () => void
 }
 
 export function HomeBrowseNavButtons({
@@ -36,24 +39,44 @@ export function HomeBrowseNavButtons({
   onSelect,
   booksBackMode = false,
   onBooksBack,
+  linksBackMode = false,
+  onLinksBack,
 }: HomeBrowseNavButtonsProps) {
   return (
     <>
       {NAV_ITEMS.map((item) => {
         const isBooksBack = item.id === 'books' && booksBackMode
-        const isActive = activeId === item.id && !isBooksBack
+        const isLinksBack = item.id === 'links' && linksBackMode
+        const isNavBack = isBooksBack || isLinksBack
+        const isActive = activeId === item.id && !isNavBack
+        const backLabel =
+          item.id === 'books'
+            ? '상위 태그 목록으로'
+            : item.id === 'links'
+              ? '출처 목록으로'
+              : item.label
+        const backTitle =
+          item.id === 'books'
+            ? '상위 태그 목록'
+            : item.id === 'links'
+              ? '출처 목록'
+              : item.title
         return (
           <button
             key={item.id}
             type="button"
             className={`btn btn--icon${isActive ? ' btn--active' : ''}`}
-            aria-label={isBooksBack ? '상위 태그 목록으로' : item.label}
-            title={isBooksBack ? '상위 태그 목록' : item.title}
+            aria-label={isNavBack ? backLabel : item.label}
+            title={isNavBack ? backTitle : item.title}
             aria-pressed={isActive}
             disabled={disabled}
             onClick={() => {
               if (isBooksBack) {
                 onBooksBack?.()
+                return
+              }
+              if (isLinksBack) {
+                onLinksBack?.()
                 return
               }
               onSelect(item.id)
@@ -64,18 +87,18 @@ export function HomeBrowseNavButtons({
                 src={item.icon}
                 alt=""
                 className={`btn--icon-img home-browse-nav-icon${
-                  isBooksBack ? ' home-browse-nav-icon--out' : ''
+                  isNavBack ? ' home-browse-nav-icon--out' : ''
                 }`}
                 width={20}
                 height={20}
                 decoding="async"
               />
-              {item.id === 'books' ? (
+              {item.id === 'books' || item.id === 'links' ? (
                 <img
                   src={backNavIconUrl}
                   alt=""
                   className={`btn--icon-img home-browse-nav-icon home-browse-nav-icon--back${
-                    isBooksBack ? ' home-browse-nav-icon--in' : ''
+                    isNavBack ? ' home-browse-nav-icon--in' : ''
                   }`}
                   width={20}
                   height={20}
@@ -98,6 +121,8 @@ type HomeMobileBrowseFabProps = {
   onSelect: (id: HomeBrowseNavId) => void
   booksBackMode?: boolean
   onBooksBack?: () => void
+  linksBackMode?: boolean
+  onLinksBack?: () => void
 }
 
 export function HomeMobileBrowseFab({
@@ -108,6 +133,8 @@ export function HomeMobileBrowseFab({
   onSelect,
   booksBackMode = false,
   onBooksBack,
+  linksBackMode = false,
+  onLinksBack,
 }: HomeMobileBrowseFabProps) {
   return (
     <>
@@ -129,6 +156,8 @@ export function HomeMobileBrowseFab({
           onSelect={onSelect}
           booksBackMode={booksBackMode}
           onBooksBack={onBooksBack}
+          linksBackMode={linksBackMode}
+          onLinksBack={onLinksBack}
         />
       </div>
       <button

@@ -21,12 +21,14 @@ import {
   fetchNotesForMainSearch,
   fetchSourcesInUse,
   fetchSourceDistinctTagCounts,
-  fetchTagMemoCounts,
+  fetchNoteTagLinks,
+  buildTagMemoCountsFromLinks,
   fetchTags,
   fetchTagParentLinks,
   filterSourcesByQuery,
   filterTagsByMainSearch,
   mapNotesWithRenamedTag,
+  mapNotesWithBulkAddedTag,
   mergeSourcesFromNoteIntoAllSources,
   mergeTagsFromNoteIntoAllTags,
   buildTagCatalogMap,
@@ -51,6 +53,7 @@ import {
   type TagRow,
 } from '../lib/notesApi'
 import {
+  buildParentTreeMemoCounts,
   displayTagName,
   getParentTags,
   getTagsForTagViewRail,
@@ -1253,6 +1256,9 @@ export function HomePage() {
   const [tagMemoCountById, setTagMemoCountById] = useState<
     Record<string, number>
   >({})
+  const [parentTreeMemoCountById, setParentTreeMemoCountById] = useState<
+    Record<string, number>
+  >({})
   const [sourceTagCountById, setSourceTagCountById] = useState<
     Record<string, number>
   >({})
@@ -1426,11 +1432,18 @@ export function HomePage() {
 
   const refreshHomeCountMaps = useCallback(async (uid: string) => {
     try {
-      const [tagMemoCounts, sourceTagCounts] = await Promise.all([
-        fetchTagMemoCounts(),
+      const [noteTagLinks, sourceTagCounts] = await Promise.all([
+        fetchNoteTagLinks(),
         fetchSourceDistinctTagCounts(),
       ])
+      const tagMemoCounts = buildTagMemoCountsFromLinks(noteTagLinks)
+      const parentTreeMemoCounts = buildParentTreeMemoCounts(
+        noteTagLinks,
+        allTagsRef.current,
+        tagParentLinksRef.current,
+      )
       setTagMemoCountById(tagMemoCounts)
+      setParentTreeMemoCountById(parentTreeMemoCounts)
       setSourceTagCountById(sourceTagCounts)
       writeHomeSnapshotCache(uid, {
         tags: allTagsRef.current,
@@ -1671,11 +1684,13 @@ export function HomePage() {
         const fresh = await fetchNoteWithTagsById(noteId)
         setNotes((prev) => prev.map((n) => (n.id === noteId ? fresh : n)))
         setEditingNote((cur) => (cur?.id === noteId ? fresh : cur))
+        setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, fresh))
       } catch {
         void loadData({ showGridLoading: false })
       }
+      void refreshTagsAndLinks()
     },
-    [loadData],
+    [loadData, refreshTagsAndLinks],
   )
 
   const syncAllFromServer = useCallback(async () => {
@@ -1763,6 +1778,31 @@ export function HomePage() {
       clearTagPullCache()
     },
     [clearTagPullCache],
+  )
+
+  const applyBulkMainTagApplied = useCallback(
+    (sourceTagId: string, targetTag: TagRow) => {
+      invalidateTagPullRequests()
+      const applyBulk = (list: NoteWithTags[]) =>
+        mapNotesWithBulkAddedTag(list, sourceTagId, targetTag)
+
+      setNotes((prev) => {
+        const next = applyBulk(prev)
+        reconcileTagPullForNotes(next)
+        return next
+      })
+      setTagPullEntry((cur) =>
+        cur ? { ...cur, notes: applyBulk(cur.notes) } : cur,
+      )
+      for (const [key, entry] of tagPullCacheRef.current.entries()) {
+        tagPullCacheRef.current.set(key, {
+          ...entry,
+          notes: applyBulk(entry.notes),
+        })
+      }
+      void refreshHomeTagCounts()
+    },
+    [invalidateTagPullRequests, reconcileTagPullForNotes, refreshHomeTagCounts],
   )
 
   const applyTagsAssigned = useCallback(
@@ -2289,7 +2329,7 @@ export function HomePage() {
       for (const note of notesForSelectedSource) {
         for (const nt of note.note_tags) {
           const id = nt.tags?.id ?? nt.tag_id
-          if (id && !id.startsWith('pending-')) {
+          if (id) {
             linkedIds.add(id)
           }
         }
@@ -2401,6 +2441,12 @@ export function HomePage() {
     setTagPullEntry(null)
     setViewingNote(null)
     syncTagPullEntryForSelection(null)
+  }
+
+  function collapseLinksSourceRail() {
+    clearSourceFilter()
+    setViewingNote(null)
+    setViewingNoteContextTagId(null)
   }
 
   function clearDateFilter() {
@@ -2887,6 +2933,11 @@ export function HomePage() {
     [tagMemoCountById],
   )
 
+  const parentTreeMemoCounts = useMemo(
+    () => new Map(Object.entries(parentTreeMemoCountById)),
+    [parentTreeMemoCountById],
+  )
+
   const sourceTagCounts = useMemo(
     () => new Map(Object.entries(sourceTagCountById)),
     [sourceTagCountById],
@@ -2899,6 +2950,10 @@ export function HomePage() {
 
   const showBooksNavBackMode = Boolean(
     homeBrowseNav === 'books' && booksRailExpandedParentId,
+  )
+
+  const showLinksNavBackMode = Boolean(
+    homeBrowseNav === 'links' && selectedSourceId,
   )
 
   const showBrowseRail =
@@ -3149,7 +3204,7 @@ export function HomePage() {
 
   const railSettingsLabel = useMemo(() => {
     if (!railEditContext) return '설정'
-    if (railEditContext.kind === 'parent') return '상위태그 수정'
+    if (railEditContext.kind === 'parent') return '메인 태그 수정'
     if (railEditContext.kind === 'tag') return '태그 수정'
     return '출처 수정'
   }, [railEditContext])
@@ -3800,7 +3855,7 @@ export function HomePage() {
                         tagParentLinks,
                       )
                       const spineSelected = isOpen || active
-                      const spineStatValue = tagMemoCounts.get(t.id) ?? 0
+                      const spineStatValue = parentTreeMemoCounts.get(t.id) ?? 0
                       const spineStatAria = `메모 ${spineStatValue}개`
                       return (
                         <li
@@ -3828,8 +3883,8 @@ export function HomePage() {
                                 <button
                                   type="button"
                                   className="parent-tag-spine-top-btn"
-                                  aria-label={`${displayTagName(t.name)} 상위태그 수정`}
-                                  title="상위태그 수정"
+                                  aria-label={`${displayTagName(t.name)} 메인 태그 수정`}
+                                  title="메인 태그 수정"
                                   disabled={!canUseCompose}
                                   onClick={(e) => {
                                     e.stopPropagation()
@@ -4168,6 +4223,8 @@ export function HomePage() {
                   onSelect={selectBrowseNav}
                   booksBackMode={showBooksNavBackMode}
                   onBooksBack={collapseBooksParentRail}
+                  linksBackMode={showLinksNavBackMode}
+                  onLinksBack={collapseLinksSourceRail}
                 />
               </div>
               <div className="home-bottom-quick-actions">
@@ -4220,6 +4277,7 @@ export function HomePage() {
         onClose={() => setRailEditingTag(null)}
         onTagUpdated={applyTagUpdated}
         onTagParentSynced={applyTagParentSynced}
+        onBulkMainTagApplied={applyBulkMainTagApplied}
         onTagDeleted={applyTagDeleted}
         onAfterTagDeleted={syncTagsAfterDelete}
         onTagsPromoted={applyTagPromoted}

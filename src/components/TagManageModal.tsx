@@ -282,14 +282,14 @@ export function TagManageModal({
                           <button
                             type="button"
                             className="tag-manage-row-button tag-manage-panel-parent-edit"
-                            aria-label={`${displayTagName(selectedParent.name)} 상위 태그 수정`}
+                            aria-label={`${displayTagName(selectedParent.name)} 메인 태그 수정`}
                             onClick={() => setEditingTag(selectedParent)}
                           >
                             <span className="tag-manage-pill tag-manage-pill--parent">
                               {displayTagName(selectedParent.name)}
                             </span>
                             <span className="tag-manage-panel-edit-hint">
-                              상위 태그 이름 수정
+                              메인 태그 이름 수정
                             </span>
                           </button>
                         </div>

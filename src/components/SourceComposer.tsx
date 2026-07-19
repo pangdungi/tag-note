@@ -76,11 +76,6 @@ export function SourceComposer({
   }
 
   const inputValue = selected ? displaySourceTitle(selected.title) : draft
-  const draftNormalized = normalizeSourceTitle(draft)
-  const canCommitDraft =
-    !selected &&
-    (draftNormalized.length > 0 ||
-      (open && activeIndex >= 0 && activeIndex < suggestions.length))
 
   return (
     <div className="composer-source-field">
@@ -234,18 +229,6 @@ export function SourceComposer({
             </ul>
           ) : null}
         </div>
-        {!selected ? (
-          <button
-            type="button"
-            className="btn source-input-add-btn"
-            disabled={!canCommitDraft}
-            aria-label="출처 확정"
-            onMouseDown={(ev) => ev.preventDefault()}
-            onClick={() => commitDraftFromInput()}
-          >
-            확인
-          </button>
-        ) : null}
       </div>
     </div>
   )

@@ -1,5 +1,3 @@
-import type { ClipboardEvent } from 'react'
-
 /** 마지막 줄(또는 끝) URL + 그 바로 위 줄을 출처로 보는 붙여넣기 포맷 */
 export type ParsedNotePaste = {
   body: string
@@ -55,17 +53,7 @@ function findSourceLineIdx(lines: string[], urlLineIdx: number): number {
   return -1
 }
 
-/** 전자책·웹 복사 시 붙는 끝 `...` / `…` 제거 */
-export function stripTrailingPasteEllipsis(text: string): string {
-  let t = text
-  // 마침표 + 말줄임 (예: `많다....`) → 마침표 하나
-  t = t.replace(/\.(\.{3,}|…+)+$/u, '.')
-  // 줄 끝 말줄임만 (예: `...`, `…`)
-  t = t.replace(/(\.{3,}|…+)$/u, '')
-  return t.trimEnd()
-}
-
-/** HTML 클립보드 → 평문 */
+/** HTML 클립보드 → 평문 (줄바꿈·공백 그대로) */
 export function clipboardHtmlToPlainMemoText(html: string): string {
   if (!html.trim()) return ''
   const doc = new DOMParser().parseFromString(html, 'text/html')
@@ -110,29 +98,12 @@ export function clipboardHtmlToPlainMemoText(html: string): string {
   }
 
   for (const child of doc.body.childNodes) walk(child)
-  return out.replace(/\n{3,}/g, '\n\n').trimEnd()
-}
-
-/** 붙여넣은 메모 본문 — 각 줄 끝 말줄임 정리 */
-export function cleanPastedMemoText(
-  text: string,
-  options?: { trimWhole?: boolean },
-): string {
-  const trimWhole = options?.trimWhole ?? true
-  let result = text
-    .split('\n')
-    .map((line) => stripTrailingPasteEllipsis(line))
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-  if (trimWhole) {
-    result = result.trim()
-  }
-  return result
+  return out
 }
 
 /**
  * 끝에 URL이 있는 붙여넣기 텍스트를 본문·출처로 분리.
- * URL 직전 비어 있지 않은 줄 → 출처, 그 위 → 본문. URL은 제거.
+ * URL·출처 줄·서점 안내 줄만 제거하고 본문은 그대로 둠.
  */
 export function parseNotePasteWithTrailingUrl(
   raw: string,
@@ -159,98 +130,7 @@ export function parseNotePasteWithTrailingUrl(
       : null
   const source = sourceRaw && sourceRaw.length > 0 ? sourceRaw : null
   const bodyEnd = sourceLineIdx >= 0 ? sourceLineIdx : urlLineIdx
-  const body = cleanPastedMemoText(
-    lines
-      .slice(0, bodyEnd)
-      .join('\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim(),
-  )
+  const body = lines.slice(0, bodyEnd).join('\n')
 
   return { body, source }
-}
-
-/** 메모 저장 토큰(:m/id:)·ZWSP 제외하고 줄바꿈·공백만인 선택 구간 */
-function isStructuralOnlyBodySlice(text: string): boolean {
-  const stripped = text
-    .replace(/\u200B/g, '')
-    .replace(/:m\/[\w-]+:/g, '')
-  return stripped.length === 0 || /^[\n\s]*$/.test(stripped)
-}
-
-function collapsePasteSelectionInBody(
-  body: string,
-  selectionStart: number,
-  selectionEnd: number,
-): { start: number; end: number } {
-  const len = body.length
-  let start = Math.max(0, Math.min(selectionStart, len))
-  let end = Math.max(start, Math.min(selectionEnd, len))
-  if (end > start && isStructuralOnlyBodySlice(body.slice(start, end))) {
-    end = start
-  }
-  return { start, end }
-}
-
-export function applyStructuredNotePaste(
-  currentBody: string,
-  currentSource: string,
-  pastedText: string,
-  selectionStart: number,
-  selectionEnd: number,
-): { body: string; source: string; handled: boolean } {
-  const parsed = parseNotePasteWithTrailingUrl(pastedText)
-  if (!parsed) {
-    return { body: currentBody, source: currentSource, handled: false }
-  }
-
-  const { start, end } = collapsePasteSelectionInBody(
-    currentBody,
-    selectionStart,
-    selectionEnd,
-  )
-  const before = currentBody.slice(0, start)
-  const after = currentBody.slice(end)
-  const newBody = cleanPastedMemoText(`${before}${parsed.body}${after}`, {
-    trimWhole: false,
-  })
-
-  let newSource = currentSource
-  if (parsed.source) {
-    newSource = parsed.source
-  }
-
-  return { body: newBody, source: newSource, handled: true }
-}
-
-export function onStructuredNoteBodyPaste(
-  e: ClipboardEvent<HTMLTextAreaElement>,
-  body: string,
-  source: string,
-  setBody: (value: string) => void,
-  setSource: (value: string) => void,
-): void {
-  const pasted = e.clipboardData.getData('text/plain')
-  const { selectionStart, selectionEnd } = e.currentTarget
-  const result = applyStructuredNotePaste(
-    body,
-    source,
-    pasted,
-    selectionStart,
-    selectionEnd,
-  )
-  if (result.handled) {
-    e.preventDefault()
-    setBody(result.body)
-    setSource(result.source)
-    return
-  }
-
-  const cleaned = cleanPastedMemoText(pasted)
-  if (cleaned === pasted) return
-
-  e.preventDefault()
-  const before = body.slice(0, selectionStart)
-  const after = body.slice(selectionEnd)
-  setBody(cleanPastedMemoText(`${before}${cleaned}${after}`))
 }

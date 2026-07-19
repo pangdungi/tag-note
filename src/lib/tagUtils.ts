@@ -289,6 +289,48 @@ export function resolveTagFilterIds(
   return [selectedTagId]
 }
 
+export type NoteTagLinkRow = {
+  note_id: string
+  tag_id: string
+}
+
+/** 메인 태그 spine — 상위·하위 태그 중 하나라도 붙은 메모 수(중복 제외) */
+export function buildParentTreeMemoCounts(
+  links: NoteTagLinkRow[],
+  tags: TagHierarchyRow[],
+  parentLinks?: TagParentLink[],
+): Record<string, number> {
+  const parents = getParentTags(tags, parentLinks)
+  if (parents.length === 0) return {}
+
+  const tagToParents = new Map<string, string[]>()
+  for (const parent of parents) {
+    for (const tagId of resolveTagFilterIds(parent.id, tags, parentLinks)) {
+      const list = tagToParents.get(tagId) ?? []
+      if (!list.includes(parent.id)) list.push(parent.id)
+      tagToParents.set(tagId, list)
+    }
+  }
+
+  const noteSets = new Map<string, Set<string>>()
+  for (const parent of parents) {
+    noteSets.set(parent.id, new Set())
+  }
+
+  for (const { note_id, tag_id } of links) {
+    if (!note_id || !tag_id) continue
+    for (const parentId of tagToParents.get(tag_id) ?? []) {
+      noteSets.get(parentId)?.add(note_id)
+    }
+  }
+
+  const counts: Record<string, number> = {}
+  for (const [parentId, set] of noteSets) {
+    counts[parentId] = set.size
+  }
+  return counts
+}
+
 /** 상위 태그 트리(상위·하위)에 속한 태그가 하나라도 붙은 메모 */
 export function filterNotesForParentTagTree<
   T extends {

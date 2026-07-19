@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, startTransition } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
 import { SourceComposer, type SelectedSource } from './SourceComposer'
 import {
@@ -85,7 +85,7 @@ function buildLocalPreviewNote(
   const srcTitle = source?.title.trim() ?? ''
   return {
     id: tempId,
-    body: body.trim(),
+    body,
     source: srcTitle,
     source_id: source?.id ?? null,
     sources: source?.id && srcTitle
@@ -130,7 +130,8 @@ export function AddNoteModal({
   const [selectedSource, setSelectedSource] = useState<SelectedSource | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [fieldHint, setFieldHint] = useState<'tags' | 'body' | null>(null)
-  const wasOpenRef = useRef(false)
+  const [composeSession, setComposeSession] = useState(0)
+  const prevOpenRef = useRef(false)
   const allTagsRef = useRef(allTags)
   const initialTagsRef = useRef(initialTags)
   allTagsRef.current = allTags
@@ -143,27 +144,34 @@ export function AddNoteModal({
     ? normalizeTagInput(lockedParent.name)
     : ''
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) {
-      wasOpenRef.current = false
+      prevOpenRef.current = false
+      setBody('')
+      setTags([])
+      setSelectedSource(null)
+      setError(null)
+      setFieldHint(null)
       return
     }
-    if (wasOpenRef.current) {
+
+    const justOpened = !prevOpenRef.current
+    prevOpenRef.current = true
+    if (!justOpened) {
       return
     }
-    wasOpenRef.current = true
+
     const seed = buildSeedTags(
       initialTagsRef.current,
       lockedParentTagId,
       allTagsRef.current,
     )
-    startTransition(() => {
-      setTags(seed)
-      setBody('')
-      setSelectedSource(null)
-      setError(null)
-      setFieldHint(null)
-    })
+    setTags(seed)
+    setBody('')
+    setSelectedSource(null)
+    setError(null)
+    setFieldHint(null)
+    setComposeSession((n) => n + 1)
   }, [open, lockedParentTagId, childTagCompose])
 
   if (!open) return null
@@ -219,7 +227,9 @@ export function AddNoteModal({
                 메모
               </label>
               <MemoNoteEditor
+                key={composeSession}
                 id={bodyId}
+                resetKey={String(composeSession)}
                 className="edit-note-modal-note"
                 value={body}
                 onChange={(next) => {

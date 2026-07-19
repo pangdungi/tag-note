@@ -8,6 +8,7 @@ import {
   buildTagCatalogMap,
   resolveNoteTagChips,
   resolveNoteSourceTitle,
+  supabaseErrorMessage,
   type NoteWithTags,
   type SourceRow,
   type TagRow,
@@ -45,7 +46,7 @@ function buildLocalPreviewNote(
   const srcTitle = source?.title.trim() ?? ''
   return {
     id: noteId,
-    body: body.trim(),
+    body,
     source: srcTitle,
     source_id: source?.id ?? null,
     sources: source?.id && srcTitle
@@ -96,9 +97,11 @@ export function EditNoteModal({
   const [selectedSource, setSelectedSource] = useState<SelectedSource | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [seededNoteId, setSeededNoteId] = useState<string | null>(null)
 
   useLayoutEffect(() => {
     if (!open || !note) {
+      setSeededNoteId(null)
       return
     }
     setTags(noteToSelectedTags(note, allTags))
@@ -106,9 +109,13 @@ export function EditNoteModal({
     setSelectedSource(noteToSelectedSource(note, allSources))
     setError(null)
     setDeleteConfirmOpen(false)
-  }, [open, note?.id, note?.body, allTags, allSources])
+    setSeededNoteId(note.id)
+  }, [open, note, note?.id, note?.body, allTags, allSources])
 
   if (!open || !note) return null
+
+  const editorBody = seededNoteId === note.id ? body : (note.body ?? '')
+  const editorResetKey = `${note.id}:${seededNoteId === note.id ? 'ready' : 'seed'}`
 
   return (
     <>
@@ -142,11 +149,11 @@ export function EditNoteModal({
                 메모
               </label>
               <MemoNoteEditor
-                key={note.id}
+                key={editorResetKey}
                 id="edit-note-body"
-                resetKey={note.id}
+                resetKey={editorResetKey}
                 className="edit-note-modal-note"
-                value={body}
+                value={editorBody}
                 onChange={setBody}
                 source={selectedSource?.title ?? ''}
                 onSourceChange={(title) => {
@@ -223,7 +230,10 @@ export function EditNoteModal({
                     }, e)
                     await onSyncNoteFromServer?.(noteId)
                     onUpdateError?.(
-                      e instanceof Error ? e.message : '수정에 실패했습니다.',
+                      supabaseErrorMessage(
+                        e,
+                        '수정에 실패했습니다.',
+                      ),
                     )
                   }
                 })()

@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState, startTransition } from 'react'
 import { ConfirmModal } from './ConfirmModal'
 import { ModalSelect } from './ModalSelect'
 import {
+  bulkAddMainTagToNotesWithTag,
   deleteTag,
   deleteParentTag,
   promoteTagToParent,
@@ -15,6 +16,7 @@ import {
   canPromoteTagToParent,
   displayTagName,
   getParentTagCandidates,
+  isBooksRailParentTag,
   normalizeTagInput,
   resolveTagEditParentId,
   tagHasChildren,
@@ -32,6 +34,11 @@ type Props = {
     tagId: string,
     parentId: string | null,
     row: TagRow,
+  ) => void
+  /** 메인 태그 수정 — 다른 메인 태그를 메모에 일괄 적용 */
+  onBulkMainTagApplied?: (
+    sourceTagId: string,
+    targetTag: TagRow,
   ) => void
   onTagDeleted: (payload: { tagId: string; deletedNoteIds: string[] }) => void
   /** 상위태그 승격 후 하위로 편입된 태그 */
@@ -51,6 +58,7 @@ export function EditTagModal({
   tagParentLinks = [],
   onTagUpdated,
   onTagParentSynced,
+  onBulkMainTagApplied,
   onTagDeleted,
   onTagsPromoted,
   onTagError,
@@ -110,6 +118,8 @@ export function EditTagModal({
     normalizeTagInput(name).length > 0 && (nameChanged || parentChanged)
 
   const isParentTag = tagHasChildren(tag.id, tags)
+  const isMainTag = isBooksRailParentTag(tag, tags, tagParentLinks)
+  const modalTitle = isMainTag ? '메인 태그 수정' : '태그 수정'
   const deleteConfirmMessage = isParentTag
     ? `「${displayTagName(tag.name)}」 상위태그를 삭제할까요? 하위 태그는 삭제되지 않고 미분류(상위 미지정) 태그로 남습니다. 메모는 삭제되지 않고, 이 상위태그와의 연결만 제거됩니다. 삭제 후에는 다시 복구할 수 없습니다.`
     : `「${displayTagName(tag.name)}」 태그를 삭제할까요? 메모는 삭제되지 않습니다. 이 태그 연결만 제거되고, 태그가 하나도 없는 메모는 「태그 없음」에 보입니다. 삭제 후에는 다시 복구할 수 없습니다.`
@@ -126,12 +136,12 @@ export function EditTagModal({
         >
           <div className="tag-manage-head">
             <h2 id={titleId} className="tag-manage-title">
-              태그 수정
+              {modalTitle}
             </h2>
             <button
               type="button"
               className="tag-manage-close"
-              aria-label="태그 수정 닫기"
+              aria-label={`${modalTitle} 닫기`}
               onClick={() => onClose()}
             >
               ×
@@ -158,7 +168,7 @@ export function EditTagModal({
               {canPickParent ? (
                 <div className="composer-field">
                   <label className="composer-label" htmlFor={parentFieldId}>
-                    상위 태그
+                    {isMainTag ? '일괄 적용할 메인 태그' : '상위 태그'}
                   </label>
                   <ModalSelect
                     id={parentFieldId}
@@ -204,15 +214,23 @@ export function EditTagModal({
                 const saveName = name
                 const nextParentId = parentId || null
                 const label = normalizeTagInput(saveName)
+                const bulkMainTagApply =
+                  isMainTag && parentChanged && nextParentId != null
+                const targetMainTag = bulkMainTagApply
+                  ? tags.find((t) => t.id === nextParentId) ?? null
+                  : null
                 const optimisticRow = {
                   ...tag,
                   name: label,
-                  parent_id: nextParentId,
+                  ...(bulkMainTagApply ? {} : { parent_id: nextParentId }),
                 }
-                if (parentChanged) {
-                  onTagParentSynced?.(tagId, nextParentId, optimisticRow)
-                } else {
+                if (bulkMainTagApply && targetMainTag) {
+                  onBulkMainTagApplied?.(tagId, targetMainTag)
+                }
+                if (nameChanged) {
                   onTagUpdated(optimisticRow)
+                } else if (parentChanged && !bulkMainTagApply && !isMainTag) {
+                  onTagParentSynced?.(tagId, nextParentId, optimisticRow)
                 }
                 onClose()
                 void (async () => {
@@ -221,7 +239,12 @@ export function EditTagModal({
                     if (nameChanged) {
                       row = await updateTag(tagId, saveName)
                     }
-                    if (parentChanged) {
+                    if (bulkMainTagApply && nextParentId) {
+                      await bulkAddMainTagToNotesWithTag(tagId, nextParentId)
+                      if (nameChanged) {
+                        onTagUpdated(row)
+                      }
+                    } else if (parentChanged && !isMainTag) {
                       row = await updateTagParent(tagId, nextParentId)
                       onTagParentSynced?.(tagId, nextParentId, row)
                     } else if (nameChanged) {

@@ -6,26 +6,19 @@ import {
   useRef,
   type ClipboardEvent,
   type FocusEvent,
-  type KeyboardEvent,
 } from 'react'
 import {
-  cleanPastedMemoText,
   clipboardHtmlToPlainMemoText,
   parseNotePasteWithTrailingUrl,
 } from '../lib/pasteNoteFormat'
 import {
-  coalesceMemoEditorBody,
-  getMemoEditorPasteOffsets,
   insertMemoEmojiInEditor,
   insertMemoPlainTextInEditor,
   insertPlainTextInMemoEditor,
   isRangeInsideMemoEditor,
   memoBodyToEditorHtml,
-  normalizeLegacyUnicodeInString,
   normalizeMemoBodyStorage,
-  normalizeQuickEmojisInEditor,
-  serializeMemoEditor,
-  setSelectionAtSerializedOffset,
+  readMemoEditorBody,
   toggleMemoHighlightInEditor,
 } from '../lib/memoQuickEmojis'
 import { MemoEmojiBar } from './MemoEmojiBar'
@@ -40,30 +33,8 @@ type Props = {
   disabled?: boolean
   source?: string
   onSourceChange?: (next: string) => void
-  /** note.id 등 — 바뀔 때 에디터 내용을 value로 다시 채움 */
   resetKey?: string
-  /** true면 min 높이에서 더 늘어나지 않고 내부 스크롤 */
   scrollClamp?: boolean
-}
-
-type MemoEditorHistoryEntry = {
-  body: string
-  start: number
-  end: number
-}
-
-const MEMO_EDITOR_HISTORY_MAX = 100
-
-function normalizeEditorBody(body: string): string {
-  return normalizeLegacyUnicodeInString(normalizeMemoBodyStorage(body))
-}
-
-function collapseRangeToFocusEnd(range: Range): Range {
-  const collapsed = range.cloneRange()
-  if (!collapsed.collapsed) {
-    collapsed.collapse(false)
-  }
-  return collapsed
 }
 
 export function MemoNoteEditor({
@@ -82,137 +53,60 @@ export function MemoNoteEditor({
   const editorRef = useRef<HTMLDivElement>(null)
   const lastSerializedRef = useRef<string | null>(null)
   const savedRangeRef = useRef<Range | null>(null)
-  const savedSerializedOffsetRef = useRef(0)
   const isComposingRef = useRef(false)
-  const isHistoryActionRef = useRef(false)
-  const historyRef = useRef<MemoEditorHistoryEntry[]>([])
-  const historyIndexRef = useRef(0)
   const fallbackId = useId()
   const editorId = id ?? fallbackId
+  const lastResetKeyRef = useRef(resetKey)
 
-  const resetHistory = useCallback((body: string) => {
-    const normalized = normalizeEditorBody(body)
-    historyRef.current = [
-      {
-        body: normalized,
-        start: normalized.length,
-        end: normalized.length,
-      },
-    ]
-    historyIndexRef.current = 0
+  const syncEditorFromValue = useCallback((body: string) => {
+    const el = editorRef.current
+    if (!el) return
+    const normalized = normalizeMemoBodyStorage(body)
+    lastSerializedRef.current = normalized
+    el.innerHTML = normalized ? memoBodyToEditorHtml(normalized) : ''
   }, [])
 
-  const recordHistory = useCallback(
-    (next: string, start: number, end: number) => {
-      if (isHistoryActionRef.current || isComposingRef.current) return
-      const idx = historyIndexRef.current
-      const stack = historyRef.current
-      const top = stack[idx]
-      if (top && top.body === next && top.start === start && top.end === end) {
-        return
-      }
-      const trimmed = stack.slice(0, idx + 1)
-      trimmed.push({ body: next, start, end })
-      while (trimmed.length > MEMO_EDITOR_HISTORY_MAX) {
-        trimmed.shift()
-      }
-      historyRef.current = trimmed
-      historyIndexRef.current = trimmed.length - 1
-    },
-    [],
-  )
-
-  const syncEditorFromValue = useCallback(
-    (body: string, cursorOffset?: number) => {
-      const el = editorRef.current
-      if (!el) return
-      const normalized = normalizeEditorBody(body)
-      lastSerializedRef.current = normalized
-      el.innerHTML = normalized ? memoBodyToEditorHtml(normalized) : ''
-      if (cursorOffset != null) {
-        requestAnimationFrame(() => {
-          setSelectionAtSerializedOffset(el, cursorOffset)
-        })
-      }
-    },
-    [],
-  )
-
-  const applyHistoryEntry = useCallback(
-    (entry: MemoEditorHistoryEntry) => {
-      isHistoryActionRef.current = true
-      syncEditorFromValue(entry.body, entry.end)
-      lastSerializedRef.current = entry.body
-      onChange(entry.body)
-      requestAnimationFrame(() => {
-        isHistoryActionRef.current = false
-      })
-    },
-    [onChange, syncEditorFromValue],
-  )
-
-  const undo = useCallback(() => {
-    if (historyIndexRef.current <= 0) return
-    historyIndexRef.current -= 1
-    applyHistoryEntry(historyRef.current[historyIndexRef.current])
-  }, [applyHistoryEntry])
-
-  const redo = useCallback(() => {
-    if (historyIndexRef.current >= historyRef.current.length - 1) return
-    historyIndexRef.current += 1
-    applyHistoryEntry(historyRef.current[historyIndexRef.current])
-  }, [applyHistoryEntry])
-
   useLayoutEffect(() => {
-    if (lastSerializedRef.current === value) {
+    const normalizedValue = normalizeMemoBodyStorage(value)
+    const resetKeyChanged = lastResetKeyRef.current !== resetKey
+    lastResetKeyRef.current = resetKey
+
+    if (lastSerializedRef.current === normalizedValue) {
       return
     }
+
+    const el = editorRef.current
+    const isEditing =
+      el != null &&
+      (el === document.activeElement || el.contains(document.activeElement))
+    if (isEditing && !resetKeyChanged) {
+      return
+    }
+
     if (
-      lastSerializedRef.current != null &&
-      coalesceMemoEditorBody(value, lastSerializedRef.current) ===
-        normalizeEditorBody(lastSerializedRef.current)
+      resetKeyChanged &&
+      normalizedValue.length === 0 &&
+      (lastSerializedRef.current?.length ?? 0) > 0
     ) {
+      syncEditorFromValue(normalizedValue)
+      savedRangeRef.current = null
       return
     }
-    syncEditorFromValue(value)
-    resetHistory(value)
-  }, [value, resetKey, syncEditorFromValue, resetHistory])
+    syncEditorFromValue(normalizedValue)
+  }, [value, resetKey, syncEditorFromValue])
 
   useEffect(() => {
-    if (lastSerializedRef.current !== null) {
-      return
-    }
+    if (lastSerializedRef.current !== null) return
     syncEditorFromValue(value)
-    resetHistory(value)
-  }, [value, syncEditorFromValue, resetHistory])
+  }, [value, syncEditorFromValue])
 
   const emitChange = useCallback(() => {
     const el = editorRef.current
     if (!el) return
-    const rawNext = serializeMemoEditor(el)
-    const next = normalizeEditorBody(
-      coalesceMemoEditorBody(lastSerializedRef.current, rawNext),
-    )
-    const sel = window.getSelection()
-    const range =
-      sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
-    if (range && isRangeInsideMemoEditor(el, range)) {
-      const caret = collapseRangeToFocusEnd(range)
-      savedRangeRef.current = caret.cloneRange()
-      savedSerializedOffsetRef.current = getMemoEditorPasteOffsets(
-        el,
-        caret,
-      ).start
-      const { start, end } = getMemoEditorPasteOffsets(el, range)
-      lastSerializedRef.current = next
-      recordHistory(next, start, end)
-    } else {
-      lastSerializedRef.current = next
-      savedSerializedOffsetRef.current = next.length
-      recordHistory(next, next.length, next.length)
-    }
+    const next = readMemoEditorBody(el)
+    lastSerializedRef.current = next
     onChange(next)
-  }, [onChange, recordHistory])
+  }, [onChange])
 
   const rememberEditorSelection = useCallback(() => {
     const el = editorRef.current
@@ -221,9 +115,7 @@ export function MemoNoteEditor({
     if (!sel || sel.rangeCount === 0) return
     const range = sel.getRangeAt(0)
     if (!isRangeInsideMemoEditor(el, range)) return
-    const caret = collapseRangeToFocusEnd(range)
-    savedRangeRef.current = caret.cloneRange()
-    savedSerializedOffsetRef.current = getMemoEditorPasteOffsets(el, caret).start
+    savedRangeRef.current = range.cloneRange()
   }, [disabled])
 
   const resolveEditorInsertRange = useCallback((el: HTMLDivElement): Range => {
@@ -268,10 +160,6 @@ export function MemoNoteEditor({
 
   const handleInput = () => {
     if (isComposingRef.current) return
-    const el = editorRef.current
-    if (el) {
-      normalizeQuickEmojisInEditor(el)
-    }
     emitChange()
   }
 
@@ -288,6 +176,7 @@ export function MemoNoteEditor({
 
     if (insertMemoEmojiInEditor(el, emojiId)) {
       emitChange()
+      rememberEditorSelection()
     }
   }
 
@@ -296,6 +185,7 @@ export function MemoNoteEditor({
     if (!el || disabled) return
     if (insertMemoPlainTextInEditor(el, char)) {
       emitChange()
+      rememberEditorSelection()
     }
   }
 
@@ -304,6 +194,7 @@ export function MemoNoteEditor({
     if (!el || disabled) return
     if (toggleMemoHighlightInEditor(el)) {
       emitChange()
+      rememberEditorSelection()
     }
   }
 
@@ -319,58 +210,20 @@ export function MemoNoteEditor({
       clipboardHtmlToPlainMemoText(e.clipboardData.getData('text/html'))
     if (!pasted) return
 
-    const insertRange = resolveEditorInsertRange(el)
-    const caret = collapseRangeToFocusEnd(insertRange)
-
-    el.focus()
-    const sel = window.getSelection()
-    if (sel) {
-      sel.removeAllRanges()
-      sel.addRange(caret)
-    }
-
+    const range = resolveEditorInsertRange(el)
     const parsedKyobo = parseNotePasteWithTrailingUrl(pasted)
-    if (parsedKyobo) {
-      insertPlainTextInMemoEditor(
-        el,
-        caret,
-        cleanPastedMemoText(parsedKyobo.body, { trimWhole: false }),
-      )
-      emitChange()
-      if (parsedKyobo.source && onSourceChange) {
-        onSourceChange(parsedKyobo.source)
-      }
-      rememberEditorSelection()
-      return
-    }
+    const insertText = parsedKyobo?.body ?? pasted
 
-    insertPlainTextInMemoEditor(el, caret, pasted)
+    insertPlainTextInMemoEditor(el, range, insertText)
     emitChange()
+
+    if (parsedKyobo?.source && onSourceChange) {
+      onSourceChange(parsedKyobo.source)
+    }
     rememberEditorSelection()
   }
 
   const boxHeight = `${Math.max(rows, 3) * 1.5 + 1.5}rem`
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (disabled || isComposingRef.current) return
-    const mod = e.metaKey || e.ctrlKey
-    if (!mod) return
-    const key = e.key.toLowerCase()
-    if (key === 'z' && !e.shiftKey) {
-      e.preventDefault()
-      undo()
-      return
-    }
-    if (key === 'z' && e.shiftKey) {
-      e.preventDefault()
-      redo()
-      return
-    }
-    if (key === 'y') {
-      e.preventDefault()
-      redo()
-    }
-  }
 
   return (
     <>
@@ -388,7 +241,6 @@ export function MemoNoteEditor({
           ...(scrollClamp ? { maxHeight: boxHeight } : {}),
         }}
         data-placeholder={placeholder}
-        onKeyDown={handleKeyDown}
         onInput={handleInput}
         onMouseUp={rememberEditorSelection}
         onKeyUp={rememberEditorSelection}
