@@ -23,6 +23,19 @@ type Props = {
   suggestPlacement?: 'down' | 'up'
 }
 
+function resolveSourceFromTitle(
+  title: string,
+  allSources: SourceRow[],
+): SelectedSource | null {
+  const label = normalizeSourceTitle(title)
+  if (!label) return null
+  const ref =
+    allSources.find((s) => sourceTitleKey(s.title) === sourceTitleKey(label)) ??
+    null
+  if (ref) return { id: ref.id, title: ref.title }
+  return { title: label }
+}
+
 export function SourceComposer({
   allSources,
   selected,
@@ -32,50 +45,24 @@ export function SourceComposer({
   const listId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const lastEnterAt = useRef(0)
-  const [draft, setDraft] = useState('')
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
 
-  const suggestions = filterSourcesByQuery(allSources, draft)
+  const inputValue = selected ? displaySourceTitle(selected.title) : ''
+  const suggestions = filterSourcesByQuery(allSources, inputValue)
 
-  function commitSource(title: string, existing?: SourceRow) {
-    const label = normalizeSourceTitle(title)
-    if (!label) {
-      onChange(null)
-      setDraft('')
-      setOpen(false)
-      return
-    }
-    if (existing) {
-      onChange({ id: existing.id, title: existing.title })
-    } else {
-      const ref =
-        allSources.find((s) => sourceTitleKey(s.title) === sourceTitleKey(label)) ??
-        null
-      if (ref) {
-        onChange({ id: ref.id, title: ref.title })
-      } else {
-        onChange({ title: label })
-      }
-    }
-    setDraft('')
+  function applyTitle(raw: string) {
+    onChange(resolveSourceFromTitle(raw, allSources))
+    setOpen(Boolean(normalizeSourceTitle(raw)))
+    setActiveIndex(-1)
+  }
+
+  function pickSource(row: SourceRow) {
+    onChange({ id: row.id, title: row.title })
     setOpen(false)
+    setActiveIndex(-1)
     inputRef.current?.focus()
   }
-
-  function commitDraftFromInput() {
-    const picked =
-      open && activeIndex >= 0 && activeIndex < suggestions.length
-        ? suggestions[activeIndex]
-        : undefined
-    if (picked) {
-      commitSource(picked.title, picked)
-    } else {
-      commitSource(draft)
-    }
-  }
-
-  const inputValue = selected ? displaySourceTitle(selected.title) : draft
 
   return (
     <div className="composer-source-field">
@@ -112,22 +99,10 @@ export function SourceComposer({
             aria-autocomplete="list"
             aria-expanded={open && suggestions.length > 0}
             aria-controls={listId + '-suggest'}
-            onChange={(e) => {
-              if (selected) {
-                onChange(null)
-              }
-              setDraft(e.target.value)
-              setActiveIndex(-1)
-              setOpen(true)
-            }}
+            onChange={(e) => applyTitle(e.target.value)}
             onFocus={() => setOpen(true)}
             onBlur={() => {
-              window.setTimeout(() => {
-                if (!selected && draft.trim()) {
-                  commitSource(draft)
-                }
-                setOpen(false)
-              }, 150)
+              window.setTimeout(() => setOpen(false), 150)
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -136,8 +111,13 @@ export function SourceComposer({
                 if (now - lastEnterAt.current < 120) return
                 lastEnterAt.current = now
                 e.preventDefault()
-                if (selected) return
-                commitDraftFromInput()
+                if (
+                  open &&
+                  activeIndex >= 0 &&
+                  activeIndex < suggestions.length
+                ) {
+                  pickSource(suggestions[activeIndex]!)
+                }
                 return
               }
               if (e.key === 'ArrowDown') {
@@ -164,7 +144,7 @@ export function SourceComposer({
                 setOpen(false)
                 setActiveIndex(-1)
               }
-              if (e.key === 'Backspace' && selected && !draft) {
+              if (e.key === 'Backspace' && selected && !inputValue) {
                 onChange(null)
               }
             }}
@@ -177,14 +157,13 @@ export function SourceComposer({
               onMouseDown={(ev) => ev.preventDefault()}
               onClick={() => {
                 onChange(null)
-                setDraft('')
                 inputRef.current?.focus()
               }}
             >
               ×
             </button>
           ) : null}
-          {!selected && open && draft.trim() && suggestions.length > 0 ? (
+          {open && inputValue.trim() && suggestions.length > 0 ? (
             <ul
               id={listId + '-suggest'}
               className={`source-suggest${
@@ -204,7 +183,7 @@ export function SourceComposer({
                         : 'source-suggest-item'
                     }
                     onMouseDown={(ev) => ev.preventDefault()}
-                    onClick={() => commitSource(s.title, s)}
+                    onClick={() => pickSource(s)}
                   >
                     <span className="source-suggest-icon" aria-hidden="true">
                       <svg

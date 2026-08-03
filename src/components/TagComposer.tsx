@@ -1,7 +1,8 @@
-import { useId, useRef, useState, type ReactNode } from 'react'
+import { useId, useRef, useState, type ClipboardEvent, type ReactNode } from 'react'
 import type { TagRow } from '../lib/notesApi'
 import { displayTagName, normalizeTagInput } from '../lib/tagUtils'
 import { filterTagsByQuery } from '../lib/notesApi'
+import { cleanKyoboPasteForTagLabel } from '../lib/pasteNoteFormat'
 
 /** 한글 등 IME 조합 중에는 Enter·화살표를 앱 로직에서 무시 */
 function isImeHandling(e: React.KeyboardEvent): boolean {
@@ -39,7 +40,7 @@ export function TagComposer({ allTags, selected, onChange, hint }: Props) {
   const suggestions = filterTagsByQuery(allTags, draft, excludeIds).slice(0, 8)
 
   function addTag(name: string, existing?: TagRow) {
-    const label = normalizeTagInput(name)
+    const label = normalizeTagInput(cleanKyoboPasteForTagLabel(name))
     if (!label) return
     if (
       selected.some(
@@ -126,6 +127,23 @@ export function TagComposer({ allTags, selected, onChange, hint }: Props) {
               setOpen(true)
             }}
             onFocus={() => setOpen(true)}
+            onPaste={(e: ClipboardEvent<HTMLInputElement>) => {
+              const pasted = e.clipboardData.getData('text/plain')
+              if (!pasted) return
+              if (
+                !/https?:\/\/|kyobobook|ebook-product|yes24|알라딘|교보\s*e?\s*book/i.test(
+                  pasted,
+                )
+              ) {
+                return
+              }
+              e.preventDefault()
+              const cleaned = cleanKyoboPasteForTagLabel(pasted)
+              if (!cleaned) return
+              setDraft(cleaned)
+              setActiveIndex(-1)
+              setOpen(true)
+            }}
             onBlur={() => {
               window.setTimeout(() => setOpen(false), 150)
             }}

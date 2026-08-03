@@ -69,8 +69,10 @@ import {
   resolveAddNoteParentTagId,
   resolveAddNoteComposeState,
   resolveSelectedTagFilterIds,
+  resolveTagFilterIds,
   filterNotesForAllTagIds,
   filterNotesForAnyTagIds,
+  filterNotesForParentTagTree,
   firstRailItemIdForIndexKey,
   type TagRailIndexKey,
 } from '../lib/tagUtils'
@@ -1263,10 +1265,14 @@ export function HomePage() {
     Record<string, number>
   >({})
   const tagMemoCountByIdRef = useRef(tagMemoCountById)
+  const parentTreeMemoCountByIdRef = useRef(parentTreeMemoCountById)
   const sourceTagCountByIdRef = useRef(sourceTagCountById)
   useEffect(() => {
     tagMemoCountByIdRef.current = tagMemoCountById
   }, [tagMemoCountById])
+  useEffect(() => {
+    parentTreeMemoCountByIdRef.current = parentTreeMemoCountById
+  }, [parentTreeMemoCountById])
   useEffect(() => {
     sourceTagCountByIdRef.current = sourceTagCountById
   }, [sourceTagCountById])
@@ -1292,6 +1298,8 @@ export function HomePage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  /** 첫 스냅샷(캐시·서버) 준비됐으면 전체 화면 스플래시 대신 UI 유지 */
+  const [homeDataReady, setHomeDataReady] = useState(false)
 
   const [addNoteOpen, setAddNoteOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -1321,6 +1329,10 @@ export function HomePage() {
 
   /** 이 계정에서 첫 데이터 패치가 끝났는지 — 이후엔 태그 칸 전체「불러오는 중」을 안 띄움 */
   const homeDataInitialLoadDoneRef = useRef(false)
+  const bootstrappedUserIdRef = useRef<string | null>(null)
+  const loadDataRef = useRef<
+    (opts?: { showGridLoading?: boolean; background?: boolean }) => Promise<void>
+  >(() => Promise.resolve())
 
   /** 태그 클릭 시 `syncNotes…`에 넘길 최신 `notes` (비동기 완료 시점 참고용) */
   const notesRef = useRef(notes)
@@ -1430,33 +1442,42 @@ export function HomePage() {
     }
   }, [])
 
-  const refreshHomeCountMaps = useCallback(async (uid: string) => {
-    try {
-      const [noteTagLinks, sourceTagCounts] = await Promise.all([
-        fetchNoteTagLinks(),
-        fetchSourceDistinctTagCounts(),
-      ])
-      const tagMemoCounts = buildTagMemoCountsFromLinks(noteTagLinks)
-      const parentTreeMemoCounts = buildParentTreeMemoCounts(
-        noteTagLinks,
-        allTagsRef.current,
-        tagParentLinksRef.current,
-      )
-      setTagMemoCountById(tagMemoCounts)
-      setParentTreeMemoCountById(parentTreeMemoCounts)
-      setSourceTagCountById(sourceTagCounts)
-      writeHomeSnapshotCache(uid, {
-        tags: allTagsRef.current,
-        tagParentLinks: tagParentLinksRef.current,
-        sources: allSourcesRef.current,
-        notes: notesRef.current,
-        tagMemoCounts,
-        sourceTagCounts,
-      })
-    } catch (e) {
-      console.warn('[태그노트] 태그·출처 개수 갱신 실패', e)
-    }
-  }, [])
+  const refreshHomeCountMaps = useCallback(
+    async (
+      uid: string,
+      opts?: { tags?: TagRow[]; tagParentLinks?: TagParentLink[] },
+    ) => {
+      try {
+        const tagsSnap = opts?.tags ?? allTagsRef.current
+        const linksSnap = opts?.tagParentLinks ?? tagParentLinksRef.current
+        const [noteTagLinks, sourceTagCounts] = await Promise.all([
+          fetchNoteTagLinks(),
+          fetchSourceDistinctTagCounts(),
+        ])
+        const tagMemoCounts = buildTagMemoCountsFromLinks(noteTagLinks)
+        const parentTreeMemoCounts = buildParentTreeMemoCounts(
+          noteTagLinks,
+          tagsSnap,
+          linksSnap,
+        )
+        setTagMemoCountById(tagMemoCounts)
+        setParentTreeMemoCountById(parentTreeMemoCounts)
+        setSourceTagCountById(sourceTagCounts)
+        writeHomeSnapshotCache(uid, {
+          tags: tagsSnap,
+          tagParentLinks: linksSnap,
+          sources: allSourcesRef.current,
+          notes: notesRef.current,
+          tagMemoCounts,
+          parentTreeMemoCounts,
+          sourceTagCounts,
+        })
+      } catch (e) {
+        console.warn('[태그노트] 태그·출처 개수 갱신 실패', e)
+      }
+    },
+    [],
+  )
 
   const loadData = useCallback(
     async (opts?: { showGridLoading?: boolean; background?: boolean }) => {
@@ -1495,6 +1516,7 @@ export function HomePage() {
         setLoadError(null)
         setSearchError(null)
         homeDataInitialLoadDoneRef.current = true
+        setHomeDataReady(true)
         const mergedNotes = opts?.background
           ? mergeNotesById(notesRef.current, noteRows)
           : noteRows
@@ -1504,9 +1526,13 @@ export function HomePage() {
           sources,
           notes: mergedNotes,
           tagMemoCounts: tagMemoCountByIdRef.current,
+          parentTreeMemoCounts: parentTreeMemoCountByIdRef.current,
           sourceTagCounts: sourceTagCountByIdRef.current,
         })
-        void refreshHomeCountMaps(uid)
+        void refreshHomeCountMaps(uid, {
+          tags,
+          tagParentLinks: links,
+        })
       } catch (e) {
         console.error('[태그노트] HomePage 초기 불러오기 실패', e)
         if (!opts?.background) {
@@ -1522,6 +1548,8 @@ export function HomePage() {
     },
     [user?.id, fetchHomeSnapshotEssential, refreshHomeCountMaps, clearTagPullCache],
   )
+
+  loadDataRef.current = loadData
 
   /** 태그 동기화 UI — 초기 스냅샷(loadData 성공) 이후 탭 바꿀 때는 표시 안 함 */
   const [tagPullLoading, setTagPullLoading] = useState(false)
@@ -1585,6 +1613,7 @@ export function HomePage() {
         sources: allSourcesRef.current,
         notes: notesRef.current,
         tagMemoCounts: tagMemoCountByIdRef.current,
+        parentTreeMemoCounts: parentTreeMemoCountByIdRef.current,
         sourceTagCounts: sourceTagCountByIdRef.current,
       })
     }
@@ -1873,7 +1902,15 @@ export function HomePage() {
       setSelectedTagId(parentId)
       setViewingNote(null)
       setRailEditingTag(null)
-      syncTagPullEntryForSelection(parentId, [parentId], 'books')
+      syncTagPullEntryForSelection(
+        parentId,
+        resolveTagFilterIds(
+          parentId,
+          allTagsRef.current,
+          tagParentLinksRef.current,
+        ),
+        'books',
+      )
     },
     [applyTagUpdated, applyTagsAssigned, clearTagPullCache],
   )
@@ -1976,10 +2013,20 @@ export function HomePage() {
     const uid = user?.id ?? null
     if (!uid) {
       setLoading(false)
+      setHomeDataReady(false)
+      bootstrappedUserIdRef.current = null
       return
     }
 
-    homeDataInitialLoadDoneRef.current = false
+    if (
+      bootstrappedUserIdRef.current === uid &&
+      homeDataInitialLoadDoneRef.current
+    ) {
+      return
+    }
+
+    bootstrappedUserIdRef.current = uid
+
     const cached = readHomeSnapshotCache(uid)
     if (cached) {
       setAllTags(cached.tags)
@@ -1987,15 +2034,19 @@ export function HomePage() {
       setAllSources(cached.sources)
       setNotes(cached.notes)
       setTagMemoCountById(cached.tagMemoCounts)
+      setParentTreeMemoCountById(cached.parentTreeMemoCounts ?? {})
       setSourceTagCountById(cached.sourceTagCounts)
       homeDataInitialLoadDoneRef.current = true
+      setHomeDataReady(true)
       setLoading(false)
-      void loadData({ background: true })
+      void loadDataRef.current({ background: true })
       return
     }
 
-    void loadData({ showGridLoading: true })
-  }, [user?.id, loadData])
+    homeDataInitialLoadDoneRef.current = false
+    setHomeDataReady(false)
+    void loadDataRef.current({ showGridLoading: true })
+  }, [user?.id])
 
   const tagPullFilterKey = useMemo(() => {
     if (!selectedTagId) return ''
@@ -2541,7 +2592,10 @@ export function HomePage() {
         setBooksTagFocusBoard(false)
         setBooksRailExpandedParentId(tagId)
             setSelectedTagId(tagId)
-        syncTagPullEntryForSelection(tagId, [tagId])
+        syncTagPullEntryForSelection(
+          tagId,
+          resolveTagFilterIds(tagId, allTags, tagParentLinks),
+        )
       }
       setViewingNote(null)
       return
@@ -2884,11 +2938,11 @@ export function HomePage() {
     }
   }
 
-  const showBootstrap = allTags.length === 0 && !loading
+  const showBootstrap = allTags.length === 0 && homeDataReady && !loading
 
   const showSearchRail =
     !showBootstrap &&
-    !loading &&
+    homeDataReady &&
     !loadError &&
     hasActiveSearch &&
     !selectedTagId &&
@@ -2897,7 +2951,7 @@ export function HomePage() {
   const bootstrapSaveReady =
     bootstrapTags.length > 0 && bootstrapBody.trim().length > 0
 
-  const canUseCompose = !showBootstrap && !loading && !loadError
+  const canUseCompose = !showBootstrap && homeDataReady && !loadError
 
   const parentTagsForRail = useMemo(
     () => getParentTags(allTags, tagParentLinks),
@@ -2938,6 +2992,28 @@ export function HomePage() {
     [parentTreeMemoCountById],
   )
 
+  /** spine 숫자 — 서버 집계 + 로컬 메모(초기 페이지) 중 큰 값 */
+  const parentTreeMemoCountsDisplay = useMemo(() => {
+    const map = new Map(parentTreeMemoCounts)
+    for (const p of parentTagsForRail) {
+      const server = map.get(p.id) ?? 0
+      const local = filterNotesForParentTagTree(
+        notes,
+        p.id,
+        allTags,
+        tagParentLinks,
+      ).length
+      if (local > server) map.set(p.id, local)
+    }
+    return map
+  }, [
+    parentTreeMemoCounts,
+    parentTagsForRail,
+    notes,
+    allTags,
+    tagParentLinks,
+  ])
+
   const sourceTagCounts = useMemo(
     () => new Map(Object.entries(sourceTagCountById)),
     [sourceTagCountById],
@@ -2958,7 +3034,7 @@ export function HomePage() {
 
   const showBrowseRail =
     !showBootstrap &&
-    !loading &&
+    homeDataReady &&
     !loadError &&
     !hasActiveSearch &&
     (homeBrowseNav === 'books'
@@ -3345,7 +3421,7 @@ export function HomePage() {
     openTagInTagDetailView(tagId)
   }
 
-  if (loading && !loadError) {
+  if (!homeDataReady && loading && !loadError) {
     return (
       <AppSplashScreen
         message="태그와 메모를 불러오는 중…"
@@ -3855,7 +3931,7 @@ export function HomePage() {
                         tagParentLinks,
                       )
                       const spineSelected = isOpen || active
-                      const spineStatValue = parentTreeMemoCounts.get(t.id) ?? 0
+                      const spineStatValue = parentTreeMemoCountsDisplay.get(t.id) ?? 0
                       const spineStatAria = `메모 ${spineStatValue}개`
                       return (
                         <li

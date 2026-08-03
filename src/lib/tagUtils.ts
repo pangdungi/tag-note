@@ -367,7 +367,9 @@ export function resolveBooksTagFilterTagIds(
 ): string[] {
   if (selectedTagId === TAG_VIEW_NONE_ID) return [TAG_VIEW_NONE_ID]
   if (nav !== 'books' || !booksRailExpandedParentId) return [selectedTagId]
-  if (selectedTagId === booksRailExpandedParentId) return [selectedTagId]
+  if (selectedTagId === booksRailExpandedParentId) {
+    return resolveTagFilterIds(selectedTagId, tags, links)
+  }
   if (
     isTagChildOfParent(
       selectedTagId,

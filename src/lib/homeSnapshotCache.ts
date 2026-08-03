@@ -5,7 +5,7 @@ import type {
   TagRow,
 } from './notesApi'
 
-const CACHE_VERSION = 2
+const CACHE_VERSION = 3
 const KEY_PREFIX = 'tag-note-home-snapshot-v'
 
 export type HomeSnapshotCache = {
@@ -16,6 +16,7 @@ export type HomeSnapshotCache = {
   sources: SourceRow[]
   notes: NoteWithTags[]
   tagMemoCounts: Record<string, number>
+  parentTreeMemoCounts?: Record<string, number>
   sourceTagCounts: Record<string, number>
 }
 
