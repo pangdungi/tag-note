@@ -2759,6 +2759,14 @@ export function HomePage() {
     ],
   )
 
+  /** 출처 뷰에서 출처 선택 후 + — 메모 추가 출처 칸에 미리 넣음 */
+  const addNoteInitialSource = useMemo(() => {
+    if (homeBrowseNav !== 'links' || !selectedSourceId) return null
+    const source = allSources.find((s) => s.id === selectedSourceId)
+    if (!source) return null
+    return { id: source.id, title: source.title }
+  }, [homeBrowseNav, selectedSourceId, allSources])
+
   const tagViewNoneMemoCount = useMemo(
     () => notes.filter((n) => noteHasNoTagViewTags(n)).length,
     [notes, allTags],
@@ -4331,6 +4339,7 @@ export function HomePage() {
           open={addNoteOpen}
           onClose={() => closeAddNote()}
           initialTags={addNoteCompose.initialTags}
+          initialSource={addNoteInitialSource}
           lockedParentTagId={addNoteCompose.lockedParentTagId}
           childTagCompose={addNoteCompose.childTagCompose}
           allTags={allTags}

@@ -21,6 +21,8 @@ type Props = {
   onClose: () => void
   /** 열릴 때 태그칩에 미리 넣을 값 */
   initialTags: SelectedTag[]
+  /** 출처 뷰에서 출처 선택 후 + — 출처 칸에 미리 넣음 */
+  initialSource?: SelectedSource | null
   /** 상위태그 spine 클릭 맥락 — 상위태그 칩·제목 고정, 상위 선택 UI 숨김 */
   lockedParentTagId?: string | null
   /** 상위 아래 하위 a 선택 후 + — a만 태그, 상위 지정 UI 숨김 */
@@ -112,6 +114,7 @@ export function AddNoteModal({
   open,
   onClose,
   initialTags,
+  initialSource = null,
   lockedParentTagId = null,
   childTagCompose = false,
   allTags,
@@ -134,8 +137,10 @@ export function AddNoteModal({
   const prevOpenRef = useRef(false)
   const allTagsRef = useRef(allTags)
   const initialTagsRef = useRef(initialTags)
+  const initialSourceRef = useRef(initialSource)
   allTagsRef.current = allTags
   initialTagsRef.current = initialTags
+  initialSourceRef.current = initialSource
 
   const lockedParent = lockedParentTagId
     ? allTags.find((t) => t.id === lockedParentTagId)
@@ -166,9 +171,14 @@ export function AddNoteModal({
       lockedParentTagId,
       allTagsRef.current,
     )
+    const seedSource = initialSourceRef.current
     setTags(seed)
     setBody('')
-    setSelectedSource(null)
+    setSelectedSource(
+      seedSource
+        ? { id: seedSource.id, title: seedSource.title }
+        : null,
+    )
     setError(null)
     setFieldHint(null)
     setComposeSession((n) => n + 1)
