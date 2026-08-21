@@ -243,33 +243,28 @@ export function EditNoteModal({
             </button>
         </div>
       </div>
-    </div>
+      </div>
 
       <ConfirmModal
         open={deleteConfirmOpen}
         title="메모 삭제"
-        message="이 메모를 삭제할까요? 삭제한 뒤에는 되돌릴 수 없습니다."
-        cancelLabel="취소"
+        message="이 메모를 삭제할까요?"
         confirmLabel="삭제"
+        cancelLabel="취소"
         danger
         onCancel={() => setDeleteConfirmOpen(false)}
         onConfirm={() => {
-          setError(null)
+          setDeleteConfirmOpen(false)
           const noteId = note.id
           void onNoteDeleted(noteId)
-          setDeleteConfirmOpen(false)
           onClose()
           void (async () => {
             try {
               await deleteNote(noteId)
-              await onSourcesChanged?.()
             } catch (e) {
-              console.error('[태그노트] EditNoteModal 메모 삭제 실패', {
-                noteId,
-              }, e)
-              await onSyncNoteFromServer?.(noteId)
+              console.error('[태그노트] EditNoteModal 삭제 실패', noteId, e)
               onUpdateError?.(
-                e instanceof Error ? e.message : '삭제에 실패했습니다.',
+                supabaseErrorMessage(e, '삭제에 실패했습니다.'),
               )
             }
           })()

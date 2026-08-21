@@ -341,14 +341,16 @@ export function AddNoteModal({
                     }, e)
                     await onSaveFailed?.(tempId)
                     onSaveError?.(
-                      e instanceof Error ? e.message : '저장에 실패했습니다.',
+                      e instanceof Error
+                        ? e.message
+                        : '저장에 실패했습니다.',
                     )
                   }
                 })()
               }}
-            >
-              저장
-            </button>
+          >
+            저장
+          </button>
         </div>
       </div>
     </div>

@@ -9,7 +9,6 @@ import { HomeBrowseNavButtons, type HomeBrowseNavId } from '../components/HomeBr
 import { HomeSearchResultsRail } from '../components/HomeSearchResultsRail'
 import { EditNoteModal } from '../components/EditNoteModal'
 import { NoteViewModal } from '../components/NoteViewModal'
-
 import { AppSplashScreen } from '../components/AppSplashScreen'
 import { AddNoteModal } from '../components/AddNoteModal'
 import { TagNotesPullStatus } from '../components/TagNotesPullStatus'

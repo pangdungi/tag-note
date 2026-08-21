@@ -1171,8 +1171,157 @@ body:has(.home-main--parent-rail-hero) {
 }
 
 @media (max-width: 640px) {
+  /* ── 모바일 홈: 100svh + safe area + flex (fixed 메뉴 이중 여백 제거) ── */
+  html:has(.home-layout),
+  body:has(.home-layout) {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #root:has(.home-layout) {
+    height: 100svh;
+    max-height: 100svh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .home-layout {
+    flex: 1 1 0;
+    min-height: 0;
+    height: 100svh;
+    max-height: 100svh;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  /* 헤더 없을 때 상태바·노치 아래로 (safe-area 0인 브라우저도 최소 3rem) */
+  .home-layout:not(:has(.home-top-tag-search)) {
+    padding-top: max(3rem, env(safe-area-inset-top, 0px));
+  }
+
+  .home-rail-viewport,
+  .home-page-shell {
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .home-rail-viewport:has(.home-bottom-menu-bar) {
+    padding-bottom: 0;
+  }
+
+  .home-rail-viewport > .home-main,
+  .home-page-shell > .home-main {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  /* 하단 메뉴 — flex 끝에 붙임 (fixed + padding 이중 여백 제거) */
+  .home-bottom-menu-bar {
+    position: relative;
+    bottom: auto;
+    left: auto;
+    right: auto;
+    flex-shrink: 0;
+    width: 100%;
+    padding-left: max(0.65rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.65rem, env(safe-area-inset-right, 0px));
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .home-bottom-menu-bar::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  .home-bottom-menu-bar-inner {
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 0.45rem;
+    width: max-content;
+    min-width: 100%;
+    max-width: none;
+    margin: 0;
+    box-sizing: border-box;
+  }
+
+  .home-bottom-browse-nav,
+  .home-bottom-quick-actions {
+    flex-shrink: 0;
+    gap: 0.4rem;
+  }
+
+  .home-rail-viewport .home-top-tag-search {
+    position: relative;
+    top: auto;
+    flex-shrink: 0;
+    z-index: 20;
+  }
+
+  .home-main--parent-rail-hero.home-main--tags {
+    padding: 0;
+    max-width: none;
+    overflow: hidden;
+  }
+
+  .home-main--tags:not(.home-main--parent-rail-hero) {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0.75rem max(0.85rem, env(safe-area-inset-left, 0px))
+      max(0.85rem, env(safe-area-inset-right, 0px)) 0.75rem;
+    max-width: none;
+  }
+
   .home-main--tags.home-main--compose-open {
     padding-top: 0.45rem;
+  }
+
+  .home-top-tag-search {
+    padding-left: max(0.85rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.85rem, env(safe-area-inset-right, 0px));
+  }
+
+  /* 레일: 인덱스 + 스크롤 세로 flex, 북스파인 전체 높이 */
+  .home-main--parent-rail-hero .parent-tag-rail-section--with-index {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .home-main--parent-rail-hero
+    .parent-tag-rail-section--with-index
+    .parent-tag-rail-scroll {
+    flex: 1 1 0;
+    min-height: 0;
+    height: auto;
+  }
+
+  .home-main--parent-rail-hero .parent-tag-rail-scroll .parent-tag-rail {
+    min-height: 100%;
+    height: 100%;
+  }
+
+  .home-main--parent-rail-hero .parent-tag-rail > li,
+  .home-main--parent-rail-hero .parent-tag-spine-slot {
+    align-self: stretch;
+    height: 100%;
   }
 }
 
@@ -1598,12 +1747,14 @@ body:has(.home-main--parent-rail-hero) {
   .home-main--parent-rail-hero .parent-tag-rail-section,
   .home-main--parent-rail-hero .search-results-rail-section {
     padding-top: 0;
+    flex: 1 1 0;
+    min-height: 0;
   }
 
   .home-main--parent-rail-hero .parent-tag-rail,
   .home-main--parent-rail-hero .search-results-rail {
     height: 100%;
-    min-height: 0;
+    min-height: 100%;
   }
 
   .parent-tag-child-item {
@@ -1617,6 +1768,20 @@ body:has(.home-main--parent-rail-hero) {
   .parent-tag-child-load-more {
     margin-inline: 0.5rem;
     width: calc(100% - 1rem);
+  }
+
+  .tag-view-detail-head {
+    padding-top: 0;
+  }
+
+  .tag-view-bar-scroll {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .note-board-section,
+  .tag-view-detail-head + .note-board-section {
+    min-height: 0;
   }
 }
 
@@ -4687,7 +4852,27 @@ button.note-board-tag-pill--link:focus-visible {
 }
 
 @media (max-width: 640px) {
-  .tag-manage-overlay--edit-note,
+  /* 메모 추가/수정 — 모바일도 중앙 모달 카드 (전체 화면 X) */
+  .tag-manage-overlay--edit-note {
+    align-items: center;
+    justify-content: center;
+    padding:
+      max(0.75rem, env(safe-area-inset-top, 0px))
+      max(0.75rem, env(safe-area-inset-right, 0px))
+      max(0.75rem, env(safe-area-inset-bottom, 0px))
+      max(0.75rem, env(safe-area-inset-left, 0px));
+  }
+
+  .tag-manage-dialog--edit-note {
+    max-width: min(100%, 26rem);
+    width: 100%;
+    height: auto;
+    max-height: min(88svh, 720px);
+    min-height: 0;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+  }
+
   .tag-manage-overlay--edit-parent {
     align-items: stretch;
     justify-content: stretch;
@@ -4696,17 +4881,6 @@ button.note-board-tag-pill--link:focus-visible {
       env(safe-area-inset-right, 0px)
       env(safe-area-inset-bottom, 0px)
       env(safe-area-inset-left, 0px);
-  }
-
-  .tag-manage-dialog--edit-note {
-    max-width: none;
-    width: 100%;
-    height: 100%;
-    max-height: none;
-    min-height: 0;
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
   }
 
   .tag-manage-dialog--edit-parent {
