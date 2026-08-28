@@ -332,10 +332,13 @@ export async function fileToSpineImage(file: File): Promise<SourceSpineImageData
   return compressSourceSpineImage(dataUrl)
 }
 
+import { resolveSourceSpineUrl } from './bookCatalogServer'
+
 export function hasSourceSpineImage(source: {
   spine_image_url?: string | null
+  yes24_goods_no?: string | null
 }): boolean {
-  return Boolean(source.spine_image_url?.trim())
+  return Boolean(resolveSourceSpineUrl(source))
 }
 
 function spineFontFamily(): string {

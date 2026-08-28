@@ -86,6 +86,7 @@ export type SourceRow = {
   category?: string | null
   cover_image_url?: string | null
   kyobo_product_id?: string | null
+  yes24_goods_no?: string | null
   metadata_source?: string | null
   spine_image_url?: string | null
   spine_image_width?: number | null
@@ -93,7 +94,7 @@ export type SourceRow = {
 }
 
 const SOURCE_SELECT =
-  'id, title, created_at, isbn, author, publisher, published_year, category, cover_image_url, kyobo_product_id, metadata_source, spine_image_url, spine_image_width, spine_image_height'
+  'id, title, created_at, isbn, author, publisher, published_year, category, cover_image_url, kyobo_product_id, yes24_goods_no, metadata_source, spine_image_url, spine_image_width, spine_image_height'
 
 export type NoteWithTags = {
   id: string
@@ -377,6 +378,7 @@ export async function updateSource(
     category?: string | null
     cover_image_url?: string | null
     kyobo_product_id?: string | null
+    yes24_goods_no?: string | null
     metadata_source?: string | null
     spine_image_url?: string | null
     spine_image_width?: number | null
@@ -402,6 +404,9 @@ export async function updateSource(
   }
   if (patch.kyobo_product_id !== undefined) {
     updates.kyobo_product_id = patch.kyobo_product_id
+  }
+  if (patch.yes24_goods_no !== undefined) {
+    updates.yes24_goods_no = patch.yes24_goods_no
   }
   if (patch.metadata_source !== undefined) {
     updates.metadata_source = patch.metadata_source
@@ -459,6 +464,7 @@ export type CreateBookSourceInput = {
   category?: string | null
   cover_image_url?: string | null
   kyobo_product_id?: string | null
+  yes24_goods_no?: string | null
   metadata_source?: string | null
   spine_image_url?: string | null
   spine_image_width?: number | null
@@ -492,7 +498,8 @@ export async function createBookSource(
     category: input.category ?? null,
     cover_image_url: input.cover_image_url ?? null,
     kyobo_product_id: input.kyobo_product_id ?? null,
-    metadata_source: input.metadata_source ?? 'kyobo',
+    yes24_goods_no: input.yes24_goods_no ?? null,
+    metadata_source: input.metadata_source ?? 'yes24',
     spine_image_url: input.spine_image_url ?? null,
     spine_image_width: input.spine_image_width ?? null,
     spine_image_height: input.spine_image_height ?? null,

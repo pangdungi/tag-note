@@ -20,7 +20,7 @@ import {
   fetchNoteWithTagsById,
   fetchNotesPage,
   fetchNotesForMainSearch,
-  fetchSourcesInUse,
+  fetchSources,
   fetchSourceDistinctTagCounts,
   fetchNoteTagLinks,
   buildTagMemoCountsFromLinks,
@@ -1449,7 +1449,7 @@ export function HomePage() {
       fetchTagParentLinks(),
       fetchNotesPage(),
     ])
-    const sources = await fetchSourcesInUse()
+    const sources = await fetchSources()
     return {
       tags,
       tagParentLinks: links,
@@ -1587,7 +1587,7 @@ export function HomePage() {
 
   const refreshSourcesInUse = useCallback(async () => {
     try {
-      const sources = await fetchSourcesInUse()
+      const sources = await fetchSources()
       setAllSources(sources)
       setSelectedSourceId((cur) =>
         cur && sources.some((s) => s.id === cur) ? cur : null,
@@ -3027,7 +3027,8 @@ export function HomePage() {
       const h = s.spine_image_height ?? 0
       if (h > max) max = h
     }
-    return max
+    // 저장된 높이 없을 때 예스24 SIDE 이미지 기준값(선반 내 비율·잘림 방지)
+    return max || 560
   }, [sourcesForLinkModeRail])
 
   const tagMemoCounts = useMemo(
@@ -4090,6 +4091,25 @@ export function HomePage() {
                                 className="parent-tag-inline-tracks parent-tag-inline-tracks--source-sheet"
                                 aria-label={`${displaySourceTitle(s.title)} 관련 메모`}
                               >
+                                {s.category || s.author || s.publisher ? (
+                                  <div className="parent-tag-source-meta">
+                                    {s.category ? (
+                                      <span className="parent-tag-source-meta-field">
+                                        {s.category}
+                                      </span>
+                                    ) : null}
+                                    {s.author ? (
+                                      <span className="parent-tag-source-meta-sub">
+                                        {s.author}
+                                      </span>
+                                    ) : null}
+                                    {s.publisher ? (
+                                      <span className="parent-tag-source-meta-sub">
+                                        {s.publisher}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                ) : null}
                                 <InlineRailNotesPanel
                                   tagLabel={displaySourceTitle(s.title)}
                                   tagId={s.id}

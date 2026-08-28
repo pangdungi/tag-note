@@ -7,12 +7,11 @@ export type BookSearchHit = {
   publishedYear: number | null
   coverUrl: string
   spineUrl: string
-  kyoboProductId: string | null
-  source: 'kakao' | 'kyobo'
+  yes24GoodsNo: string
+  source: 'yes24'
 }
 
-const KYOBO_SEARCH =
-  'https://search.kyobobook.co.kr/srp/api/v1/search/autocomplete/shop'
+const YES24_API_BASE = 'https://apis.yes24.com/v1'
 
 export function extractIsbn13(raw: string | null | undefined): string | null {
   if (!raw) return null
@@ -20,41 +19,6 @@ export function extractIsbn13(raw: string | null | undefined): string | null {
   const match = compact.match(/(?:978|979)\d{10}/)
   return match?.[0] ?? null
 }
-
-export function kyoboCoverUrl(isbn: string): string {
-  return `https://contents.kyobobook.co.kr/sih/fit-in/458x0/pdt/${isbn}.jpg`
-}
-
-/** 교보문고 상품 갤러리 3번째(addt_02) = 북스파인 — 무조건 이 URL만 사용 */
-export function kyoboSpineUrl(isbn: string): string {
-  return kyoboAddtSpineImageUrl(isbn)
-}
-
-/** 갤러리: 1=표지(pdt), 2=addt_01, 3=addt_02(북스파인) */
-export function kyoboAddtSpineImageUrl(isbn: string, size = '458x0'): string {
-  return `https://contents.kyobobook.co.kr/sih/fit-in/${size}/pdt/addt/${isbn}_02.jpg`
-}
-
-/** 갤러리 3번(addt_02) — ISBN 우선, 없으면 saleCmdtId */
-export function kyoboSpineImageUrls(
-  isbn: string,
-  productId?: string | null,
-): string[] {
-  const urls = [kyoboAddtSpineImageUrl(isbn)]
-  const pid = productId?.trim()
-  if (pid) {
-    urls.push(
-      `https://contents.kyobobook.co.kr/sih/fit-in/458x0/pdt/addt/${pid}_02.jpg`,
-    )
-  }
-  return [...new Set(urls)]
-}
-
-/** @deprecated kyoboSpineImageUrls — HMR/구 import 호환 */
-export const kyoboSpineCandidateUrls = kyoboSpineImageUrls
-
-const YES24_SEARCH =
-  'https://www.yes24.com/Product/searchapi/bulletsearch/goods'
 
 export function yes24SpineImageUrl(goodsNo: string | number): string {
   return `https://image.yes24.com/goods/${goodsNo}/SIDE/XL`
@@ -64,339 +28,187 @@ export function yes24CoverImageUrl(goodsNo: string | number): string {
   return `https://image.yes24.com/goods/${goodsNo}/XL`
 }
 
-type Yes24Lookup = {
-  goodsNo: string
-  spineUrl: string
-  coverUrl: string
+/** DB spine URL → 없으면 yes24_goods_no로 SIDE URL 생성 */
+export function resolveSourceSpineUrl(source: {
+  spine_image_url?: string | null
+  yes24_goods_no?: string | null
+}): string | null {
+  const direct = source.spine_image_url?.trim()
+  if (direct) return direct
+  const goodsNo = source.yes24_goods_no?.trim()
+  if (goodsNo) return yes24SpineImageUrl(goodsNo)
+  return null
 }
 
-/** ISBN·제목으로 예스24 GOODS_NO 조회 */
-export async function lookupYes24ByIsbn(isbn: string): Promise<Yes24Lookup | null> {
-  const keyword = isbn.trim()
-  if (!keyword) return null
+/** 예스24 goodsSortNm → 분야 (예: "국내도서-IT 모바일" → "IT 모바일") */
+export function parseYes24CategoryField(goodsSortNm?: string | null): string {
+  const raw = goodsSortNm?.trim() ?? ''
+  if (!raw) return ''
+  const parts = raw.split('-').map((p) => p.trim()).filter(Boolean)
+  if (parts.length >= 2) return parts[1]
+  return raw
+}
 
-  const res = await fetch(
-    `${YES24_SEARCH}?query=${encodeURIComponent(keyword)}`,
-    {
-      headers: {
-        Accept: 'application/json, text/plain, */*',
-        'User-Agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Referer: 'https://www.yes24.com/',
-      },
-    },
+type Yes24GoodsItem = {
+  itemId?: number
+  title?: string
+  author?: string
+  publisher?: string
+  goodsSortNm?: string
+  goodsType?: string
+  isbn13?: string
+  isbn10?: string
+  cover?: string
+  publishDate?: string
+  link?: string
+}
+
+type Yes24ApiResponse = {
+  success?: boolean
+  message?: string
+  errorCode?: string | null
+  data?: {
+    items?: Yes24GoodsItem[]
+    currentPage?: number
+    pageSize?: number
+    totalCount?: number
+  }
+}
+
+let yes24ApiKeyOverride: string | null = null
+
+/** Vite dev 미들웨어 등에서 .env 키 주입 */
+export function configureYes24ApiKey(key: string | null | undefined): void {
+  yes24ApiKeyOverride = key?.trim() || null
+}
+
+export function getYes24ApiKey(): string {
+  if (yes24ApiKeyOverride) return yes24ApiKeyOverride
+
+  try {
+    const env = (
+      globalThis as unknown as { process?: { env?: Record<string, string> } }
+    ).process?.env
+    const key = env?.YES24_API_KEY ?? env?.VITE_YES24_API_KEY ?? ''
+    const trimmed = key.trim()
+    if (trimmed) return trimmed
+  } catch {
+    /* ignore */
+  }
+
+  throw new Error(
+    'YES24_API_KEY가 설정되지 않았습니다. developers.yes24.com에서 API Key를 발급받아 .env에 추가하세요.',
   )
-  if (!res.ok) return null
+}
 
-  const json = (await res.json()) as {
-    lstSearchKeywordResult?: Array<{
-      GOODDS_INDEXES?: { GOODS_NO?: number | string; ISBN?: string }
-    }>
+async function yes24ApiGet(
+  path: string,
+  params: Record<string, string | number>,
+): Promise<Yes24ApiResponse> {
+  const url = new URL(`${YES24_API_BASE}${path}`)
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, String(value))
   }
 
-  const results = json.lstSearchKeywordResult ?? []
-  const normalizedIsbn = extractIsbn13(keyword) ?? keyword
+  const res = await fetch(url.toString(), {
+    headers: {
+      Accept: 'application/json',
+      'X-Api-Key': getYes24ApiKey(),
+    },
+  })
 
-  for (const row of results) {
-    const idx = row.GOODDS_INDEXES
-    const goodsNo = idx?.GOODS_NO
-    if (goodsNo == null || String(goodsNo).trim() === '') continue
-    const rowIsbn = extractIsbn13(String(idx?.ISBN ?? ''))
-    if (rowIsbn && rowIsbn !== normalizedIsbn) continue
-    const id = String(goodsNo)
-    return {
-      goodsNo: id,
-      spineUrl: yes24SpineImageUrl(id),
-      coverUrl: yes24CoverImageUrl(id),
-    }
+  let json: Yes24ApiResponse
+  try {
+    json = (await res.json()) as Yes24ApiResponse
+  } catch {
+    throw new Error(`예스24 API 응답을 읽지 못했습니다 (${res.status})`)
   }
 
-  const first = results[0]?.GOODDS_INDEXES?.GOODS_NO
-  if (first == null || String(first).trim() === '') return null
-  const id = String(first)
-  return {
-    goodsNo: id,
-    spineUrl: yes24SpineImageUrl(id),
-    coverUrl: yes24CoverImageUrl(id),
+  if (!res.ok) {
+    throw new Error(json.message ?? `예스24 API 오류 (${res.status})`)
   }
-}
-
-/** 예스24 SIDE(3D 책등) → 교보 addt_02 fallback */
-export function bookSpineImageUrls(
-  isbn: string,
-  kyoboProductId?: string | null,
-  yes24GoodsNo?: string | null,
-): string[] {
-  const urls: string[] = []
-  const yes24Id = yes24GoodsNo?.trim()
-  if (yes24Id) urls.push(yes24SpineImageUrl(yes24Id))
-  urls.push(...kyoboSpineImageUrls(isbn, kyoboProductId))
-  return [...new Set(urls)]
-}
-
-/** 예스24 XL → 교보 표지 fallback */
-export function bookCoverImageUrls(
-  isbn: string,
-  preferredCover?: string | null,
-  yes24GoodsNo?: string | null,
-): string[] {
-  const urls: string[] = []
-  const yes24Id = yes24GoodsNo?.trim()
-  if (yes24Id) urls.push(yes24CoverImageUrl(yes24Id))
-  const preferred = preferredCover?.trim()
-  if (preferred) urls.push(preferred)
-  urls.push(kyoboCoverUrl(isbn))
-  return [...new Set(urls)]
-}
-
-const KYOBO_IMAGE_HEADERS = {
-  'User-Agent':
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-  Referer: 'https://product.kyobobook.co.kr/',
-}
-
-function parseKyoboRelateHtml(raw: string): Partial<BookSearchHit> | null {
-  if (!raw.trim()) return null
-  const p = raw.split('$@')
-  const isbn = extractIsbn13(p[0]) ?? p[0]?.trim()
-  if (!isbn) return null
-  const year = Number.parseInt(p[5] ?? '', 10)
-  const coverFromField =
-    p.find((part) => part.startsWith('https://contents.kyobobook.co.kr/')) ??
-    null
-  return {
-    isbn,
-    category: p[1]?.trim() ?? '',
-    title: p[2]?.trim() ?? '',
-    author: p[3]?.trim() ?? '',
-    publisher: p[4]?.trim() ?? '',
-    publishedYear: Number.isFinite(year) ? year : null,
-    coverUrl: coverFromField ?? kyoboCoverUrl(isbn),
-    spineUrl: kyoboSpineUrl(isbn),
+  if (json.success === false) {
+    throw new Error(json.message ?? '예스24 API 요청에 실패했습니다.')
   }
+
+  return json
 }
 
-type KyoboDoc = {
-  CMDTCODE?: string
-  CMDT_NAME?: string
-  SALE_CMDTID?: string
-  TOT_RELATE_HTML_LIST?: string
-}
+function hitFromYes24Item(item: Yes24GoodsItem): BookSearchHit | null {
+  const itemId = item.itemId
+  if (itemId == null || !Number.isFinite(itemId)) return null
 
-function hitFromKyoboDoc(doc: KyoboDoc): BookSearchHit | null {
-  const parsed = parseKyoboRelateHtml(doc.TOT_RELATE_HTML_LIST ?? '')
   const isbn =
-    extractIsbn13(doc.CMDTCODE) ??
-    parsed?.isbn ??
-    extractIsbn13(doc.TOT_RELATE_HTML_LIST)
+    extractIsbn13(item.isbn13) ?? extractIsbn13(item.isbn10) ?? null
   if (!isbn) return null
 
-  const title = parsed?.title || doc.CMDT_NAME?.trim() || ''
+  const title = item.title?.trim() ?? ''
   if (!title) return null
+
+  const goodsNo = String(itemId)
+  const yearMatch = item.publishDate?.match(/^(\d{4})/)
 
   return {
     isbn,
     title,
-    author: parsed?.author ?? '',
-    publisher: parsed?.publisher ?? '',
-    category: parsed?.category ?? '',
-    publishedYear: parsed?.publishedYear ?? null,
-    coverUrl: parsed?.coverUrl ?? kyoboCoverUrl(isbn),
-    spineUrl: kyoboSpineUrl(isbn),
-    kyoboProductId: doc.SALE_CMDTID?.trim() || null,
-    source: 'kyobo',
+    author: item.author?.trim() ?? '',
+    publisher: item.publisher?.trim() ?? '',
+    category:
+      parseYes24CategoryField(item.goodsSortNm) ||
+      item.goodsType?.trim() ||
+      '',
+    publishedYear: yearMatch ? Number.parseInt(yearMatch[1], 10) : null,
+    coverUrl: item.cover?.trim() || yes24CoverImageUrl(goodsNo),
+    spineUrl: yes24SpineImageUrl(goodsNo),
+    yes24GoodsNo: goodsNo,
+    source: 'yes24',
   }
 }
 
-export async function searchKyoboBooks(query: string): Promise<BookSearchHit[]> {
+/** 예스24 Open API — 제목·ISBN 검색 */
+export async function searchYes24Books(query: string): Promise<BookSearchHit[]> {
   const keyword = query.trim()
   if (!keyword) return []
 
-  const url = `${KYOBO_SEARCH}?keyword=${encodeURIComponent(keyword)}`
-  const res = await fetch(url, {
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': 'Mozilla/5.0 (compatible; TagNote/1.0)',
-    },
+  const json = await yes24ApiGet('/goods/itemList', {
+    query: keyword,
+    page: 1,
+    pageSize: 20,
+    detail: 'N',
   })
-  if (!res.ok) {
-    throw new Error(`교보문고 검색 실패 (${res.status})`)
-  }
 
-  const json = (await res.json()) as {
-    data?: { resultDocuments?: KyoboDoc[] }
-  }
-  const docs = json.data?.resultDocuments ?? []
   const hits: BookSearchHit[] = []
   const seen = new Set<string>()
 
-  for (const doc of docs) {
-    const hit = hitFromKyoboDoc(doc)
+  for (const item of json.data?.items ?? []) {
+    const hit = hitFromYes24Item(item)
     if (!hit || seen.has(hit.isbn)) continue
     seen.add(hit.isbn)
     hits.push(hit)
   }
+
   return hits
 }
 
-type KakaoBookDoc = {
-  title?: string
-  authors?: string[]
-  publisher?: string
-  datetime?: string
-  isbn?: string
-  thumbnail?: string
-  contents?: string
-}
+/** ISBN13으로 예스24 상품 조회 */
+export async function lookupYes24ByIsbn(
+  isbn: string,
+): Promise<BookSearchHit | null> {
+  const normalized = extractIsbn13(isbn) ?? isbn.trim()
+  if (!normalized) return null
 
-export async function searchKakaoBooks(
-  query: string,
-  restApiKey: string,
-): Promise<BookSearchHit[]> {
-  const keyword = query.trim()
-  if (!keyword) return []
-
-  const url = `https://dapi.kakao.com/v3/search/book?target=title&size=15&query=${encodeURIComponent(keyword)}`
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `KakaoAK ${restApiKey}`,
-    },
+  const json = await yes24ApiGet('/goods/itemDetail', {
+    searchType: 'ISBN13',
+    query: normalized,
+    detail: 'N',
   })
-  if (!res.ok) {
-    throw new Error(`카카오 도서 검색 실패 (${res.status})`)
-  }
 
-  const json = (await res.json()) as { documents?: KakaoBookDoc[] }
-  const hits: BookSearchHit[] = []
-  const seen = new Set<string>()
-
-  for (const doc of json.documents ?? []) {
-    const isbn = extractIsbn13(doc.isbn)
-    const title = doc.title?.trim() ?? ''
-    if (!isbn || !title) continue
-    if (seen.has(isbn)) continue
-    seen.add(isbn)
-
-    const yearMatch = doc.datetime?.match(/^(\d{4})/)
-    hits.push({
-      isbn,
-      title,
-      author: (doc.authors ?? []).join(', '),
-      publisher: doc.publisher?.trim() ?? '',
-      category: '',
-      publishedYear: yearMatch ? Number.parseInt(yearMatch[1], 10) : null,
-      coverUrl: doc.thumbnail?.trim() || kyoboCoverUrl(isbn),
-      spineUrl: kyoboSpineUrl(isbn),
-      kyoboProductId: null,
-      source: 'kakao',
-    })
-  }
-  return hits
+  const item = json.data?.items?.[0]
+  if (!item) return null
+  return hitFromYes24Item(item)
 }
 
-function mergeBookHits(primary: BookSearchHit[], secondary: BookSearchHit[]) {
-  const map = new Map<string, BookSearchHit>()
-  for (const hit of primary) map.set(hit.isbn, hit)
-  for (const hit of secondary) {
-    const prev = map.get(hit.isbn)
-    if (!prev) {
-      map.set(hit.isbn, hit)
-      continue
-    }
-    map.set(hit.isbn, {
-      ...prev,
-      category: prev.category || hit.category,
-      author: prev.author || hit.author,
-      publisher: prev.publisher || hit.publisher,
-      publishedYear: prev.publishedYear ?? hit.publishedYear,
-      coverUrl: prev.coverUrl || hit.coverUrl,
-      kyoboProductId: prev.kyoboProductId ?? hit.kyoboProductId,
-    })
-  }
-  return [...map.values()]
-}
-
-export async function searchBooksCatalog(
-  query: string,
-  kakaoRestApiKey?: string | null,
-): Promise<BookSearchHit[]> {
-  const kyoboHits = await searchKyoboBooks(query)
-
-  if (!kakaoRestApiKey?.trim()) {
-    return kyoboHits.slice(0, 20)
-  }
-
-  try {
-    const kakaoHits = await searchKakaoBooks(query, kakaoRestApiKey.trim())
-    return mergeBookHits(kakaoHits, kyoboHits).slice(0, 20)
-  } catch {
-    return kyoboHits.slice(0, 20)
-  }
-}
-
-const ALLOWED_IMAGE_HOSTS = new Set([
-  'contents.kyobobook.co.kr',
-  'image.kyobobook.co.kr',
-  'image.yes24.com',
-  'search1.kakaocdn.net',
-  'img1.daumcdn.net',
-])
-
-function bookImageRequestHeaders(url: string): Record<string, string> {
-  if (url.includes('image.yes24.com')) {
-    return {
-      'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-      Referer: 'https://www.yes24.com/',
-    }
-  }
-  return KYOBO_IMAGE_HEADERS
-}
-
-export function isAllowedBookImageUrl(raw: string): boolean {
-  try {
-    const url = new URL(raw)
-    if (url.protocol !== 'https:') return false
-    return ALLOWED_IMAGE_HOSTS.has(url.hostname)
-  } catch {
-    return false
-  }
-}
-
-export async function fetchBookImageBytes(url: string): Promise<{
-  bytes: ArrayBuffer
-  contentType: string
-}> {
-  if (!isAllowedBookImageUrl(url)) {
-    throw new Error('허용되지 않은 이미지 주소입니다.')
-  }
-
-  const res = await fetch(url, { headers: bookImageRequestHeaders(url) })
-  if (!res.ok) {
-    throw new Error(`이미지를 가져오지 못했습니다 (${res.status})`)
-  }
-
-  const bytes = await res.arrayBuffer()
-  const contentType = res.headers.get('content-type') || 'image/jpeg'
-  if (bytes.byteLength < 500) {
-    throw new Error('이미지가 비어 있습니다.')
-  }
-  return { bytes, contentType }
-}
-
-export async function fetchFirstBookImageBytes(
-  urls: string[],
-): Promise<{ bytes: ArrayBuffer; contentType: string; url: string }> {
-  let lastError: Error | null = null
-  for (const url of urls) {
-    try {
-      const result = await fetchBookImageBytes(url)
-      return { ...result, url }
-    } catch (e) {
-      lastError = e instanceof Error ? e : new Error(String(e))
-    }
-  }
-  throw lastError ?? new Error('북스파인 이미지를 가져오지 못했습니다.')
+/** @deprecated searchYes24Books 사용 */
+export async function searchBooksCatalog(query: string): Promise<BookSearchHit[]> {
+  return searchYes24Books(query)
 }

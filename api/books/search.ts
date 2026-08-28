@@ -1,4 +1,4 @@
-import { searchBooksCatalog } from '../../src/lib/bookCatalogServer'
+import { searchYes24Books } from '../../src/lib/bookCatalogServer'
 import { bookApiCorsHeaders, rejectOrigin } from './_cors'
 
 export const runtime = 'edge'
@@ -35,11 +35,7 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   try {
-    const kakaoKey =
-      process.env.KAKAO_REST_API_KEY ??
-      process.env.VITE_KAKAO_REST_API_KEY ??
-      null
-    const hits = await searchBooksCatalog(q, kakaoKey)
+    const hits = await searchYes24Books(q)
     return new Response(JSON.stringify({ hits }), {
       status: 200,
       headers: { ...ch, 'Content-Type': 'application/json' },

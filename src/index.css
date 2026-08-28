@@ -2427,6 +2427,29 @@ body:has(.home-main--parent-rail-hero) {
 }
 
 /* 출처 뷰 — 북스파인 | 태그 | 메모 (상위태그 시트와 동일 스타일) */
+.parent-tag-source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.65rem;
+  padding: 0.65rem 1.25rem 0.35rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.parent-tag-source-meta-field {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.parent-tag-source-meta-sub:not(:first-child)::before {
+  content: '·';
+  margin-right: 0.65rem;
+  color: var(--border);
+  font-weight: 400;
+}
+
 .parent-tag-inline-tracks--source-sheet > .parent-tag-child-notes {
   flex: 0 0 auto;
   min-height: auto;
@@ -2579,6 +2602,79 @@ body:has(.home-main--parent-rail-hero) {
   .parent-tag-rail-section--links-view
   .parent-tag-card-label {
   font-size: clamp(0.9rem, 3.1vw, 1.15rem);
+}
+
+/* 출처 뷰 — 선반: 아래 정렬, 책마다 위쪽 높이가 다름 */
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-rail {
+  align-items: flex-end;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-spine-slot {
+  height: 100%;
+  align-items: flex-end;
+  min-height: 0;
+  max-height: 100%;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-spine-group {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  align-items: flex-end;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-spine-slot--open
+  .parent-tag-spine-group {
+  align-items: stretch;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-spine-slot--open
+  .parent-tag-card {
+  align-self: flex-end;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card:not(.parent-tag-card--source-spine-image) {
+  height: calc(100% * var(--source-spine-text-fill, 0.72));
+  min-height: 3.25rem;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card {
+  height: auto;
+  max-height: 100%;
+  align-self: flex-end;
+  justify-content: flex-end;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card:not(.parent-tag-card--source-spine-image)
+  .parent-tag-card-body {
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card-body--source-spine-image {
+  align-items: center;
+  justify-content: flex-end;
+  width: auto;
 }
 
 .home-main--parent-rail-hero .parent-tag-card-body {
@@ -3050,7 +3146,7 @@ button.parent-tag-card {
   color: inherit;
 }
 
-/* 출처 뷰 — 교보문고 등 북스파인 이미지 */
+/* 출처 뷰 — 예스24 북스파인(저장 URL 또는 수동 업로드) */
 .home-main--parent-rail-hero
   .parent-tag-rail-section--links-view
   .parent-tag-card--source-spine-image {
@@ -3064,11 +3160,58 @@ button.parent-tag-card {
   max-width: clamp(2.75rem, 10vw, 4rem);
   padding: 0;
   align-self: flex-end;
-  flex-shrink: 0;
+  align-items: center;
+  flex-shrink: 1;
   border: none !important;
   background: transparent;
   box-shadow: none !important;
   outline: none;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card--source-spine-image.parent-tag-card--selected:not(
+    .parent-tag-card--expanded
+  ) {
+  width: auto;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card--source-spine-remote {
+  height: auto;
+  max-height: 100%;
+  min-height: 0;
+  flex-shrink: 1;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card--source-spine-remote
+  .parent-tag-card-body--source-spine-image {
+  flex: 0 1 auto;
+  width: auto;
+  height: auto;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card--source-spine-remote
+  .parent-tag-card-spine-image {
+  display: block;
+  width: auto;
+  height: auto;
+  max-height: 100%;
+  max-width: clamp(2.75rem, 10vw, 4rem);
+  min-height: 0;
+  object-fit: contain;
+  object-position: bottom center;
 }
 
 .home-main--parent-rail-hero
@@ -3097,8 +3240,32 @@ button.parent-tag-card {
   .parent-tag-rail-section--links-view
   .parent-tag-card-body--source-spine-image {
   width: auto;
-  height: 100%;
   max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  height: auto;
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card-label {
+  margin-inline: auto;
+  text-align: center;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card--source-spine-image
+  .parent-tag-card-spine-image {
+  max-height: 100%;
+  height: auto;
+  width: auto;
+  object-fit: contain;
+  object-position: bottom center;
 }
 
 .parent-tag-card-spine-image {
@@ -3108,7 +3275,7 @@ button.parent-tag-card {
   max-width: clamp(2.75rem, 10vw, 4rem);
   margin-inline: 0;
   object-fit: contain;
-  object-position: center center;
+  object-position: bottom center;
   image-rendering: auto;
   user-select: none;
   -webkit-user-drag: none;

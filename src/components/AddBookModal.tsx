@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useId, useState, startTransition } from 'react'
 import { createBookSource, type SourceRow } from '../lib/notesApi'
-import {
-  fetchBookImages,
-  searchBooks,
-  type BookSearchHit,
-} from '../lib/bookSearchApi'
+import { searchBooks, type BookSearchHit } from '../lib/bookSearchApi'
 import { displaySourceTitle } from '../lib/sourceUtils'
 
 type Props = {
@@ -80,7 +76,6 @@ export function AddBookModal({
       setError(null)
       setImportingIsbn(hit.isbn)
       try {
-        const { spine, coverUrl } = await fetchBookImages(hit)
         const row = await createBookSource(userId, {
           title: hit.title,
           isbn: hit.isbn,
@@ -88,15 +83,13 @@ export function AddBookModal({
           publisher: hit.publisher || null,
           published_year: hit.publishedYear,
           category: hit.category || null,
-          cover_image_url: coverUrl ?? hit.coverUrl ?? null,
-          kyobo_product_id: hit.kyoboProductId,
+          cover_image_url: hit.coverUrl || null,
+          yes24_goods_no: hit.yes24GoodsNo,
           metadata_source: hit.source,
-          spine_image_url: spine?.url ?? null,
-          spine_image_width: spine?.width ?? null,
-          spine_image_height: spine?.height ?? null,
+          spine_image_url: hit.spineUrl || null,
         })
         onCreated(row, {
-          needsSpinePaste: !spine,
+          needsSpinePaste: !hit.spineUrl,
         })
         onClose()
       } catch (e) {
@@ -157,9 +150,8 @@ export function AddBookModal({
               autoFocus
             />
                 <p className="add-book-modal-hint">
-                  북스파인은 예스24 3D 책등(SIDE)을 우선 사용합니다. 예스24에
-                  없을 때만 교보 3번 이미지를 시도합니다. 표지 URL도 함께
-                  저장합니다.
+                  예스24 Open API로 검색합니다. 표지·북스파인은 예스24 CDN
+                  URL을 저장하며, 이미지를 다운로드해 재호스팅하지 않습니다.
                 </p>
           </div>
 
@@ -167,9 +159,7 @@ export function AddBookModal({
             <p className="notes-hint add-book-modal-status">검색 중…</p>
           ) : null}
           {importingIsbn ? (
-            <p className="notes-hint add-book-modal-status">
-              북스파인 가져오는 중…
-            </p>
+            <p className="notes-hint add-book-modal-status">등록 중…</p>
           ) : null}
           {error ? <p className="composer-error">{error}</p> : null}
 

@@ -1,6 +1,6 @@
-import type { CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import type { SourceRow } from '../lib/notesApi'
-import { hasSourceSpineImage } from '../lib/sourceSpineImage'
+import { resolveSourceSpineUrl } from '../lib/bookCatalogServer'
 import { displaySourceTitle } from '../lib/sourceUtils'
 import { formatSpineText } from '../lib/tagUtils'
 
@@ -22,20 +22,52 @@ export function SourceSpineCard({
   onSelect,
 }: SourceSpineCardProps) {
   const label = displaySourceTitle(source.title)
-  const useImage = hasSourceSpineImage(source)
-  const spineHeight = source.spine_image_height ?? undefined
-  const spineWidth = source.spine_image_width ?? undefined
+  const spineUrl = resolveSourceSpineUrl(source)
+  const [imageBroken, setImageBroken] = useState(false)
+  const useImage = Boolean(spineUrl) && !imageBroken
+  const [loadedSpineSize, setLoadedSpineSize] = useState<{
+    width: number
+    height: number
+  } | null>(null)
 
-  const cardStyle = (
-    useImage
+  useEffect(() => {
+    setImageBroken(false)
+    setLoadedSpineSize(null)
+  }, [spineUrl])
+  const spineHeight =
+    source.spine_image_height && source.spine_image_height > 0
+      ? source.spine_image_height
+      : loadedSpineSize?.height
+  const spineWidth =
+    source.spine_image_width && source.spine_image_width > 0
+      ? source.spine_image_width
+      : loadedSpineSize?.width
+  const useStoredSpineScale = Boolean(
+    source.spine_image_height && source.spine_image_height > 0,
+  )
+  const useLoadedSpineScale = Boolean(
+    loadedSpineSize &&
+      loadedSpineSize.height > 0 &&
+      (maxSpineHeight || loadedSpineSize.height),
+  )
+  const useProportionalScale = useStoredSpineScale || useLoadedSpineScale
+
+  const cardStyle: CSSProperties = useImage
+    ? useProportionalScale
       ? {
-          '--source-spine-natural-h': String(spineHeight ?? 1),
-          '--source-spine-max-h': String(
-            maxSpineHeight || spineHeight || 1,
+          ['--source-spine-natural-h' as string]: String(
+            spineHeight ?? loadedSpineSize?.height ?? 1,
+          ),
+          ['--source-spine-max-h' as string]: String(
+            maxSpineHeight || loadedSpineSize?.height || spineHeight || 1,
           ),
         }
-      : undefined
-  ) as CSSProperties | undefined
+      : {}
+    : {
+        ['--source-spine-text-fill' as string]: String(
+          Math.min(0.94, Math.max(0.5, 0.46 + label.length * 0.014)),
+        ),
+      }
 
   return (
     <div
@@ -43,6 +75,10 @@ export function SourceSpineCard({
         selected ? ' parent-tag-card--selected' : ''
       }${expanded ? ' parent-tag-card--expanded' : ''}${
         useImage ? ' parent-tag-card--source-spine-image' : ''
+      }${
+        useImage && !useProportionalScale
+          ? ' parent-tag-card--source-spine-remote'
+          : ''
       }`}
       style={cardStyle}
     >
@@ -58,14 +94,24 @@ export function SourceSpineCard({
         title={label}
         onClick={onSelect}
       >
-        {useImage ? (
+        {useImage && spineUrl ? (
           <img
             className="parent-tag-card-spine-image"
-            src={source.spine_image_url!}
+            src={spineUrl}
             alt=""
             width={spineWidth}
             height={spineHeight}
             draggable={false}
+            referrerPolicy="no-referrer"
+            onLoad={(e) => {
+              const img = e.currentTarget
+              if (img.naturalWidth < 1 || img.naturalHeight < 1) return
+              setLoadedSpineSize({
+                width: img.naturalWidth,
+                height: img.naturalHeight,
+              })
+            }}
+            onError={() => setImageBroken(true)}
           />
         ) : (
           <span className="parent-tag-card-label">
