@@ -79,7 +79,21 @@ export type SourceRow = {
   id: string
   title: string
   created_at?: string
+  isbn?: string | null
+  author?: string | null
+  publisher?: string | null
+  published_year?: number | null
+  category?: string | null
+  cover_image_url?: string | null
+  kyobo_product_id?: string | null
+  metadata_source?: string | null
+  spine_image_url?: string | null
+  spine_image_width?: number | null
+  spine_image_height?: number | null
 }
+
+const SOURCE_SELECT =
+  'id, title, created_at, isbn, author, publisher, published_year, category, cover_image_url, kyobo_product_id, metadata_source, spine_image_url, spine_image_width, spine_image_height'
 
 export type NoteWithTags = {
   id: string
@@ -233,13 +247,25 @@ export type NoteTagLinkRow = {
   tag_id: string
 }
 
-/** note_tags 연결 행 전체 */
+/** note_tags 연결 행 전체 (Supabase 기본 1000행 제한 우회) */
 export async function fetchNoteTagLinks(): Promise<NoteTagLinkRow[]> {
-  const { data, error } = await supabase
-    .from('note_tags')
-    .select('note_id, tag_id')
-  if (error) throw error
-  return (data ?? []) as NoteTagLinkRow[]
+  const pageSize = 1000
+  const all: NoteTagLinkRow[] = []
+  let from = 0
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('note_tags')
+      .select('note_id, tag_id')
+      .range(from, from + pageSize - 1)
+    if (error) throw error
+    const rows = (data ?? []) as NoteTagLinkRow[]
+    all.push(...rows)
+    if (rows.length < pageSize) break
+    from += pageSize
+  }
+
+  return all
 }
 
 export function buildTagMemoCountsFromLinks(
@@ -293,7 +319,7 @@ export async function fetchSourceDistinctTagCounts(): Promise<
 export async function fetchSources(): Promise<SourceRow[]> {
   const { data, error } = await supabase
     .from('sources')
-    .select('id, title, created_at')
+    .select(SOURCE_SELECT)
     .order('title')
   if (error) throw error
   return (data ?? []) as SourceRow[]
@@ -318,7 +344,7 @@ export async function fetchSourcesInUse(): Promise<SourceRow[]> {
 
   const { data, error } = await supabase
     .from('sources')
-    .select('id, title, created_at')
+    .select(SOURCE_SELECT)
     .in('id', ids)
     .order('title')
   if (error) throw error
@@ -339,19 +365,72 @@ export async function deleteSourceIfOrphan(sourceId: string): Promise<boolean> {
   return true
 }
 
-/** 출처 이름 수정 — 연결된 메모의 denormalized source도 함께 갱신 */
-export async function updateSourceTitle(
+/** 출처 이름·북스파인·책 메타데이터 수정 */
+export async function updateSource(
   sourceId: string,
-  rawTitle: string,
+  patch: {
+    rawTitle?: string
+    isbn?: string | null
+    author?: string | null
+    publisher?: string | null
+    published_year?: number | null
+    category?: string | null
+    cover_image_url?: string | null
+    kyobo_product_id?: string | null
+    metadata_source?: string | null
+    spine_image_url?: string | null
+    spine_image_width?: number | null
+    spine_image_height?: number | null
+  },
 ): Promise<SourceRow> {
-  const title = normalizeSourceTitle(rawTitle)
-  if (!title) throw new Error('출처 이름이 비었습니다.')
+  const updates: Record<string, unknown> = {}
+
+  if (patch.rawTitle !== undefined) {
+    const title = normalizeSourceTitle(patch.rawTitle)
+    if (!title) throw new Error('출처 이름이 비었습니다.')
+    updates.title = title
+  }
+  if (patch.isbn !== undefined) updates.isbn = patch.isbn
+  if (patch.author !== undefined) updates.author = patch.author
+  if (patch.publisher !== undefined) updates.publisher = patch.publisher
+  if (patch.published_year !== undefined) {
+    updates.published_year = patch.published_year
+  }
+  if (patch.category !== undefined) updates.category = patch.category
+  if (patch.cover_image_url !== undefined) {
+    updates.cover_image_url = patch.cover_image_url
+  }
+  if (patch.kyobo_product_id !== undefined) {
+    updates.kyobo_product_id = patch.kyobo_product_id
+  }
+  if (patch.metadata_source !== undefined) {
+    updates.metadata_source = patch.metadata_source
+  }
+  if (patch.spine_image_url !== undefined) {
+    updates.spine_image_url = patch.spine_image_url
+  }
+  if (patch.spine_image_width !== undefined) {
+    updates.spine_image_width = patch.spine_image_width
+  }
+  if (patch.spine_image_height !== undefined) {
+    updates.spine_image_height = patch.spine_image_height
+  }
+
+  if (Object.keys(updates).length === 0) {
+    const { data, error } = await supabase
+      .from('sources')
+      .select(SOURCE_SELECT)
+      .eq('id', sourceId)
+      .single()
+    if (error) throw error
+    return data as SourceRow
+  }
 
   const { data, error } = await supabase
     .from('sources')
-    .update({ title })
+    .update(updates)
     .eq('id', sourceId)
-    .select('id, title, created_at')
+    .select(SOURCE_SELECT)
     .single()
   if (error) {
     if (error.code === '23505') {
@@ -360,13 +439,94 @@ export async function updateSourceTitle(
     throw error
   }
 
-  const { error: noteErr } = await supabase
-    .from('notes')
-    .update({ source: title })
-    .eq('source_id', sourceId)
-  if (noteErr) throw noteErr
+  if (updates.title) {
+    const { error: noteErr } = await supabase
+      .from('notes')
+      .update({ source: updates.title as string })
+      .eq('source_id', sourceId)
+    if (noteErr) throw noteErr
+  }
 
   return data as SourceRow
+}
+
+export type CreateBookSourceInput = {
+  title: string
+  isbn: string
+  author?: string | null
+  publisher?: string | null
+  published_year?: number | null
+  category?: string | null
+  cover_image_url?: string | null
+  kyobo_product_id?: string | null
+  metadata_source?: string | null
+  spine_image_url?: string | null
+  spine_image_width?: number | null
+  spine_image_height?: number | null
+}
+
+/** ISBN 기준 책 출처 생성 또는 기존 행 갱신 */
+export async function createBookSource(
+  userId: string,
+  input: CreateBookSourceInput,
+): Promise<SourceRow> {
+  const title = normalizeSourceTitle(input.title)
+  if (!title) throw new Error('책 제목이 비었습니다.')
+  const isbn = input.isbn.trim()
+  if (!isbn) throw new Error('ISBN이 필요합니다.')
+
+  const { data: existing, error: findErr } = await supabase
+    .from('sources')
+    .select(SOURCE_SELECT)
+    .eq('user_id', userId)
+    .eq('isbn', isbn)
+    .maybeSingle()
+  if (findErr) throw findErr
+
+  const payload = {
+    title,
+    isbn,
+    author: input.author ?? null,
+    publisher: input.publisher ?? null,
+    published_year: input.published_year ?? null,
+    category: input.category ?? null,
+    cover_image_url: input.cover_image_url ?? null,
+    kyobo_product_id: input.kyobo_product_id ?? null,
+    metadata_source: input.metadata_source ?? 'kyobo',
+    spine_image_url: input.spine_image_url ?? null,
+    spine_image_width: input.spine_image_width ?? null,
+    spine_image_height: input.spine_image_height ?? null,
+  }
+
+  if (existing) {
+    return updateSource(existing.id, {
+      rawTitle: title,
+      ...payload,
+    })
+  }
+
+  const { data, error } = await supabase
+    .from('sources')
+    .insert({ user_id: userId, ...payload })
+    .select(SOURCE_SELECT)
+    .single()
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error('같은 이름 또는 ISBN의 출처가 이미 있습니다.')
+    }
+    throw error
+  }
+
+  return data as SourceRow
+}
+
+/** @deprecated updateSource 사용 */
+export async function updateSourceTitle(
+  sourceId: string,
+  rawTitle: string,
+): Promise<SourceRow> {
+  return updateSource(sourceId, { rawTitle })
 }
 
 /**
@@ -668,13 +828,24 @@ export async function pullAllTagNotesForTagIds(
   if (ids.length === 1) {
     return pullAllTagNotes(ids[0]!)
   }
+
   const map = new Map<string, NoteWithTags>()
-  for (const id of ids) {
-    const page = await pullAllTagNotes(id)
+  let before: string | undefined
+  let hasMore = true
+  let pages = 0
+  const maxPages = 80
+
+  while (hasMore && pages < maxPages) {
+    pages++
+    const page = await fetchNotesPageForTagIds(ids, { before })
     for (const note of page.notes) {
       map.set(note.id, note)
     }
+    hasMore = page.hasMore
+    if (page.notes.length === 0) break
+    before = page.notes[page.notes.length - 1]?.created_at
   }
+
   return {
     notes: sortNotesNewestFirst([...map.values()]),
     hasMore: false,

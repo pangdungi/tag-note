@@ -1196,9 +1196,31 @@ body:has(.home-main--parent-rail-hero) {
     box-sizing: border-box;
   }
 
-  /* 헤더 없을 때 상태바·노치 아래로 (safe-area 0인 브라우저도 최소 3rem) */
-  .home-layout:not(:has(.home-top-tag-search)) {
+  /* 헤더 없을 때 상태바 여백 (북스파인 화면 제외) */
+  .home-layout:not(:has(.home-top-tag-search)):not(:has(.home-main--parent-rail-hero)) {
     padding-top: max(3rem, env(safe-area-inset-top, 0px));
+  }
+
+  .home-layout:has(.home-main--parent-rail-hero) {
+    padding-top: 0;
+  }
+
+  .home-main--parent-rail-hero .parent-tag-rail-section--with-index .tag-rail-index {
+    padding-top: max(0.35rem, env(safe-area-inset-top, 0px));
+  }
+
+  .home-main--parent-rail-hero
+    .parent-tag-rail-section:not(.parent-tag-rail-section--with-index)
+    .parent-tag-rail-scroll {
+    padding-top: env(safe-area-inset-top, 0px);
+    box-sizing: border-box;
+  }
+
+  .home-layout:not(:has(.home-top-tag-search))
+    .home-main--parent-rail-hero
+    .search-results-rail-section {
+    padding-top: env(safe-area-inset-top, 0px);
+    box-sizing: border-box;
   }
 
   .home-rail-viewport,
@@ -1297,10 +1319,8 @@ body:has(.home-main--parent-rail-hero) {
     padding-right: max(0.85rem, env(safe-area-inset-right, 0px));
   }
 
-  /* 레일: 인덱스 + 스크롤 세로 flex, 북스파인 전체 높이 */
+  /* 레일: 인덱스 + 스크롤 — grid로 북스파인 바로 아래부터 채움 */
   .home-main--parent-rail-hero .parent-tag-rail-section--with-index {
-    display: flex;
-    flex-direction: column;
     min-height: 0;
     overflow: hidden;
   }
@@ -1308,14 +1328,13 @@ body:has(.home-main--parent-rail-hero) {
   .home-main--parent-rail-hero
     .parent-tag-rail-section--with-index
     .parent-tag-rail-scroll {
-    flex: 1 1 0;
     min-height: 0;
-    height: auto;
+    height: 100%;
   }
 
   .home-main--parent-rail-hero .parent-tag-rail-scroll .parent-tag-rail {
-    min-height: 100%;
     height: 100%;
+    min-height: 100%;
   }
 
   .home-main--parent-rail-hero .parent-tag-rail > li,
@@ -1689,13 +1708,14 @@ body:has(.home-main--parent-rail-hero) {
   height: 0;
 }
 
+.home-main--parent-rail-hero .parent-tag-rail-section--with-index:not(.search-results-rail-section) {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .home-main--parent-rail-hero .parent-tag-rail-scroll {
-  flex: 1 1 0;
-  height: 0;
   min-height: 0;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
@@ -1704,12 +1724,16 @@ body:has(.home-main--parent-rail-hero) {
   -ms-overflow-style: none;
 }
 
-.home-main--parent-rail-hero .parent-tag-rail-scroll .parent-tag-rail {
+.home-main--parent-rail-hero .parent-tag-rail-section:not(.parent-tag-rail-section--with-index)
+  .parent-tag-rail-scroll {
   flex: 1 1 0;
+  height: 0;
+}
+
+.home-main--parent-rail-hero .parent-tag-rail-scroll .parent-tag-rail {
   height: 100%;
-  min-height: 0;
+  min-height: 100%;
   align-items: stretch;
-  align-self: stretch;
 }
 
 .home-main--parent-rail-hero .parent-tag-rail-scroll::-webkit-scrollbar {
@@ -1754,7 +1778,7 @@ body:has(.home-main--parent-rail-hero) {
   .home-main--parent-rail-hero .parent-tag-rail,
   .home-main--parent-rail-hero .search-results-rail {
     height: 100%;
-    min-height: 100%;
+    min-height: 0;
   }
 
   .parent-tag-child-item {
@@ -1830,7 +1854,6 @@ body:has(.home-main--parent-rail-hero) {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  border-bottom: 1px solid var(--border, #ddd);
   font-family: var(--memo-font-family, var(--app-font-family));
 }
 
@@ -3025,6 +3048,319 @@ button.parent-tag-card {
   white-space: nowrap;
   text-overflow: ellipsis;
   color: inherit;
+}
+
+/* 출처 뷰 — 교보문고 등 북스파인 이미지 */
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card--source-spine-image {
+  width: auto;
+  height: calc(
+    100% * var(--source-spine-natural-h, 1) / var(--source-spine-max-h, 1)
+  );
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  max-width: clamp(2.75rem, 10vw, 4rem);
+  padding: 0;
+  align-self: flex-end;
+  flex-shrink: 0;
+  border: none !important;
+  background: transparent;
+  box-shadow: none !important;
+  outline: none;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card--source-spine-image.parent-tag-card--selected,
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card--source-spine-image.parent-tag-card--selected.parent-tag-card--expanded,
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card--source-spine-image:hover:not(.parent-tag-card--selected) {
+  background: transparent;
+  color: inherit;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card--source-spine-image.parent-tag-card--selected
+  .parent-tag-card-spine-image {
+  filter: drop-shadow(0 0 0.5px rgb(17 17 17 / 35%));
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .parent-tag-card-body--source-spine-image {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+}
+
+.parent-tag-card-spine-image {
+  display: block;
+  width: auto;
+  height: 100%;
+  max-width: clamp(2.75rem, 10vw, 4rem);
+  margin-inline: 0;
+  object-fit: contain;
+  object-position: center center;
+  image-rendering: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.parent-tag-spine-slot--open .parent-tag-card--source-spine-image {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.parent-tag-spine-slot--open
+  .parent-tag-card--source-spine-image.parent-tag-card--selected {
+  border: none !important;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-main--parent-rail-hero
+    .parent-tag-rail-section--links-view
+    .parent-tag-card--source-spine-image:hover:not(.parent-tag-card--selected) {
+    transform: translateX(-3px);
+  }
+
+  .home-main--parent-rail-hero
+    .parent-tag-rail-section--links-view
+    .parent-tag-card--source-spine-image.parent-tag-card--expanded {
+    transform: translateX(-3px);
+  }
+
+  .parent-tag-spine-slot--open
+    .parent-tag-card--source-spine-image.parent-tag-card--expanded,
+  .parent-tag-spine-slot--open
+    .parent-tag-card--source-spine-image:hover:not(.parent-tag-card--selected) {
+    transform: none;
+  }
+}
+
+.tag-manage-dialog--edit-source {
+  max-width: min(100%, 440px);
+}
+
+.source-spine-edit-field {
+  margin-top: 0.25rem;
+}
+
+.source-spine-edit-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.composer-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.source-spine-edit-hint {
+  margin: 0.35rem 0 0.65rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.source-spine-edit-remove {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.source-spine-edit-remove:hover:not(:disabled) {
+  color: #111111;
+}
+
+.source-spine-edit-status {
+  margin: 0 0 0.5rem;
+}
+
+.source-spine-edit-preview {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 9rem;
+  max-height: min(52vh, 26rem);
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.65rem;
+  background: linear-gradient(180deg, #fafafa 0%, #f3f4f6 100%);
+  overflow: hidden;
+}
+
+.source-spine-edit-preview img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-height: 100%;
+  max-width: min(100%, 6rem);
+  object-fit: contain;
+  object-position: bottom center;
+  image-rendering: auto;
+}
+
+.source-spine-edit-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 5.5rem;
+  padding: 1rem;
+  border: 1.5px dashed #c4c9d0;
+  border-radius: 0.65rem;
+  background: #fafafa;
+  color: var(--muted);
+  font-size: 0.86rem;
+  text-align: center;
+  cursor: pointer;
+}
+
+.source-spine-edit-dropzone:focus {
+  outline: none;
+  border-color: #111111;
+  color: #111111;
+}
+
+.source-spine-edit-dropzone:focus-visible {
+  outline: 2px solid #111111;
+  outline-offset: 2px;
+}
+
+.tag-manage-dialog--add-book {
+  max-width: min(100%, 480px);
+  max-height: min(92dvh, 820px);
+  display: flex;
+  flex-direction: column;
+}
+
+.add-book-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.add-book-modal-hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.add-book-modal-status,
+.add-book-modal-empty {
+  margin: 0.5rem 0 0;
+}
+
+.add-book-result-list {
+  list-style: none;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.add-book-result-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.65rem;
+  background: #ffffff;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.add-book-result-item:hover:not(:disabled) {
+  border-color: #111111;
+  background: #fafafa;
+}
+
+.add-book-result-item:disabled {
+  opacity: 0.72;
+  cursor: wait;
+}
+
+.add-book-result-cover-wrap {
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 0.25rem;
+  background: #f3f4f6;
+}
+
+.add-book-result-cover {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.add-book-result-cover-fallback {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(180deg, #e5e7eb 0%, #d1d5db 100%);
+}
+
+.add-book-result-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.add-book-result-title {
+  font-size: 0.92rem;
+  line-height: 1.35;
+  color: #111111;
+}
+
+.add-book-result-sub,
+.add-book-result-category,
+.add-book-result-isbn {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.add-book-result-busy {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
 }
 
 /* 검색 결과 레일 — 상위태그·태그 북스파인 → 본문 매칭 메모 종이 스택 */

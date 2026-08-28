@@ -1,10 +1,29 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { bookApiDevMiddleware } from './bookApiDevMiddleware'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    {
+      name: 'book-api-dev',
+      enforce: 'pre',
+      configureServer(server) {
+        const handler = bookApiDevMiddleware()
+        server.middlewares.use((req, res, next) => {
+          const path = (req.url ?? '').split('?')[0]
+          if (path.startsWith('/api/books/')) {
+            handler(req, res, next)
+            return
+          }
+          next()
+        })
+        const stack = server.middlewares.stack
+        const layer = stack.pop()
+        if (layer) stack.unshift(layer)
+      },
+    },
     react(),
     VitePWA({
       registerType: 'autoUpdate',

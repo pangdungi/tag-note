@@ -2,9 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { TagComposer, type SelectedTag } from '../components/TagComposer'
 import { SourceComposer, type SelectedSource } from '../components/SourceComposer'
 import { AddParentTagModal } from '../components/AddParentTagModal'
-import { EditSourceModal } from '../components/EditSourceModal'
+import { AddBookModal } from '../components/AddBookModal'
+import { SourceSpineCard } from '../components/SourceSpineCard'
 import { EditParentTagModal } from '../components/EditParentTagModal'
 import { EditTagModal } from '../components/EditTagModal'
+import { EditSourceModal } from '../components/EditSourceModal'
 import { HomeBrowseNavButtons, type HomeBrowseNavId } from '../components/HomeBrowseNav'
 import { HomeSearchResultsRail } from '../components/HomeSearchResultsRail'
 import { EditNoteModal } from '../components/EditNoteModal'
@@ -61,7 +63,6 @@ import {
   isTagChildOfParent,
   normalizeTagInput,
   formatSpineLabel,
-  formatSpineText,
   tagHasChildren,
   noteHasNoTagViewTags,
   TAG_VIEW_NONE_ID,
@@ -71,7 +72,6 @@ import {
   resolveTagFilterIds,
   filterNotesForAllTagIds,
   filterNotesForAnyTagIds,
-  filterNotesForParentTagTree,
   firstRailItemIdForIndexKey,
   type TagRailIndexKey,
 } from '../lib/tagUtils'
@@ -945,7 +945,7 @@ function InlineRailNotesPanel({
       aria-label={`${tagLabel} 관련 메모`}
     >
       <TagNotesPullStatus
-        active={loading && notes.length === 0}
+        active={loading}
         hasCachedNotes={false}
       />
       {!loading && notes.length === 0 ? (
@@ -955,7 +955,7 @@ function InlineRailNotesPanel({
               ? '태그가 없는 메모가 아직 없습니다.'
               : '이 태그가 달린 메모가 아직 없습니다.')}
         </p>
-      ) : notes.length > 0 ? (
+      ) : !loading && notes.length > 0 ? (
         <ul className="note-board-list parent-tag-child-note-list">
           {sheetGroups
             ? sheetGroups.map((group) => (
@@ -982,6 +982,7 @@ type HomeQuickActionButtonsProps = {
   canUseCompose: boolean
   addNoteOpen: boolean
   showAddParentTagCompose: boolean
+  showAddBookCompose: boolean
   searchActive: boolean
   user: ReturnType<typeof useAuth>['user']
   showRailSettings: boolean
@@ -990,6 +991,7 @@ type HomeQuickActionButtonsProps = {
   onToggleSearch: () => void
   onToggleAddNote: () => void
   onAddParentTag: () => void
+  onAddBook: () => void
   onOpenAccount: () => void
   mobileBrowseFab?: ReactNode
 }
@@ -1052,6 +1054,7 @@ function HomeQuickActionButtons({
   canUseCompose,
   addNoteOpen,
   showAddParentTagCompose,
+  showAddBookCompose,
   searchActive,
   user,
   showRailSettings,
@@ -1060,9 +1063,16 @@ function HomeQuickActionButtons({
   onToggleSearch,
   onToggleAddNote,
   onAddParentTag,
+  onAddBook,
   onOpenAccount,
   mobileBrowseFab,
 }: HomeQuickActionButtonsProps) {
+  const showSpecialAdd = showAddParentTagCompose || showAddBookCompose
+  const specialAddLabel = showAddBookCompose
+    ? '책 추가'
+    : showAddParentTagCompose
+      ? '메인태그 추가'
+      : '메모 추가 열기'
   return (
     <>
       {showRailSettings ? (
@@ -1115,14 +1125,20 @@ function HomeQuickActionButtons({
       <button
         type="button"
         className={`btn btn--icon${
-          !showAddParentTagCompose && addNoteOpen ? ' btn--active' : ''
-        }${showAddParentTagCompose ? ' btn--icon-addbook' : ''}`}
+          !showSpecialAdd && addNoteOpen ? ' btn--active' : ''
+        }${showSpecialAdd ? ' btn--icon-addbook' : ''}`}
         disabled={!canUseCompose}
-        aria-label={showAddParentTagCompose ? '메인태그 추가' : '메모 추가 열기'}
-        title={showAddParentTagCompose ? '메인태그 추가' : '새 메모'}
-        onClick={showAddParentTagCompose ? onAddParentTag : onToggleAddNote}
+        aria-label={specialAddLabel}
+        title={specialAddLabel}
+        onClick={
+          showAddBookCompose
+            ? onAddBook
+            : showAddParentTagCompose
+              ? onAddParentTag
+              : onToggleAddNote
+        }
       >
-        {showAddParentTagCompose ? (
+        {showSpecialAdd ? (
           <img
             src={addBookIconUrl}
             alt=""
@@ -1311,6 +1327,7 @@ export function HomePage() {
   const [tagViewDrillDown, setTagViewDrillDown] = useState(false)
 
   const [addParentTagRailOpen, setAddParentTagRailOpen] = useState(false)
+  const [addBookModalOpen, setAddBookModalOpen] = useState(false)
   const [railEditingTag, setRailEditingTag] = useState<TagRow | null>(null)
   const [railEditingParentTag, setRailEditingParentTag] =
     useState<TagRow | null>(null)
@@ -1993,6 +2010,23 @@ export function HomePage() {
     setSaveError(null)
   }, [])
 
+  const applySourceCreated = useCallback(
+    (row: SourceRow, options?: { needsSpinePaste?: boolean }) => {
+      setAllSources((prev) =>
+        [...prev.filter((s) => s.id !== row.id), row].sort((a, b) =>
+          a.title.localeCompare(b.title, 'ko'),
+        ),
+      )
+      setSelectedSourceId(row.id)
+      setHomeBrowseNav('links')
+      setSaveError(null)
+      if (options?.needsSpinePaste) {
+        setRailEditingSource(row)
+      }
+    },
+    [],
+  )
+
   const applySourceDeleted = useCallback(
     (sourceId: string) => {
       const deleted = allSources.find((s) => s.id === sourceId)
@@ -2105,17 +2139,13 @@ export function HomePage() {
       return
     }
 
-    const localNotes = readLocalNotesForTagFilter(
-      filterTagIds,
-      notesRef.current,
-    )
     setTagPullEntry({
       tagId: pullTagId,
       filterTagIds,
       nav: pullNav,
-      notes: localNotes,
+      notes: [],
     })
-    setTagPullLoading(localNotes.length === 0)
+    setTagPullLoading(true)
 
     const pullGen = tagPullGenerationRef.current
     let cancelled = false
@@ -2156,6 +2186,7 @@ export function HomePage() {
         })
         setNotes((prev) => mergeNotesById(prev, page.notes))
         setLoadError(null)
+        void refreshHomeCountMaps(uid)
       } catch (e) {
         if (!cancelled) {
           setLoadError(
@@ -2174,7 +2205,7 @@ export function HomePage() {
       cancelled = true
       setTagPullLoading(false)
     }
-  }, [tagPullFilterKey, tagFilterNav, user?.id])
+  }, [tagPullFilterKey, tagFilterNav, user?.id, refreshHomeCountMaps])
 
   useEffect(() => {
     if (!selectedSourceId) {
@@ -2561,8 +2592,9 @@ export function HomePage() {
       tagId,
       filterTagIds,
       nav,
-      notes: readLocalNotesForTagFilter(filterTagIds, notesRef.current),
+      notes: [],
     })
+    setTagPullLoading(true)
   }
 
   function toggleTagSelect(
@@ -2989,6 +3021,15 @@ export function HomePage() {
     [allSources],
   )
 
+  const maxLinkSourceSpineHeight = useMemo(() => {
+    let max = 0
+    for (const s of sourcesForLinkModeRail) {
+      const h = s.spine_image_height ?? 0
+      if (h > max) max = h
+    }
+    return max
+  }, [sourcesForLinkModeRail])
+
   const tagMemoCounts = useMemo(
     () => new Map(Object.entries(tagMemoCountById)),
     [tagMemoCountById],
@@ -2998,28 +3039,6 @@ export function HomePage() {
     () => new Map(Object.entries(parentTreeMemoCountById)),
     [parentTreeMemoCountById],
   )
-
-  /** spine 숫자 — 서버 집계 + 로컬 메모(초기 페이지) 중 큰 값 */
-  const parentTreeMemoCountsDisplay = useMemo(() => {
-    const map = new Map(parentTreeMemoCounts)
-    for (const p of parentTagsForRail) {
-      const server = map.get(p.id) ?? 0
-      const local = filterNotesForParentTagTree(
-        notes,
-        p.id,
-        allTags,
-        tagParentLinks,
-      ).length
-      if (local > server) map.set(p.id, local)
-    }
-    return map
-  }, [
-    parentTreeMemoCounts,
-    parentTagsForRail,
-    notes,
-    allTags,
-    tagParentLinks,
-  ])
 
   const sourceTagCounts = useMemo(
     () => new Map(Object.entries(sourceTagCountById)),
@@ -3215,6 +3234,10 @@ export function HomePage() {
       allTags,
       tagParentLinks,
     ) === null
+
+  /** 출처 뷰에서 출처 미선택 시 + → 책 검색 추가 */
+  const showAddBookCompose =
+    homeBrowseNav === 'links' && !hasActiveSearch && !selectedSourceId
 
   const selectedOpenSpineId = useMemo(() => {
     if (homeBrowseNav === 'books') return booksRailExpandedParentId
@@ -3938,7 +3961,7 @@ export function HomePage() {
                         tagParentLinks,
                       )
                       const spineSelected = isOpen || active
-                      const spineStatValue = parentTreeMemoCountsDisplay.get(t.id) ?? 0
+                      const spineStatValue = parentTreeMemoCounts.get(t.id) ?? 0
                       const spineStatAria = `메모 ${spineStatValue}개`
                       return (
                         <li
@@ -4053,31 +4076,14 @@ export function HomePage() {
                           }`}
                         >
                           <div className="parent-tag-spine-group">
-                            <div
-                              className={`parent-tag-card${
-                                isOpen ? ' parent-tag-card--selected' : ''
-                              }${isOpen ? ' parent-tag-card--expanded' : ''}`}
-                            >
-                              <button
-                                type="button"
-                                className="parent-tag-card-body"
-                                aria-pressed={isOpen}
-                                aria-current={isOpen ? 'true' : undefined}
-                                aria-expanded={isOpen}
-                                aria-label={displaySourceTitle(s.title)}
-                                title={displaySourceTitle(s.title)}
-                                onClick={() => toggleSourceSelect(s.id)}
-                              >
-                                <span className="parent-tag-card-label">
-                                  {formatSpineText(displaySourceTitle(s.title))}
-                                </span>
-                              </button>
-                              <ParentTagSpineStat
-                                value={tagCount}
-                                prefixHash
-                                ariaLabel={`태그 ${tagCount}개`}
-                              />
-                            </div>
+                            <SourceSpineCard
+                              source={s}
+                              selected={isOpen}
+                              expanded={isOpen}
+                              tagCount={tagCount}
+                              maxSpineHeight={maxLinkSourceSpineHeight}
+                              onSelect={() => toggleSourceSelect(s.id)}
+                            />
                             {isOpen ? (
                               <div
                                 ref={openTracksRef}
@@ -4315,6 +4321,7 @@ export function HomePage() {
                   canUseCompose={canUseCompose}
                   addNoteOpen={addNoteOpen}
                   showAddParentTagCompose={showAddParentTagCompose}
+                  showAddBookCompose={showAddBookCompose}
                   searchActive={searchOpen || hasActiveSearch}
                   user={user}
                   showRailSettings={
@@ -4325,6 +4332,7 @@ export function HomePage() {
                   onToggleSearch={() => toggleSearch()}
                   onToggleAddNote={() => toggleAddNote()}
                   onAddParentTag={() => openAddParentTag()}
+                  onAddBook={() => setAddBookModalOpen(true)}
                   onOpenAccount={() => setAccountModalOpen(true)}
                 />
               </div>
@@ -4405,6 +4413,16 @@ export function HomePage() {
         onSyncFromServer={syncAllFromServer}
         onSourcesChanged={refreshSourcesInUse}
       />
+
+      {user ? (
+        <AddBookModal
+          open={addBookModalOpen}
+          userId={user.id}
+          onClose={() => setAddBookModalOpen(false)}
+          onCreated={applySourceCreated}
+          onError={(message) => setSaveError(message)}
+        />
+      ) : null}
 
       <EditSourceModal
         open={railEditingSource !== null}
