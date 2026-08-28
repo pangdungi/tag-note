@@ -658,10 +658,8 @@ export function mergeSourcesFromNoteIntoAllSources(
   const embedTitle = (note.sources?.title ?? note.source ?? '').trim()
   const byId = new Map(prev.map((s) => [s.id, s]))
   const cur = byId.get(srcId)
-  byId.set(srcId, {
-    id: srcId,
-    title: cur?.title ?? embedTitle,
-  })
+  if (cur) return prev
+  byId.set(srcId, { id: srcId, title: embedTitle })
   return [...byId.values()].sort((a, b) => a.title.localeCompare(b.title, 'ko'))
 }
 

@@ -9,7 +9,7 @@ import {
 
 type HomeBrowseRailIndexProps = {
   items: readonly { name?: string; title?: string }[]
-  itemNoun: '태그' | '상위태그' | '출처'
+  itemNoun: '태그' | '상위태그' | '출처' | '분야'
   onSelect: (key: TagRailIndexKey) => void
 }
 
