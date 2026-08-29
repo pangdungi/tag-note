@@ -9,9 +9,9 @@ import {
   type AppFontChoiceId,
 } from './appFont'
 
-export async function fetchUserAppFontId(
+async function fetchUserAppFontRawId(
   userId: string,
-): Promise<AppFontChoiceId | null> {
+): Promise<string | null> {
   const { data, error } = await supabase
     .from('user_preferences')
     .select('app_font_id')
@@ -19,16 +19,40 @@ export async function fetchUserAppFontId(
     .maybeSingle()
 
   if (error) throw error
-  if (!data?.app_font_id) return null
-  return normalizeLegacyAppFontId(data.app_font_id)
+  return data?.app_font_id ?? null
+}
+
+export async function fetchUserAppFontId(
+  userId: string,
+): Promise<AppFontChoiceId | null> {
+  const raw = await fetchUserAppFontRawId(userId)
+  if (!raw) return null
+  return normalizeLegacyAppFontId(raw)
+}
+
+async function persistMigratedAppFontId(
+  userId: string,
+  raw: string | null,
+  id: AppFontChoiceId,
+): Promise<void> {
+  if (!raw || raw === id) return
+  try {
+    await upsertUserAppFontId(userId, id)
+  } catch {
+    /* 서버 제약이 아직 예전 글꼴만 허용하면 로컬만 적용 */
+  }
 }
 
 /** 행이 없으면 삽입 후 기본 글꼴을 돌려줍니다. */
 export async function ensureUserAppFontRow(
   userId: string,
 ): Promise<AppFontChoiceId> {
-  const existing = await fetchUserAppFontId(userId)
-  if (existing) return existing
+  const raw = await fetchUserAppFontRawId(userId)
+  if (raw) {
+    const existing = normalizeLegacyAppFontId(raw)
+    await persistMigratedAppFontId(userId, raw, existing)
+    return existing
+  }
 
   const { error } = await supabase
     .from('user_preferences')
@@ -55,9 +79,11 @@ export async function upsertUserAppFontId(
 }
 
 export async function loadAndApplyUserAppFont(userId: string): Promise<void> {
-  const id = (await fetchUserAppFontId(userId)) ?? DEFAULT_APP_FONT_ID
+  const raw = await fetchUserAppFontRawId(userId)
+  const id = raw ? normalizeLegacyAppFontId(raw) : DEFAULT_APP_FONT_ID
   applyAppFontToDocument(id)
   setStoredAppFontId(id)
+  await persistMigratedAppFontId(userId, raw, id)
   await waitForAppFonts(id)
 }
 

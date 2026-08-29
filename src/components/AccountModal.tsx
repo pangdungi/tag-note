@@ -1,19 +1,6 @@
 import { useCallback, useEffect, useId, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import {
-  APP_FONT_CHOICES,
-  appFontChoiceById,
-  applyAppFontToDocument,
-  DEFAULT_APP_FONT_ID,
-  setStoredAppFontId,
-  waitForAppFonts,
-  type AppFontChoiceId,
-} from '../lib/appFont'
-import {
-  ensureUserAppFontRow,
-  upsertUserAppFontId,
-} from '../lib/userPreferencesApi'
-import {
   accountSubscriptionLabel,
   type UserSubscriptionRow,
 } from '../lib/subscription'
@@ -66,10 +53,6 @@ export function AccountModal({
   const [withdrawPhase, setWithdrawPhase] = useState<'idle' | 'confirm'>('idle')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
-  const [appFontId, setAppFontId] = useState<AppFontChoiceId>(DEFAULT_APP_FONT_ID)
-  const [fontLoading, setFontLoading] = useState(false)
-  const [fontSavingId, setFontSavingId] = useState<AppFontChoiceId | null>(null)
-  const [fontError, setFontError] = useState<string | null>(null)
 
   const profileName = displayNameFromUser(user)
   const joinedAt = formatKoDateTime(user.created_at)
@@ -87,42 +70,8 @@ export function AccountModal({
     setWithdrawPhase('idle')
     setDeleteError(null)
     setDeleteBusy(false)
-    setFontError(null)
     void onAfterOpen()
-    if (!isSupabaseConfigured) return
-    setFontLoading(true)
-    void (async () => {
-      try {
-        const id = await ensureUserAppFontRow(user.id)
-        setAppFontId(id)
-        applyAppFontToDocument(id)
-        setStoredAppFontId(id)
-      } catch {
-        setFontError('글꼴 설정을 불러오지 못했습니다.')
-      } finally {
-        setFontLoading(false)
-      }
-    })()
-  }, [open, onAfterOpen, user.id])
-
-  async function handleFontPick(nextId: AppFontChoiceId) {
-    if (fontSavingId || nextId === appFontId) return
-    setFontError(null)
-    setFontSavingId(nextId)
-    setAppFontId(nextId)
-    try {
-      applyAppFontToDocument(nextId)
-      setStoredAppFontId(nextId)
-      if (isSupabaseConfigured) {
-        await upsertUserAppFontId(user.id, nextId)
-      }
-      await waitForAppFonts(nextId)
-    } catch {
-      setFontError('글꼴을 저장하지 못했습니다. 다시 시도해 주세요.')
-    } finally {
-      setFontSavingId(null)
-    }
-  }
+  }, [open, onAfterOpen])
 
   if (!open) return null
 
@@ -170,53 +119,6 @@ export function AccountModal({
                 </div>
               ) : null}
             </dl>
-          </section>
-
-          <section className="tag-manage-account-section" aria-label="글꼴">
-            <h3 className="tag-manage-account-section-title">글꼴</h3>
-            <p className="tag-manage-account-font-lead">
-              선택한 글꼴은 이 기기를 포함해 로그인할 때마다 적용됩니다.
-            </p>
-            {fontError ? (
-              <p className="tag-manage-account-font-error" role="alert">
-                {fontError}
-              </p>
-            ) : null}
-            {fontLoading ? (
-              <p className="tag-manage-account-font-loading" role="status">
-                불러오는 중…
-              </p>
-            ) : (
-              <ul className="tag-manage-account-font-list">
-                {APP_FONT_CHOICES.map((choice) => {
-                  const selected = appFontId === choice.id
-                  const saving = fontSavingId === choice.id
-                  return (
-                    <li key={choice.id}>
-                      <button
-                        type="button"
-                        className={`tag-manage-account-font-option${
-                          selected ? ' tag-manage-account-font-option--selected' : ''
-                        }`}
-                        aria-pressed={selected}
-                        disabled={fontSavingId !== null}
-                        style={{
-                          fontFamily: `'${appFontChoiceById(choice.id).cssFamily}', sans-serif`,
-                        }}
-                        onClick={() => void handleFontPick(choice.id)}
-                      >
-                        <span className="tag-manage-account-font-option-label">
-                          {choice.label}
-                        </span>
-                        <span className="tag-manage-account-font-option-meta">
-                          {saving ? '저장 중…' : selected ? '사용 중' : '선택'}
-                        </span>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
           </section>
 
           <section className="tag-manage-account-section" aria-label="구독">

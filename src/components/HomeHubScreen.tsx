@@ -71,13 +71,6 @@ export function HomeHubScreen({
         <div className="home-hub-footer">
           <button
             type="button"
-            className="home-hub-account"
-            onClick={onOpenAccount}
-          >
-            나의 계정
-          </button>
-          <button
-            type="button"
             className="home-hub-search"
             aria-label="검색"
             onClick={onOpenSearch}
@@ -86,10 +79,17 @@ export function HomeHubScreen({
               src={searchDoodleIconUrl}
               alt=""
               className="home-hub-search-icon"
-              width={36}
-              height={36}
+              width={56}
+              height={56}
               decoding="async"
             />
+          </button>
+          <button
+            type="button"
+            className="home-hub-account"
+            onClick={onOpenAccount}
+          >
+            나의 계정
           </button>
         </div>
       </nav>

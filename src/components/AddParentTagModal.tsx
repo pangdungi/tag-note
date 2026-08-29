@@ -242,15 +242,7 @@ export function AddParentTagModal({
           {error ? <p className="composer-error">{error}</p> : null}
         </div>
 
-        <ModalFooter>
-          <button
-            type="button"
-            className="btn"
-            disabled={busy}
-            onClick={() => onClose()}
-          >
-            닫기
-          </button>
+        <ModalFooter align="end">
           <button
             type="button"
             className="btn btn--emphasis edit-note-modal-submit"

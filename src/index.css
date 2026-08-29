@@ -94,13 +94,11 @@
   --note-paper-edge: #d1d5db;
   --note-paper-line: #ececef;
 
-  --app-font-family: 'TagNote BookkGothic Bold', -apple-system, BlinkMacSystemFont,
+  --app-font-family: 'TagNote Griun Fromsol', -apple-system, BlinkMacSystemFont,
     'SF Pro Text', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
 
   --memo-font-family: var(--app-font-family);
-
   --spine-font-family: var(--app-font-family);
-
   --tag-font-family: var(--app-font-family);
 
   /* rem 기준 — 전체 UI 글자 크기 (기본 16px → 18px) */
@@ -132,9 +130,26 @@ html {
   box-sizing: border-box;
 }
 
-input::placeholder,
-textarea::placeholder {
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+/* 전역 글꼴 — .app-font 한 곳에서 상속. 비밀번호·코드만 제외 */
+.app-font,
+.app-font body,
+.app-font #root {
+  font-family: var(--app-font-family);
+  font-weight: 400;
+  font-synthesis: none;
+}
+
+.app-font * {
+  font-family: inherit;
+  font-synthesis: none;
+}
+
+.app-font ::placeholder {
+  font-family: inherit;
+}
+
+.app-font :is(code, pre, kbd, .inline-code) {
+  font-family: ui-monospace, monospace;
 }
 
 body {
@@ -260,15 +275,23 @@ body::-webkit-scrollbar,
   }
 }
 
+.home-layout:has(.home-hub) {
+  min-height: 100svh;
+  min-height: 100dvh;
+}
+
 .home-hub {
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 1 1 0;
+  align-self: stretch;
+  width: 100%;
+  min-height: 100svh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1.2rem;
-  padding: max(1.25rem, env(safe-area-inset-top, 0px))
+  padding: max(1.25rem, calc(0.5rem + env(safe-area-inset-top, 0px)))
     max(1.5rem, env(safe-area-inset-right, 0px))
     max(1.25rem, env(safe-area-inset-bottom, 0px))
     max(1.5rem, env(safe-area-inset-left, 0px));
@@ -373,8 +396,8 @@ body::-webkit-scrollbar,
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 3.2rem;
+  height: 3.2rem;
   margin: 0;
   padding: 0;
   border: none;
@@ -385,8 +408,8 @@ body::-webkit-scrollbar,
 
 .home-hub-search-icon {
   display: block;
-  width: 1.65rem;
-  height: 1.65rem;
+  width: 2.5rem;
+  height: 2.5rem;
   object-fit: contain;
 }
 
@@ -1356,7 +1379,7 @@ body:has(.home-main--parent-rail-hero) {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.45rem 1rem 0.35rem;
-  padding-top: max(0.45rem, env(safe-area-inset-top, 0px));
+  padding-top: calc(0.45rem + env(safe-area-inset-top, 0px));
   background: #ffffff;
   z-index: 35;
 }
@@ -1426,7 +1449,7 @@ body:has(.parent-tag-rail-section--books-view) .home-add-text-btn {
 .home-top-chrome-center {
   position: absolute;
   left: 50%;
-  top: max(0.45rem, env(safe-area-inset-top, 0px));
+  top: calc(0.45rem + env(safe-area-inset-top, 0px));
   bottom: 0.35rem;
   transform: translateX(-50%);
   display: flex;
@@ -1581,6 +1604,16 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
     box-sizing: border-box;
   }
 
+  .home-layout:has(.home-hub) {
+    min-height: 0;
+  }
+
+  .home-hub {
+    flex: 1 1 0;
+    min-height: 0;
+    height: auto;
+  }
+
   /* 헤더 없을 때 상태바 여백 (북스파인·허브 화면 제외) */
   .home-layout:not(:has(.home-top-tag-search)):not(:has(.home-main--parent-rail-hero)):not(:has(.home-top-chrome)):not(:has(.home-hub)) {
     padding-top: max(3rem, env(safe-area-inset-top, 0px));
@@ -1700,8 +1733,21 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
   }
 
   .home-top-tag-search {
+    padding-top: max(2.75rem, calc(0.65rem + env(safe-area-inset-top, 0px)));
     padding-left: max(0.85rem, env(safe-area-inset-left, 0px));
     padding-right: max(0.85rem, env(safe-area-inset-right, 0px));
+  }
+
+  .home-top-chrome {
+    padding-top: max(2.75rem, calc(0.5rem + env(safe-area-inset-top, 0px)));
+  }
+
+  .home-top-chrome-center {
+    top: max(2.75rem, calc(0.5rem + env(safe-area-inset-top, 0px)));
+  }
+
+  .home-hub {
+    padding-top: max(2.75rem, calc(0.5rem + env(safe-area-inset-top, 0px)));
   }
 
   /* 레일: 인덱스 + 스크롤 — grid로 북스파인 바로 아래부터 채움 */
@@ -3699,13 +3745,16 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
   pointer-events: auto;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
   font-size: 1.2rem;
+  font-weight: 400;
   line-height: 1;
 }
 
 .tag-view-spiral-label {
+  font-family: inherit;
   font-size: 1.2rem;
-  font-weight: 700;
+  font-weight: 400;
 }
 
 .tag-view-spiral-item--selected {
@@ -3718,7 +3767,7 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
 
 .tag-view-spiral-item--selected .tag-view-spiral-label {
   font-size: 1.5rem;
-  font-weight: 700;
+  font-weight: 400;
 }
 
 .tag-view-spiral-item--selected .tag-view-spiral-count {
@@ -3729,7 +3778,9 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
 }
 
 .tag-view-spiral-count {
+  font-family: inherit;
   font-size: 0.78rem;
+  font-weight: 400;
   opacity: 0.45;
 }
 
@@ -4802,7 +4853,7 @@ button.parent-tag-card {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 18;
   overflow: hidden;
-  font-family: var(--memo-font-family);
+  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
   font-size: 0.82rem;
   font-weight: 400;
   line-height: 1.55;
@@ -5449,7 +5500,7 @@ button.note-board-tag-pill--link:focus-visible {
 
 .note-board-card-preview {
   margin: 0;
-  font-family: var(--memo-font-family);
+  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
   font-size: 0.88rem;
   line-height: 1.55;
   color: var(--text-strong);
@@ -5661,6 +5712,7 @@ button.note-board-tag-pill--link:focus-visible {
 .note-board-sheet-memo {
   padding: 0.55rem 0.65rem;
   min-height: 3.25rem;
+  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
   font-size: 0.88rem;
   line-height: 1.55;
   color: var(--text-strong);
@@ -6063,7 +6115,7 @@ button.note-board-tag-pill--link:focus-visible {
   border: 1px solid var(--border);
   border-radius: 12px;
     background: #ffffff;
-  font-family: var(--memo-font-family);
+  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
   font-size: 0.95rem;
   line-height: 1.5;
   color: var(--text-strong);
@@ -6494,14 +6546,14 @@ button.note-board-tag-pill--link:focus-visible {
   overflow: hidden;
 }
 
-/* 메모 본문·입력 — 그리운묘은흘림체 */
+/* 메모 본문·입력 — 그리운 프롬솔(두들) */
 .tag-manage-dialog :is(
   .composer-note,
   .memo-note-editor,
   .edit-note-modal-note,
   .note-view-modal-text
 ) {
-  font-family: var(--memo-font-family);
+  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
 }
 
 .tag-manage-overlay--nested {
@@ -6904,7 +6956,7 @@ button.note-board-tag-pill--link:focus-visible {
 
 .note-view-modal-text {
   margin: 0;
-  font-family: var(--memo-font-family);
+  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
   font-size: 0.95rem;
   line-height: 1.7;
   color: var(--text-strong);
@@ -7101,7 +7153,7 @@ button.note-board-tag-pill--link:focus-visible {
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
-  font-family: var(--memo-font-family);
+  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
   font-size: 0.95rem;
   line-height: 1.7;
   color: #111111;

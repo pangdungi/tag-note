@@ -6,6 +6,11 @@ const SYSTEM_STACK = `-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Apple S
 
 export const APP_FONT_CHOICES = [
   {
+    id: 'griun_fromsol',
+    label: '그리운 프롬솔',
+    cssFamily: 'TagNote Griun Fromsol',
+  },
+  {
     id: 'griun_myeonheullim',
     label: '그리운 묘은흘림',
     cssFamily: 'TagNote GriunMyoenHeullim',
@@ -35,16 +40,11 @@ export const APP_FONT_CHOICES = [
     label: '그리운 코코초이툰',
     cssFamily: 'TagNote Griun Cocochoitoon',
   },
-  {
-    id: 'bookk_gothic_bold',
-    label: '북크고딕',
-    cssFamily: 'TagNote BookkGothic Bold',
-  },
 ] as const
 
 export type AppFontChoiceId = (typeof APP_FONT_CHOICES)[number]['id']
 
-export const DEFAULT_APP_FONT_ID: AppFontChoiceId = 'bookk_gothic_bold'
+export const DEFAULT_APP_FONT_ID: AppFontChoiceId = 'griun_fromsol'
 
 const FONT_ID_SET = new Set<string>(APP_FONT_CHOICES.map((c) => c.id))
 
@@ -57,6 +57,7 @@ const LEGACY_FONT_IDS = new Set([
   'ongeulip_ryuttung',
   'spoqa',
   'dos_gothic',
+  'bookk_gothic_bold',
 ])
 
 export function isAppFontChoiceId(v: string): v is AppFontChoiceId {
@@ -66,8 +67,8 @@ export function isAppFontChoiceId(v: string): v is AppFontChoiceId {
 export function normalizeLegacyAppFontId(
   v: string | null | undefined,
 ): AppFontChoiceId {
-  if (v && isAppFontChoiceId(v)) return v
   if (v && LEGACY_FONT_IDS.has(v)) return DEFAULT_APP_FONT_ID
+  if (v && isAppFontChoiceId(v)) return v
   return DEFAULT_APP_FONT_ID
 }
 
@@ -80,13 +81,14 @@ export function appFontStack(id: AppFontChoiceId): string {
   return `'${family}', ${SYSTEM_STACK}`
 }
 
-export function applyAppFontToDocument(id: AppFontChoiceId = DEFAULT_APP_FONT_ID): void {
-  const stack = appFontStack(id)
-  const root = document.documentElement.style
-  root.setProperty('--app-font-family', stack)
-  root.setProperty('--memo-font-family', stack)
-  root.setProperty('--spine-font-family', stack)
-  root.setProperty('--tag-font-family', stack)
+export function applyAppFontToDocument(_id: AppFontChoiceId = DEFAULT_APP_FONT_ID): void {
+  const stack = appFontStack(DEFAULT_APP_FONT_ID)
+  const root = document.documentElement
+  root.classList.add('app-font')
+  root.style.setProperty('--app-font-family', stack)
+  root.style.setProperty('--memo-font-family', stack)
+  root.style.setProperty('--spine-font-family', stack)
+  root.style.setProperty('--tag-font-family', stack)
 }
 
 /** @deprecated applyAppFontToDocument 사용 */
@@ -119,7 +121,9 @@ export async function waitForAppFonts(
 export function getStoredAppFontId(): AppFontChoiceId {
   try {
     const raw = localStorage.getItem(APP_FONT_STORAGE_KEY)
-    return normalizeLegacyAppFontId(raw)
+    const id = normalizeLegacyAppFontId(raw)
+    if (raw && raw !== id) setStoredAppFontId(id)
+    return id
   } catch {
     return DEFAULT_APP_FONT_ID
   }
