@@ -24,6 +24,12 @@ export function displayTagName(storedName: string): string {
   return normalizeTagInput(storedName)
 }
 
+/** 태그별 모음 뷰 — 제목 앞에 # */
+export function formatHashtagLabel(storedName: string): string {
+  const name = displayTagName(storedName)
+  return name ? `#${name}` : ''
+}
+
 /** 세로 북스파인 — 괄호·부등호 제거 (세로 표시 불편) */
 export function formatSpineText(text: string): string {
   return text

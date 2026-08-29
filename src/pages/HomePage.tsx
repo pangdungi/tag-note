@@ -59,6 +59,7 @@ import {
 import {
   buildParentTreeMemoCounts,
   displayTagName,
+  formatHashtagLabel,
   getParentTags,
   getTagsForTagViewRail,
   isBooksRailParentTag,
@@ -3244,7 +3245,7 @@ export function HomePage() {
     selectedTagId === TAG_VIEW_NONE_ID
       ? '태그 없음'
       : selectedTag
-        ? displayTagName(selectedTag.name)
+        ? formatHashtagLabel(selectedTag.name)
         : '태그'
 
   const showBooksFolderNotesInRail = Boolean(
@@ -4097,12 +4098,12 @@ export function HomePage() {
                                 isSelected ? ' tag-view-bar--selected' : ''
                               }`}
                               aria-pressed={isSelected}
-                              aria-label={displayTagName(t.name)}
-                              title={displayTagName(t.name)}
+                              aria-label={formatHashtagLabel(t.name)}
+                              title={formatHashtagLabel(t.name)}
                               onClick={() => toggleTagSelect(t.id)}
                             >
                               <span className="tag-view-bar-label">
-                                {displayTagName(t.name)}
+                                {formatHashtagLabel(t.name)}
                               </span>
                               <span className="tag-view-bar-stat">
                                 {memoCount}
