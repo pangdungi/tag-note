@@ -2,12 +2,12 @@ import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'reac
 import type { TagRow } from '../lib/notesApi'
 import { formatHashtagLabel, TAG_VIEW_NONE_ID } from '../lib/tagUtils'
 
-const ANGLE_STEP = 0.078
-const ITEM_STRIDE = 32
+const ANGLE_STEP = 0.12
+const ITEM_STRIDE = 52
 const VISIBLE_RAD = 0.7
 const START_ANGLE = -0.42
 const LEFT = 48
-const PAD_Y = 0.18
+const PAD_Y = 0.22
 const PAD_UNITS = -START_ANGLE / ANGLE_STEP
 const PAD_PX = PAD_UNITS * ITEM_STRIDE
 const END_PAD = ITEM_STRIDE * 3
@@ -54,7 +54,8 @@ export function HomeTagSpiralRail({
   )
 
   const count = items.length
-  const spacerH = PAD_PX + count * ITEM_STRIDE + END_PAD
+  const endPad = Math.max(END_PAD, Math.round(view.height - PAD_PX))
+  const spacerH = PAD_PX + count * ITEM_STRIDE + endPad
 
   useLayoutEffect(() => {
     primedRef.current = false
@@ -159,7 +160,7 @@ export function HomeTagSpiralRail({
             style={{ height: ITEM_STRIDE }}
           />
         ))}
-        <div style={{ height: END_PAD }} />
+        <div style={{ height: endPad }} />
       </div>
     </div>
   )

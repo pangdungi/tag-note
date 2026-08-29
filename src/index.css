@@ -788,6 +788,15 @@ input.input[type='password'] {
   .btn--icon:active:not(.btn--active) {
     background: var(--surface);
   }
+
+  body:has(.parent-tag-rail-section--books-view)
+    .home-top-chrome
+    .btn--icon:focus:not(:focus-visible),
+  body:has(.parent-tag-rail-section--books-view)
+    .home-top-chrome
+    .btn--icon:active:not(.btn--active) {
+    background: transparent;
+  }
 }
 
 .btn--icon-img {
@@ -806,11 +815,11 @@ input.input[type='password'] {
 .btn--icon.btn--icon-doodle {
   width: 2.75rem;
   min-width: 2.75rem;
-  background: transparent;
+  background: #ffffff;
 }
 
 .btn--icon.btn--icon-doodle.btn--active:not(:disabled) {
-  background: transparent;
+  background: #f3f4f6;
 }
 
 .btn--icon-doodle .home-browse-nav-icon-slot,
@@ -819,9 +828,29 @@ input.input[type='password'] {
   height: 2.15rem;
 }
 
+/* 폴더 뷰(검정 배경): 기본은 흰 선만, 선택만 흐린 회색 */
+body:has(.parent-tag-rail-section--books-view) .home-top-chrome .btn--icon {
+  background: transparent;
+}
+
 body:has(.parent-tag-rail-section--books-view)
-  .btn--icon-doodle
-  .home-browse-nav-icon:not(.home-browse-nav-icon--back) {
+  .home-top-chrome
+  .btn--icon.btn--active:not(:disabled),
+body:has(.parent-tag-rail-section--books-view)
+  .home-top-chrome
+  .btn--icon.btn--icon-doodle.btn--active:not(:disabled) {
+  background: #d4d4d4;
+  border-color: #d4d4d4;
+}
+
+body:has(.parent-tag-rail-section--books-view)
+  .home-top-chrome
+  .btn--icon:not(.btn--active)
+  .home-browse-nav-icon:not(.home-browse-nav-icon--back),
+body:has(.parent-tag-rail-section--books-view)
+  .home-top-chrome
+  .btn--icon:not(.btn--active)
+  > .btn--icon-img {
   filter: invert(1);
 }
 
@@ -957,6 +986,7 @@ body:has(.home-main--parent-rail-hero) {
   --home-top-chrome-reserve: calc(3.75rem + env(safe-area-inset-top, 0px));
 }
 
+.home-rail-viewport > .home-top-chrome,
 .home-rail-viewport > .home-top-tag-search {
   flex-shrink: 0;
 }
@@ -1146,24 +1176,20 @@ body:has(.home-main--parent-rail-hero) {
 }
 
 .home-top-chrome {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  position: relative;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.45rem 1rem 0.35rem;
   padding-top: max(0.45rem, env(safe-area-inset-top, 0px));
-  background: transparent;
+  background: #ffffff;
   z-index: 35;
-  pointer-events: none;
 }
 
-.home-top-chrome .btn,
-.home-top-chrome .home-bottom-links-mode {
-  pointer-events: auto;
+body:has(.parent-tag-rail-section--books-view) .home-top-chrome {
+  background: #111111;
 }
 
 .home-top-chrome-start {
@@ -2917,8 +2943,6 @@ body:has(.home-main--parent-rail-hero) {
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   scroll-padding-bottom: 0.75rem;
-  padding-top: var(--home-top-chrome-reserve);
-  box-sizing: border-box;
 }
 
 .links-category-shelf {
@@ -7681,7 +7705,7 @@ button.note-board-tag-pill--link:focus-visible {
 .folder-file-cabinet {
   --folder-tab-h: 26px;
   --folder-pane-h: 4.6rem;
-  --folder-stack-gap: 17px;
+  --folder-stack-gap: calc(var(--folder-tab-h) + 3px);
   --folder-line: #111111;
   --folder-fill: #ffffff;
   --folder-tab-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -7692,6 +7716,7 @@ button.note-board-tag-pill--link:focus-visible {
   flex: 1 1 0;
   min-height: 0;
   padding: 0 1.5rem;
+  overflow: hidden;
   box-sizing: border-box;
 }
 
@@ -7705,7 +7730,7 @@ button.note-board-tag-pill--link:focus-visible {
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   padding: calc(var(--folder-tab-h) + 0.35rem) 0 0;
-  margin-bottom: calc(var(--folder-drawer-h) * -0.42);
+  margin-bottom: -2px;
   box-sizing: border-box;
   scrollbar-width: none;
 }
@@ -7791,6 +7816,7 @@ button.note-board-tag-pill--link:focus-visible {
 
 .folder-file:last-child .folder-file-card {
   border-bottom: none;
+  border-radius: 0;
 }
 
 .folder-file-ridge {
