@@ -95,7 +95,8 @@ function folderTabFill(
   const wallR = end - JOIN
 
   return [
-    `M ${start} ${y}`,
+    `M ${start} ${y + 3}`,
+    `L ${start} ${y}`,
     `Q ${wallL} ${y} ${wallL} ${y - JOIN}`,
     `L ${wallL} ${top + CORNER}`,
     `Q ${wallL} ${top} ${wallL + CORNER} ${top}`,
@@ -103,6 +104,7 @@ function folderTabFill(
     `Q ${wallR} ${top} ${wallR} ${top + CORNER}`,
     `L ${wallR} ${y - JOIN}`,
     `Q ${wallR} ${y} ${end} ${y}`,
+    `L ${end} ${y + 3}`,
     'Z',
   ].join(' ')
 }
