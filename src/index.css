@@ -7268,3 +7268,228 @@ button.note-board-tag-pill--link:focus-visible {
   writing-mode: horizontal-tb;
   overflow-wrap: anywhere;
 }
+
+/* ── 파일 뷰 — 세로 폴더 스택 ── */
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--books-view {
+  background: #111111;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--books-view
+  .tag-rail-index {
+  background: #111111;
+  color: #ffffff;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--books-view
+  .tag-rail-index-item {
+  color: #ffffff;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--books-view
+  .tag-rail-index-item--empty,
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--books-view
+  .tag-rail-index-item:disabled {
+  color: #6b6b6b;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--books-view
+  .tag-rail-index-divider {
+  background: #3a3a3a;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--books-view
+  .folder-file-stack {
+  height: 100%;
+  min-height: 0;
+}
+
+.folder-file-stack {
+  --folder-tab-h: 38px;
+  --folder-pane-h: 4.6rem;
+  --folder-stack-gap: 17px;
+  --folder-line: #111111;
+  --folder-fill: #ffffff;
+  --folder-tab-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: calc(var(--folder-tab-h) + 0.35rem) 0 2.4rem;
+  box-sizing: border-box;
+  scrollbar-width: none;
+}
+
+.folder-file-stack::-webkit-scrollbar {
+  display: none;
+}
+
+.folder-file-empty {
+  margin: 2.5rem 0.5rem 0;
+  color: #ffffff;
+  text-align: center;
+}
+
+.folder-file {
+  position: relative;
+}
+
+.folder-file + .folder-file {
+  margin-top: calc(var(--folder-stack-gap) - var(--folder-pane-h));
+}
+
+.folder-file--open + .folder-file {
+  margin-top: 0.7rem;
+}
+
+.folder-file-card {
+  position: relative;
+  background: var(--folder-fill);
+  border: 1px solid var(--folder-line);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+}
+
+.folder-file-ridge {
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  bottom: 100%;
+  z-index: 2;
+  height: var(--folder-tab-h);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #111111;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.folder-file-ridge-svg {
+  display: block;
+  width: 100%;
+  height: var(--folder-tab-h);
+  overflow: visible;
+}
+
+.folder-file-tab-probe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  font-family: var(--folder-tab-font);
+  font-size: 0.88rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+.folder-file-tab-text {
+  position: absolute;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--folder-tab-h) - 1px);
+  overflow: hidden;
+  color: #111111;
+  font-family: var(--folder-tab-font);
+  font-size: 0.88rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.folder-file-pane {
+  display: block;
+  width: 100%;
+  height: var(--folder-pane-h);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.folder-file--open .folder-file-body {
+  background: var(--folder-fill);
+}
+
+.folder-file-ridge:focus {
+  outline: none;
+}
+
+.folder-file-ridge:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
+}
+
+.folder-file-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  padding: 0.45rem 0.45rem 0.5rem;
+}
+
+.folder-file-body-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0;
+  color: #111111;
+}
+
+.folder-file-body-count {
+  font-family: var(--app-font-family);
+  font-size: 0.72rem;
+  font-weight: 500;
+  writing-mode: horizontal-tb;
+}
+
+.folder-file-edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: #f3f3f3;
+  cursor: pointer;
+}
+
+.folder-file-edit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.folder-file-edit-icon {
+  display: block;
+}
+
+.folder-file-sheet {
+  min-height: 8.5rem;
+  max-height: min(58vh, 26rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: #ffffff;
+  color: #111111;
+  border: 1px solid #111111;
+  border-radius: 4px;
+}

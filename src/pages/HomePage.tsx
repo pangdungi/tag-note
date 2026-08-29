@@ -9,6 +9,7 @@ import { EditParentTagModal } from '../components/EditParentTagModal'
 import { EditTagModal } from '../components/EditTagModal'
 import { EditSourceModal } from '../components/EditSourceModal'
 import { HomeBrowseNavButtons, type HomeBrowseNavId } from '../components/HomeBrowseNav'
+import { HomeFolderFileView } from '../components/HomeFolderFileView'
 import { HomeSearchResultsRail } from '../components/HomeSearchResultsRail'
 import { EditNoteModal } from '../components/EditNoteModal'
 import { NoteViewModal } from '../components/NoteViewModal'
@@ -61,10 +62,8 @@ import {
   getParentTags,
   getTagsForTagViewRail,
   isBooksRailParentTag,
-  isParentTagRailActive,
   isTagChildOfParent,
   normalizeTagInput,
-  formatSpineLabel,
   tagHasChildren,
   noteHasNoTagViewTags,
   TAG_VIEW_NONE_ID,
@@ -121,22 +120,6 @@ type TagDetailReturnSnapshot = {
   booksRailExpandedParentId: string | null
   selectedTagId: string | null
   tagFilterNav: HomeBrowseNavId
-}
-
-function ParentTagSpineStat({
-  value,
-  prefixHash = false,
-  ariaLabel,
-}: {
-  value: number
-  prefixHash?: boolean
-  ariaLabel: string
-}) {
-  return (
-    <span className="parent-tag-spine-stat" aria-label={ariaLabel}>
-      {prefixHash ? `#${value}` : value}
-    </span>
-  )
 }
 
 function formatNoteWhen(iso: string) {
@@ -3127,13 +3110,6 @@ export function HomePage() {
     [allTags, tagParentLinks],
   )
 
-  /** 상위태그(책) 뷰 — 펼친 상위태그만 표시 (가로 스크롤으로 다른 spine 보기 방지) */
-  const booksParentTagsForRail = useMemo(() => {
-    if (homeBrowseNav !== 'books') return parentTagsForRail
-    if (!booksRailExpandedParentId) return parentTagsForRail
-    return parentTagsForRail.filter((t) => t.id === booksRailExpandedParentId)
-  }, [homeBrowseNav, booksRailExpandedParentId, parentTagsForRail])
-
   const booksParentRailLocked = Boolean(
     homeBrowseNav === 'books' && booksRailExpandedParentId,
   )
@@ -3303,7 +3279,7 @@ export function HomePage() {
 
   const browseRailAriaLabel =
     homeBrowseNav === 'books'
-      ? '상위 태그'
+      ? '폴더'
       : homeBrowseNav === 'tags'
         ? '태그'
         : homeBrowseNav === 'dates'
@@ -3336,7 +3312,7 @@ export function HomePage() {
 
   const browseRailIndexNoun =
     homeBrowseNav === 'books'
-      ? ('상위태그' as const)
+      ? ('폴더' as const)
       : homeBrowseNav === 'links'
         ? ('분야' as const)
         : ('태그' as const)
@@ -3356,7 +3332,11 @@ export function HomePage() {
       const slot = tagSpineSlotRefs.current.get(itemId)
       if (!slot) return
 
-      if (homeBrowseNav === 'tags' || homeBrowseNav === 'links') {
+      if (
+        homeBrowseNav === 'tags' ||
+        homeBrowseNav === 'links' ||
+        homeBrowseNav === 'books'
+      ) {
         const scroller = parentTagRailScrollRef.current
         if (!scroller) return
         const scrollerRect = scroller.getBoundingClientRect()
@@ -3541,7 +3521,10 @@ export function HomePage() {
     const section = parentTagRailSectionRef.current
     if (!section) return
 
-    if (homeBrowseNavRef.current === 'tags') {
+    if (
+      homeBrowseNavRef.current === 'tags' ||
+      homeBrowseNavRef.current === 'books'
+    ) {
       section.style.removeProperty('--parent-open-slot-width')
       return
     }
@@ -3592,7 +3575,10 @@ export function HomePage() {
   useParentRailHorizontalTouch(
     parentTagRailScrollRef,
     openTracksRef,
-    railSectionOpen && !booksParentRailLocked && homeBrowseNav !== 'links',
+    railSectionOpen &&
+      !booksParentRailLocked &&
+      homeBrowseNav !== 'links' &&
+      homeBrowseNav !== 'books',
   )
 
   function openAddParentTag() {
@@ -4034,7 +4020,11 @@ export function HomePage() {
               ref={parentTagRailSectionRef}
               className={`parent-tag-rail-section${
                 showBrowseRailIndex ? ' parent-tag-rail-section--with-index' : ''
-              }${railSectionOpen ? ' parent-tag-rail-section--open' : ''}${
+              }${
+                railSectionOpen && homeBrowseNav !== 'books'
+                  ? ' parent-tag-rail-section--open'
+                  : ''
+              }${
                 homeBrowseNav === 'tags' ? ' parent-tag-rail-section--tag-view' : ''
               }${
                 homeBrowseNav === 'dates' ? ' parent-tag-rail-section--date-view' : ''
@@ -4338,114 +4328,31 @@ export function HomePage() {
                   </>
                 )
               ) : (
-                <div ref={parentTagRailScrollRef} className="parent-tag-rail-scroll">
-              <ul className="parent-tag-rail">
-                {booksParentTagsForRail.map((t) => {
-                      const isOpen = booksRailExpandedParentId === t.id
-                      const active = isParentTagRailActive(
-                        t.id,
-                        selectedTagId,
-                        allTags,
-                        tagParentLinks,
-                      )
-                      const spineSelected = isOpen || active
-                      const spineStatValue = parentTreeMemoCounts.get(t.id) ?? 0
-                      const spineStatAria = `메모 ${spineStatValue}개`
-                      return (
-                        <li
-                          key={t.id}
-                          ref={(el) => {
-                            if (!booksRailExpandedParentId) {
-                              if (el) tagSpineSlotRefs.current.set(t.id, el)
-                              else tagSpineSlotRefs.current.delete(t.id)
-                            }
-                            if (isOpen) {
-                              openParentSpineRef.current = el
-                            }
-                          }}
-                          className={`parent-tag-spine-slot${
-                            isOpen ? ' parent-tag-spine-slot--open' : ''
-                          }`}
-                        >
-                          <div className="parent-tag-spine-group">
-                            <div
-                              className={`parent-tag-card${
-                                spineSelected ? ' parent-tag-card--selected' : ''
-                              }${isOpen ? ' parent-tag-card--expanded' : ''}`}
-                            >
-                              {isOpen ? (
-                                <button
-                                  type="button"
-                                  className="parent-tag-spine-top-btn"
-                                  aria-label={`${displayTagName(t.name)} 메인 태그 수정`}
-                                  title="메인 태그 수정"
-                                  disabled={!canUseCompose}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setRailEditingParentTag(null)
-                                    setRailEditingSource(null)
-                                    setRailEditingTag(t)
-                                  }}
-                                >
-                                  <img
-                                    src={tagIconUrl}
-                                    alt=""
-                                    className="parent-tag-spine-top-icon"
-                                    width={18}
-                                    height={18}
-                                    decoding="async"
-                                  />
-                                </button>
-                              ) : null}
-                              <button
-                                type="button"
-                                className="parent-tag-card-body"
-                                aria-pressed={spineSelected}
-                                aria-current={spineSelected ? 'true' : undefined}
-                                aria-expanded={isOpen}
-                                aria-label={displayTagName(t.name)}
-                                title={displayTagName(t.name)}
-                                onClick={() => toggleTagSelect(t.id)}
-                              >
-                                <span className="parent-tag-card-label">
-                                  {formatSpineLabel(t.name)}
-                                </span>
-                              </button>
-                              <ParentTagSpineStat
-                                value={spineStatValue}
-                                ariaLabel={spineStatAria}
-                              />
-                            </div>
-                            {isOpen ? (
-                              <div
-                                ref={openTracksRef}
-                                className="parent-tag-inline-tracks parent-tag-inline-tracks--source-sheet"
-                                aria-label={`${displayTagName(t.name)} 관련 메모`}
-                              >
-                                <InlineRailNotesPanel
-                                  tagLabel={displayTagName(t.name)}
-                                  tagId={t.id}
-                                  tagCatalog={tagCatalogMap}
-                                  sourceCatalog={sourceCatalogMap}
-                                  notes={notesForSelectedTag}
-                                  loading={tagPullLoading}
-                                  onView={openViewNote}
-                                  onTagFilter={openTagViewFromNote}
-                                  sheetLayout
-                                  sheetFolderMode
-                                  sheetHideParentTagId={t.id}
-                                  sheetFolderTagName={t.name}
-                                  sheetParentTagId={t.id}
-                                  emptyHint="이 태그가 붙은 메모가 아직 없습니다."
-                                />
-                              </div>
-                            ) : null}
-                          </div>
-                        </li>
-                      )
-                    })}
-              </ul>
-              </div>
+                <HomeFolderFileView
+                  folders={parentTagsForRail}
+                  expandedId={booksRailExpandedParentId}
+                  memoCounts={parentTreeMemoCounts}
+                  tagCatalog={tagCatalogMap}
+                  sourceCatalog={sourceCatalogMap}
+                  notes={notesForSelectedTag}
+                  notesLoading={tagPullLoading}
+                  canEdit={canUseCompose}
+                  scrollRef={parentTagRailScrollRef}
+                  openTracksRef={openTracksRef}
+                  slotRef={(folderId, el) => {
+                    if (el) tagSpineSlotRefs.current.set(folderId, el)
+                    else tagSpineSlotRefs.current.delete(folderId)
+                  }}
+                  InlineNotesPanel={InlineRailNotesPanel}
+                  onSelectFolder={(folderId) => toggleTagSelect(folderId)}
+                  onEditFolder={(folder) => {
+                    setRailEditingParentTag(null)
+                    setRailEditingSource(null)
+                    setRailEditingTag(folder)
+                  }}
+                  onViewNote={openViewNote}
+                  onTagFilter={openTagViewFromNote}
+                />
               )}
             </section>
           ) : null}
