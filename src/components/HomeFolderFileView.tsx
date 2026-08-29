@@ -48,8 +48,10 @@ type Props = {
 const TAB_H = 26
 const JOIN = 6
 const CORNER = 8
+const END = 7
 const STROKE = 1
-const EDGE = 12
+const EDGE = 20
+const TAB_PAD = 12
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
@@ -68,9 +70,12 @@ function folderTopPath(
   const end = tabLeft + tabWidth
   const wallL = start + JOIN
   const wallR = end - JOIN
+  const roundLeft = start > left + END + 4
+  const roundRight = end < right - END - 4
 
   return [
-    `M ${left} ${y}`,
+    roundLeft ? `M ${left} ${y + END}` : `M ${left} ${y}`,
+    roundLeft ? `Q ${left} ${y} ${left + END} ${y}` : '',
     `H ${start}`,
     `Q ${wallL} ${y} ${wallL} ${y - JOIN}`,
     `L ${wallL} ${top + CORNER}`,
@@ -79,8 +84,11 @@ function folderTopPath(
     `Q ${wallR} ${top} ${wallR} ${top + CORNER}`,
     `L ${wallR} ${y - JOIN}`,
     `Q ${wallR} ${y} ${end} ${y}`,
-    `H ${right}`,
-  ].join(' ')
+    roundRight ? `H ${right - END}` : `H ${right}`,
+    roundRight ? `Q ${right} ${y} ${right} ${y + END}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 }
 
 function folderTabFill(
@@ -153,8 +161,8 @@ function FolderFileRidge({
   }, [label, count])
 
   const tabWidth = Math.max(
-    geom.textW + JOIN * 2 + 18,
-    JOIN * 2 + CORNER * 2 + 36,
+    geom.textW + JOIN * 2 + TAB_PAD * 2,
+    JOIN * 2 + CORNER * 2 + TAB_PAD * 2 + 36,
   )
   const width = Math.max(geom.width, tabWidth + EDGE * 2)
   const left = clamp(tabOffset(slot, width, tabWidth), EDGE, width - tabWidth - EDGE)
@@ -199,8 +207,8 @@ function FolderFileRidge({
         <span
           className="folder-file-tab-text"
           style={{
-            left: left + JOIN,
-            width: tabWidth - JOIN * 2,
+            left: left + JOIN + TAB_PAD,
+            width: tabWidth - JOIN * 2 - TAB_PAD * 2,
           }}
         >
           <span className="folder-file-tab-name">{label}</span>

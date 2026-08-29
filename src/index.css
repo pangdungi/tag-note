@@ -7318,6 +7318,7 @@ button.note-board-tag-pill--link:focus-visible {
   --folder-fill: #ffffff;
   --folder-tab-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --folder-drawer-h: 3.35rem;
+  --folder-end-r: 7px;
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
@@ -7329,7 +7330,6 @@ button.note-board-tag-pill--link:focus-visible {
 .folder-file-stack {
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
   flex: 1 1 0;
   min-height: 0;
   overflow-x: hidden;
@@ -7340,6 +7340,10 @@ button.note-board-tag-pill--link:focus-visible {
   margin-bottom: calc(var(--folder-drawer-h) * -0.42);
   box-sizing: border-box;
   scrollbar-width: none;
+}
+
+.folder-file-stack > :first-child {
+  margin-top: auto;
 }
 
 .folder-file-stack::-webkit-scrollbar {
@@ -7366,15 +7370,27 @@ button.note-board-tag-pill--link:focus-visible {
 
 .folder-file-drawer {
   position: relative;
-  z-index: 1;
+  z-index: 40;
   flex: 0 0 var(--folder-drawer-h);
   display: flex;
   align-items: center;
   justify-content: center;
+  margin: 0 -0.65rem;
   background: #ffffff;
   border: 1px solid var(--folder-line);
   border-bottom: none;
-  border-radius: 10px 10px 0 0;
+  border-radius: 8px 8px 0 0;
+  pointer-events: none;
+}
+
+.folder-file-drawer::before {
+  content: '';
+  position: absolute;
+  top: 0.4rem;
+  left: 0.55rem;
+  right: 0.55rem;
+  border-top: 1px solid var(--folder-line);
+  pointer-events: none;
 }
 
 .folder-file-drawer-handle {
@@ -7401,7 +7417,7 @@ button.note-board-tag-pill--link:focus-visible {
   background: var(--folder-fill);
   border: 1px solid var(--folder-line);
   border-top: none;
-  border-radius: 0;
+  border-radius: var(--folder-end-r) var(--folder-end-r) 0 0;
 }
 
 .folder-file:last-child .folder-file-card {
