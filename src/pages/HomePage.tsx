@@ -8,8 +8,10 @@ import { SourceCoverPreview } from '../components/SourceCoverPreview'
 import { EditParentTagModal } from '../components/EditParentTagModal'
 import { EditTagModal } from '../components/EditTagModal'
 import { EditSourceModal } from '../components/EditSourceModal'
-import { HomeBrowseNavButtons, type HomeBrowseNavId } from '../components/HomeBrowseNav'
+import type { HomeBrowseNavId } from '../components/HomeBrowseNav'
+import { HomeHubScreen } from '../components/HomeHubScreen'
 import { HomeFolderFileView } from '../components/HomeFolderFileView'
+import { FolderMemosView } from '../components/FolderMemosView'
 import { HomeTagSpiralRail } from '../components/HomeTagSpiralRail'
 import { HomeSearchResultsRail } from '../components/HomeSearchResultsRail'
 import { EditNoteModal } from '../components/EditNoteModal'
@@ -108,14 +110,21 @@ import { useLoadingUiMountLog } from '../lib/loadingUiMountLog'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { AccountModal } from '../components/AccountModal'
 import tagIconUrl from '../assets/tag-icon.png'
-import addBookIconUrl from '../assets/addbook.png'
+import searchDoodleIconUrl from '../assets/home-search-doodle.png'
 
 import userCircleIconUrl from '../assets/user-circle-icon.png'
 
 const LINKS_VIEW_TABS = [
-  { id: 'all', label: '도서 전체' },
-  { id: 'category', label: '분류별' },
+  { id: 'all', label: '전체' },
+  { id: 'category', label: '분류' },
 ] as const
+
+const BOOKS_MEMO_VIEW_TABS = [
+  { id: 'page', label: '페이지' },
+  { id: 'scroll', label: '스크롤' },
+] as const
+
+type BooksMemoViewMode = 'page' | 'scroll'
 
 /** 태그 상세(← 태그 목록) 진입 직전 화면 — 뒤로가기 복원용 */
 type TagDetailReturnSnapshot = {
@@ -998,12 +1007,33 @@ type HomeQuickActionButtonsProps = {
   onOpenAccount: () => void
   mobileBrowseFab?: ReactNode
   showAccount?: boolean
+  showSearch?: boolean
 }
 
 type RailEditContext =
   | { kind: 'parent'; tag: TagRow }
   | { kind: 'tag'; tag: TagRow }
   | { kind: 'source'; source: SourceRow }
+
+function LinksCategoryDoodleRule() {
+  return (
+    <svg
+      className="links-category-doodle-rule"
+      viewBox="0 0 420 16"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <path
+        className="links-category-doodle-rule__a"
+        d="M2 8.2 C 18 5.1, 34 11.6, 52 7.4 S 88 4.2, 112 10.1 S 148 6.4, 176 9.6 S 214 4.8, 242 10.4 S 278 6.1, 308 9.2 S 344 12.4, 372 7.8 S 398 5.6, 418 8.6"
+      />
+      <path
+        className="links-category-doodle-rule__b"
+        d="M3 9.6 C 22 6.8, 40 12.8, 58 8.8 S 96 5.4, 118 11 S 156 7.2, 184 10.4 S 222 6, 250 11.2 S 286 7, 314 10 S 350 13.2, 376 8.8 S 400 6.4, 417 9.4"
+      />
+    </svg>
+  )
+}
 
 function HomeTagGridLoadingHint() {
   useLoadingUiMountLog('HomePage · section.tag-grid-section · loading===true')
@@ -1022,22 +1052,14 @@ function HomeInlineSearchField({
   return (
     <div className="home-header-search-field">
       <div className="home-search-wrap home-search-wrap--header">
-        <svg
+        <img
+          src={searchDoodleIconUrl}
+          alt=""
           className="home-search-icon"
-          xmlns="http://www.w3.org/2000/svg"
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <circle cx="11" cy="11" r="8" />
-          <path d="m21 21-4.3-4.3" />
-        </svg>
+          width={20}
+          height={20}
+          decoding="async"
+        />
         <input
           ref={inputRef}
           type="search"
@@ -1071,13 +1093,13 @@ function HomeQuickActionButtons({
   onOpenAccount,
   mobileBrowseFab,
   showAccount = true,
+  showSearch = true,
 }: HomeQuickActionButtonsProps) {
-  const showSpecialAdd = showAddParentTagCompose || showAddBookCompose
-  const specialAddLabel = showAddBookCompose
+  const addLabel = showAddBookCompose
     ? '책 추가'
     : showAddParentTagCompose
-      ? '메인태그 추가'
-      : '메모 추가 열기'
+      ? '폴더 추가'
+      : '노트 추가'
   return (
     <>
       {showRailSettings ? (
@@ -1099,6 +1121,7 @@ function HomeQuickActionButtons({
           />
         </button>
       ) : null}
+      {showSearch ? (
       <button
         type="button"
         className="btn btn--icon home-search-toggle-btn"
@@ -1110,31 +1133,26 @@ function HomeQuickActionButtons({
           e.currentTarget.blur()
         }}
       >
-        <svg
-          className="btn--icon-svg"
-          xmlns="http://www.w3.org/2000/svg"
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <circle cx="11" cy="11" r="8" />
-          <path d="m21 21-4.3-4.3" />
-        </svg>
+        <img
+          src={searchDoodleIconUrl}
+          alt=""
+          className="btn--icon-img"
+          width={20}
+          height={20}
+          decoding="async"
+        />
       </button>
+      ) : null}
       <button
         type="button"
-        className={`btn btn--icon${
-          !showSpecialAdd && addNoteOpen ? ' btn--active' : ''
-        }${showSpecialAdd ? ' btn--icon-addbook' : ''}`}
+        className={`home-add-text-btn${
+          !showAddBookCompose && !showAddParentTagCompose && addNoteOpen
+            ? ' home-add-text-btn--active'
+            : ''
+        }`}
         disabled={!canUseCompose}
-        aria-label={specialAddLabel}
-        title={specialAddLabel}
+        aria-label={addLabel}
+        title={addLabel}
         onClick={
           showAddBookCompose
             ? onAddBook
@@ -1143,18 +1161,7 @@ function HomeQuickActionButtons({
               : onToggleAddNote
         }
       >
-        {showSpecialAdd ? (
-          <img
-            src={addBookIconUrl}
-            alt=""
-            className="btn--icon-img btn--icon-img--addbook"
-            width={20}
-            height={20}
-            decoding="async"
-          />
-        ) : (
-          '+'
-        )}
+        {addLabel}
       </button>
       {mobileBrowseFab}
       {showAccount ? (
@@ -1330,9 +1337,12 @@ export function HomePage() {
   const [addNoteOpen, setAddNoteOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [homeBrowseNav, setHomeBrowseNav] = useState<HomeBrowseNavId>('links')
+  const [homeHubOpen, setHomeHubOpen] = useState(true)
   /** 태그 필터·pull에 쓰는 뷰 맥락 (browse nav와 다를 수 있음) */
   const [tagFilterNav, setTagFilterNav] = useState<HomeBrowseNavId>('links')
   const [linksViewMode, setLinksViewMode] = useState<LinksViewMode>('all')
+  const [booksMemoViewMode, setBooksMemoViewMode] =
+    useState<BooksMemoViewMode>('page')
   const [measuredSpineSizeById, setMeasuredSpineSizeById] = useState<
     Record<string, { width: number; height: number }>
   >({})
@@ -2464,6 +2474,33 @@ export function HomePage() {
       )
   }, [notes, selectedSourceId, selectedSource])
 
+  const viewingNoteQueue = useMemo(() => {
+    if (hasActiveSearch && !selectedTagId && !selectedSourceId) {
+      return notesMatchingSearch
+    }
+    if (homeBrowseNav === 'links' && selectedSourceId) {
+      return notesForSelectedSource
+    }
+    if (
+      (homeBrowseNav === 'books' && booksRailExpandedParentId) ||
+      homeBrowseNav === 'tags' ||
+      selectedTagId
+    ) {
+      return notesForSelectedTag
+    }
+    return viewingNote ? [viewingNote] : []
+  }, [
+    hasActiveSearch,
+    selectedTagId,
+    selectedSourceId,
+    notesMatchingSearch,
+    homeBrowseNav,
+    booksRailExpandedParentId,
+    notesForSelectedSource,
+    notesForSelectedTag,
+    viewingNote,
+  ])
+
   /** 출처 필터 시 — 해당 출처 메모에 실제로 붙은 태그만 */
   const displayTags = useMemo(() => {
     if (selectedSourceId) {
@@ -2598,8 +2635,22 @@ export function HomePage() {
     setSourceNotesHasMore(false)
   }
 
+  function enterBrowseFromHub(id: HomeBrowseNavId) {
+    setHomeHubOpen(false)
+    selectBrowseNav(id)
+  }
+
+  function returnToHomeHub() {
+    setHomeHubOpen(true)
+    setTagMemosFlipOpen(false)
+    setSourceMemosFlipOpen(false)
+    setAccountModalOpen(false)
+    collapseBooksParentRail()
+  }
+
   function selectBrowseNav(id: HomeBrowseNavId) {
     if (id === 'dates') return
+    setHomeHubOpen(false)
     clearTagDetailReturnContext()
     setTagMemosFlipOpen(false)
     setSourceMemosFlipOpen(false)
@@ -3252,12 +3303,6 @@ export function HomePage() {
     [notes],
   )
 
-  const showBooksNavBackMode = Boolean(
-    homeBrowseNav === 'books' && booksRailExpandedParentId,
-  )
-
-  const showLinksNavBackMode = false
-
   const showBrowseRail =
     !showBootstrap &&
     homeDataReady &&
@@ -3279,6 +3324,13 @@ export function HomePage() {
 
   const showLinksViewModeTabs = Boolean(
     homeBrowseNav === 'links' && effectiveShowBrowseRail,
+  )
+
+  const showBooksMemoViewTabs = Boolean(
+    homeBrowseNav === 'books' &&
+      booksRailExpandedParentId &&
+      effectiveShowBrowseRail &&
+      !hasActiveSearch,
   )
 
   const showTagViewDetail = Boolean(
@@ -3334,8 +3386,8 @@ export function HomePage() {
           ? '날짜'
           : homeBrowseNav === 'links'
           ? linksViewMode === 'all'
-            ? '도서 전체'
-            : '분야별 책장'
+            ? '전체'
+            : '분류'
           : '출처'
 
   const browseRailIndexItems = useMemo(() => {
@@ -3669,7 +3721,7 @@ export function HomePage() {
     openTagInTagDetailView(tagId)
   }
 
-  if (!homeDataReady && loading && !loadError) {
+  if (!homeHubOpen && !homeDataReady && loading && !loadError) {
     return (
       <AppSplashScreen
         message="태그와 메모를 불러오는 중…"
@@ -3733,6 +3785,16 @@ export function HomePage() {
         </div>
       ) : null}
 
+      {homeHubOpen ? (
+        <HomeHubScreen
+          onSelectView={enterBrowseFromHub}
+          onOpenAccount={() => setAccountModalOpen(true)}
+          onOpenSearch={() => {
+            enterBrowseFromHub(homeBrowseNav)
+            setSearchOpen(true)
+          }}
+        />
+      ) : (
       <div
         className={
           showRailViewport ? 'home-rail-viewport' : 'home-page-shell'
@@ -3741,16 +3803,27 @@ export function HomePage() {
         {!showBootstrap ? (
           <header className="home-top-chrome">
             <div className="home-top-chrome-start">
-              <HomeBrowseNavButtons
-                activeId={homeBrowseNav}
-                disabled={!canUseCompose}
-                onSelect={selectBrowseNav}
-                booksBackMode={showBooksNavBackMode}
-                onBooksBack={collapseBooksParentRail}
-                linksBackMode={showLinksNavBackMode}
-                onLinksBack={collapseLinksSourceRail}
-              />
-              {showLinksViewModeTabs ? (
+              <button
+                type="button"
+                className="home-hub-back"
+                onClick={() => {
+                  if (
+                    homeBrowseNav === 'books' &&
+                    booksRailExpandedParentId
+                  ) {
+                    collapseBooksParentRail()
+                    return
+                  }
+                  returnToHomeHub()
+                }}
+              >
+                {homeBrowseNav === 'books' && booksRailExpandedParentId
+                  ? '뒤로'
+                  : '메뉴'}
+              </button>
+            </div>
+            {showLinksViewModeTabs ? (
+              <div className="home-top-chrome-center">
                 <div className="home-bottom-links-mode">
                   <ModalSegmentTabs
                     tabs={LINKS_VIEW_TABS}
@@ -3761,26 +3834,50 @@ export function HomePage() {
                     ariaLabel="출처 보기 방식"
                   />
                 </div>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              className="btn btn--icon"
-              aria-label="내 계정"
-              title="내 계정"
-              disabled={!user}
-              onClick={() => setAccountModalOpen(true)}
-            >
-              <img
-                src={userCircleIconUrl}
-                alt=""
-                className="btn--icon-img"
-                width={20}
-                height={20}
-                decoding="async"
+              </div>
+            ) : showBooksMemoViewTabs ? (
+              <div className="home-top-chrome-center">
+                <div className="home-bottom-links-mode">
+                  <ModalSegmentTabs
+                    tabs={BOOKS_MEMO_VIEW_TABS}
+                    activeId={booksMemoViewMode}
+                    onChange={(id) =>
+                      setBooksMemoViewMode(id as BooksMemoViewMode)
+                    }
+                    ariaLabel="메모 보기 방식"
+                  />
+                </div>
+              </div>
+            ) : null}
+            <div className="home-top-chrome-end">
+              <HomeQuickActionButtons
+                canUseCompose={canUseCompose}
+                addNoteOpen={addNoteOpen}
+                showAddParentTagCompose={showAddParentTagCompose}
+                showAddBookCompose={showAddBookCompose}
+                searchActive={searchOpen || hasActiveSearch}
+                user={user}
+                showAccount={false}
+                showSearch={homeBrowseNav !== 'books'}
+                showRailSettings={
+                  railEditContext !== null && railEditContext.kind !== 'parent'
+                }
+                railSettingsLabel={railSettingsLabel}
+                onOpenRailSettings={openRailSettings}
+                onToggleSearch={() => toggleSearch()}
+                onToggleAddNote={() => toggleAddNote()}
+                onAddParentTag={() => openAddParentTag()}
+                onAddBook={() => setAddBookModalOpen(true)}
+                onOpenAccount={() => setAccountModalOpen(true)}
               />
-            </button>
+            </div>
           </header>
+        ) : null}
+
+        {showBooksMemoViewTabs && selectedTag ? (
+          <h2 className="home-folder-open-title">
+            {displayTagName(selectedTag.name)}
+          </h2>
         ) : null}
 
         {!showBootstrap && showHomeTopTagSearch ? (
@@ -4172,7 +4269,7 @@ export function HomePage() {
                       <div
                         ref={parentTagRailScrollRef}
                         className="links-all-scroll"
-                        aria-label="도서 전체"
+                        aria-label="전체"
                       >
                         {sourcesForAllLinksView.length === 0 ? (
                           <p className="notes-hint links-all-empty">
@@ -4226,9 +4323,9 @@ export function HomePage() {
                       <div
                         ref={parentTagRailScrollRef}
                         className="links-category-scroll"
-                        aria-label="분야별 책장"
+                        aria-label="분류"
                       >
-                        {sourceCategoryShelves.map((shelf) => (
+                        {sourceCategoryShelves.map((shelf, shelfIndex) => (
                           <section
                             key={shelf.categoryKey}
                             ref={(el) => {
@@ -4289,36 +4386,61 @@ export function HomePage() {
                                 })}
                               </ul>
                             </div>
+                            {shelfIndex < sourceCategoryShelves.length - 1 ? (
+                              <LinksCategoryDoodleRule />
+                            ) : null}
                           </section>
                         ))}
                       </div>
                     )}
                   </>
+              ) : booksRailExpandedParentId &&
+                booksMemoViewMode === 'scroll' ? (
+                <div className="folder-memos-view folder-memos-view--scroll">
+                  <div className="folder-memos-scroll folder-memos-scroll--sheet">
+                    <InlineRailNotesPanel
+                      tagLabel={
+                        selectedTag
+                          ? displayTagName(selectedTag.name)
+                          : '폴더'
+                      }
+                      tagId={booksRailExpandedParentId}
+                      tagCatalog={tagCatalogMap}
+                      sourceCatalog={sourceCatalogMap}
+                      notes={notesForSelectedTag}
+                      loading={tagPullLoading}
+                      onView={openViewNote}
+                      onTagFilter={openTagViewFromNote}
+                      sheetLayout
+                      sheetFolderMode
+                      sheetHideParentTagId={booksRailExpandedParentId}
+                      sheetFolderTagName={selectedTag?.name}
+                      sheetParentTagId={booksRailExpandedParentId}
+                      emptyHint="이 폴더의 메모가 아직 없습니다."
+                    />
+                  </div>
+                </div>
+              ) : booksRailExpandedParentId ? (
+                <FolderMemosView
+                  notes={notesForSelectedTag}
+                  loading={tagPullLoading}
+                  folderTagId={booksRailExpandedParentId}
+                  tagCatalog={tagCatalogMap}
+                  sourceCatalog={sourceCatalogMap}
+                  onEdit={canUseCompose ? openEditNote : undefined}
+                  onTagFilter={openTagViewFromNote}
+                  onSourceFilter={filterBySourceFromCard}
+                />
               ) : (
                 <HomeFolderFileView
                   folders={parentTagsForRail}
-                  expandedId={booksRailExpandedParentId}
                   memoCounts={parentTreeMemoCounts}
-                  tagCatalog={tagCatalogMap}
-                  sourceCatalog={sourceCatalogMap}
-                  notes={notesForSelectedTag}
-                  notesLoading={tagPullLoading}
-                  canEdit={canUseCompose}
                   scrollRef={parentTagRailScrollRef}
-                  openTracksRef={openTracksRef}
                   slotRef={(folderId, el) => {
                     if (el) tagSpineSlotRefs.current.set(folderId, el)
                     else tagSpineSlotRefs.current.delete(folderId)
                   }}
-                  InlineNotesPanel={InlineRailNotesPanel}
                   onSelectFolder={(folderId) => toggleTagSelect(folderId)}
-                  onEditFolder={(folder) => {
-                    setRailEditingParentTag(null)
-                    setRailEditingSource(null)
-                    setRailEditingTag(folder)
-                  }}
-                  onViewNote={openViewNote}
-                  onTagFilter={openTagViewFromNote}
                 />
               )}
             </section>
@@ -4494,35 +4616,8 @@ export function HomePage() {
             </section>
           ) : null}
         </main>
-
-        {!showBootstrap ? (
-          <nav className="home-bottom-menu-bar" aria-label="메뉴">
-            <div className="home-bottom-menu-bar-inner home-bottom-menu-bar-inner--actions">
-              <div className="home-bottom-quick-actions">
-                <HomeQuickActionButtons
-                  canUseCompose={canUseCompose}
-                  addNoteOpen={addNoteOpen}
-                  showAddParentTagCompose={showAddParentTagCompose}
-                  showAddBookCompose={showAddBookCompose}
-                  searchActive={searchOpen || hasActiveSearch}
-                  user={user}
-                  showAccount={false}
-                  showRailSettings={
-                    railEditContext !== null && railEditContext.kind !== 'parent'
-                  }
-                  railSettingsLabel={railSettingsLabel}
-                  onOpenRailSettings={openRailSettings}
-                  onToggleSearch={() => toggleSearch()}
-                  onToggleAddNote={() => toggleAddNote()}
-                  onAddParentTag={() => openAddParentTag()}
-                  onAddBook={() => setAddBookModalOpen(true)}
-                  onOpenAccount={() => setAccountModalOpen(true)}
-                />
-              </div>
-            </div>
-          </nav>
-        ) : null}
       </div>
+      )}
 
       {user ? (
         <AddNoteModal
@@ -4667,6 +4762,7 @@ export function HomePage() {
         <NoteViewModal
           open={viewingNote !== null}
           note={viewingNote}
+          notes={viewingNoteQueue}
           tagCatalog={tagCatalogMap}
           sourceCatalog={sourceCatalogMap}
           primaryTagId={viewingNoteContextTagId}
@@ -4676,6 +4772,7 @@ export function HomePage() {
             setViewingNoteContextTagId(null)
             setViewNoteLoading(false)
           }}
+          onNoteChange={(note) => setViewingNote(note)}
           onEdit={(note) => openEditNote(note)}
           onSourceFilter={openSourceViewFromNote}
           onTagFilter={openTagViewFromNote}

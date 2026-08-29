@@ -197,7 +197,7 @@ export function AddNoteModal({
     <div className="tag-manage-overlay tag-manage-overlay--edit-note" role="presentation">
       <div className="tag-manage-backdrop" aria-hidden="true" />
       <div
-        className="tag-manage-dialog tag-manage-dialog--edit-note"
+        className="tag-manage-dialog tag-manage-dialog--edit-note tag-manage-dialog--add-note"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
