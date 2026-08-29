@@ -10,6 +10,7 @@ import { EditTagModal } from '../components/EditTagModal'
 import { EditSourceModal } from '../components/EditSourceModal'
 import { HomeBrowseNavButtons, type HomeBrowseNavId } from '../components/HomeBrowseNav'
 import { HomeFolderFileView } from '../components/HomeFolderFileView'
+import { HomeTagSpiralRail } from '../components/HomeTagSpiralRail'
 import { HomeSearchResultsRail } from '../components/HomeSearchResultsRail'
 import { EditNoteModal } from '../components/EditNoteModal'
 import { NoteViewModal } from '../components/NoteViewModal'
@@ -4080,71 +4081,18 @@ export function HomePage() {
               ) : null}
               {homeBrowseNav === 'tags' ? (
                 <div className="tag-view-rail-layout">
-                  <div
-                    ref={parentTagRailScrollRef}
-                    className="tag-view-bar-scroll"
-                    aria-label="태그 목록"
-                  >
-                    <div className="tag-view-bar-list" role="list">
-                      <div className="tag-view-bar-block" role="listitem">
-                        <button
-                          type="button"
-                          ref={(el) => {
-                            if (el) {
-                              tagSpineSlotRefs.current.set(TAG_VIEW_NONE_ID, el)
-                            } else {
-                              tagSpineSlotRefs.current.delete(TAG_VIEW_NONE_ID)
-                            }
-                          }}
-                          className={`tag-view-bar${
-                            selectedTagId === TAG_VIEW_NONE_ID
-                              ? ' tag-view-bar--selected'
-                              : ''
-                          }`}
-                          aria-pressed={selectedTagId === TAG_VIEW_NONE_ID}
-                          onClick={() => toggleTagSelect(TAG_VIEW_NONE_ID)}
-                        >
-                          <span className="tag-view-bar-label">태그 없음</span>
-                          <span className="tag-view-bar-stat">
-                            {tagViewNoneMemoCount}
-                          </span>
-                        </button>
-                      </div>
-                      {tagsForTagModeRail.map((t) => {
-                        const isSelected = selectedTagId === t.id
-                        const memoCount = tagMemoCounts.get(t.id) ?? 0
-                        return (
-                          <div
-                            key={t.id}
-                            className="tag-view-bar-block"
-                            role="listitem"
-                          >
-                            <button
-                              type="button"
-                              ref={(el) => {
-                                if (el) tagSpineSlotRefs.current.set(t.id, el)
-                                else tagSpineSlotRefs.current.delete(t.id)
-                              }}
-                              className={`tag-view-bar${
-                                isSelected ? ' tag-view-bar--selected' : ''
-                              }`}
-                              aria-pressed={isSelected}
-                              aria-label={formatHashtagLabel(t.name)}
-                              title={formatHashtagLabel(t.name)}
-                              onClick={() => toggleTagSelect(t.id)}
-                            >
-                              <span className="tag-view-bar-label">
-                                {formatHashtagLabel(t.name)}
-                              </span>
-                              <span className="tag-view-bar-stat">
-                                {memoCount}
-                              </span>
-                            </button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
+                  <HomeTagSpiralRail
+                    tags={tagsForTagModeRail}
+                    selectedId={selectedTagId}
+                    memoCounts={tagMemoCounts}
+                    noneCount={tagViewNoneMemoCount}
+                    scrollRef={parentTagRailScrollRef}
+                    slotRef={(id, el) => {
+                      if (el) tagSpineSlotRefs.current.set(id, el)
+                      else tagSpineSlotRefs.current.delete(id)
+                    }}
+                    onSelect={toggleTagSelect}
+                  />
                 </div>
               ) : homeBrowseNav === 'dates' ? (
                 <HomeDateViewRail
