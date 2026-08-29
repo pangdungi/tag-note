@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useState, startTransition } from 'react'
+import { ModalFooter } from './ModalFooter'
 import {
   assignTagsToParent,
   createChildTag,
@@ -226,7 +227,7 @@ export function AssignTagsToParentModal({
 
           {error ? <p className="composer-error">{error}</p> : null}
         </div>
-        <div className="edit-note-modal-actions">
+        <ModalFooter>
           <button type="button" className="btn" disabled={saving} onClick={() => onClose()}>
             취소
           </button>
@@ -287,7 +288,7 @@ export function AssignTagsToParentModal({
           >
             {saving ? '저장 중…' : '저장'}
           </button>
-        </div>
+        </ModalFooter>
       </div>
     </div>
   )

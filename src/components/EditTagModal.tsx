@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useState, startTransition } from 'react'
+import { ModalFooter } from './ModalFooter'
 import { ConfirmModal } from './ConfirmModal'
 import { ModalSelect } from './ModalSelect'
 import {
@@ -194,7 +195,7 @@ export function EditTagModal({
             </div>
             {error ? <p className="composer-error">{error}</p> : null}
           </div>
-          <div className="edit-note-modal-actions">
+          <ModalFooter>
             <button
               type="button"
               className="btn btn--danger"
@@ -269,7 +270,7 @@ export function EditTagModal({
             >
               {saving ? '저장 중…' : '저장'}
             </button>
-          </div>
+          </ModalFooter>
         </div>
       </div>
 

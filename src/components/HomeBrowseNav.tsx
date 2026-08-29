@@ -15,9 +15,9 @@ const NAV_ITEMS: {
   title: string
   icon: string
 }[] = [
-  { id: 'books', label: '책', title: '상위 태그별 보기', icon: bookNavIconUrl },
-  { id: 'tags', label: '태그', title: '태그별 보기', icon: tagNavIconUrl },
   { id: 'links', label: '출처', title: '출처별 보기', icon: linkNavIconUrl },
+  { id: 'books', label: '파일', title: '폴더별 보기', icon: bookNavIconUrl },
+  { id: 'tags', label: '태그', title: '태그별 보기', icon: tagNavIconUrl },
   { id: 'dates', label: '날짜', title: '날짜별 보기', icon: calendarNavIconUrl },
 ]
 

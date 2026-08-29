@@ -1,10 +1,16 @@
 import type { Connect } from 'vite'
-import { searchYes24Books } from './src/lib/bookCatalogServer'
+import {
+  fetchYes24BookPhysicalSize,
+  searchYes24Books,
+} from './src/lib/bookCatalogServer'
+
+function requestUrl(req: Connect.IncomingMessage): URL {
+  return new URL(req.url ?? '/', 'http://localhost')
+}
 
 function readQuery(req: Connect.IncomingMessage): string {
   try {
-    const url = new URL(req.url ?? '/', 'http://localhost')
-    return url.searchParams.get('q')?.trim() ?? ''
+    return requestUrl(req).searchParams.get('q')?.trim() ?? ''
   } catch {
     return ''
   }
@@ -13,7 +19,7 @@ function readQuery(req: Connect.IncomingMessage): string {
 export function bookApiDevMiddleware(): Connect.NextHandleFunction {
   return (req, res, next) => {
     const path = req.url?.split('?')[0] ?? ''
-    if (path !== '/api/books/search') {
+    if (path !== '/api/books/search' && path !== '/api/books/size') {
       next()
       return
     }
@@ -36,6 +42,18 @@ export function bookApiDevMiddleware(): Connect.NextHandleFunction {
       }
 
       try {
+        if (path === '/api/books/size') {
+          const url = requestUrl(req)
+          const size = await fetchYes24BookPhysicalSize({
+            goodsNo: url.searchParams.get('goodsNo') ?? '',
+            isbn: url.searchParams.get('isbn') ?? '',
+          })
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ size }))
+          return
+        }
+
         const q = readQuery(req)
         if (q.length < 2) {
           res.statusCode = 200

@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { ModalFooter } from './ModalFooter'
 import { TagComposer, type SelectedTag } from './TagComposer'
 import { SourceComposer, type SelectedSource } from './SourceComposer'
 import {
@@ -273,7 +274,7 @@ export function AddNoteModal({
             />
           </div>
         </div>
-        <div className="edit-note-modal-actions edit-note-modal-actions--add-only">
+        <ModalFooter align="end">
           <button
             type="button"
             className={`btn btn--emphasis${
@@ -351,7 +352,7 @@ export function AddNoteModal({
           >
             저장
           </button>
-        </div>
+        </ModalFooter>
       </div>
     </div>
   )

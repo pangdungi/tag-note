@@ -13,14 +13,6 @@ export type ModalSelectOption = {
   label: string
 }
 
-type MenuRect = {
-  top?: number
-  bottom?: number
-  left: number
-  width: number
-  maxHeight: number
-}
-
 type Props = {
   id?: string
   value: string
@@ -28,6 +20,14 @@ type Props = {
   onChange: (value: string) => void
   emptyLabel?: string
   disabled?: boolean
+}
+
+type MenuLayout = {
+  left: number
+  width: number
+  top?: number
+  bottom?: number
+  maxHeight: number
 }
 
 export function ModalSelect({
@@ -42,69 +42,67 @@ export function ModalSelect({
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
-  const [menuRect, setMenuRect] = useState<MenuRect | null>(null)
+  const [menuLayout, setMenuLayout] = useState<MenuLayout | null>(null)
+  const [dialogEl, setDialogEl] = useState<HTMLElement | null>(null)
 
   const selectedLabel =
     value === ''
       ? emptyLabel
       : (options.find((o) => o.value === value)?.label ?? emptyLabel)
 
-  const updateMenuRect = useCallback(() => {
-    const el = triggerRef.current
-    if (!el) return
+  const updateMenuLayout = useCallback(() => {
+    const trigger = triggerRef.current
+    const root = rootRef.current
+    if (!trigger || !root) return
 
-    const rect = el.getBoundingClientRect()
     const gap = 6
-    const spaceBelow = window.innerHeight - rect.bottom - gap - 8
-    const spaceAbove = rect.top - gap - 8
-    const preferredMax = Math.min(240, window.innerHeight * 0.42)
+    const dialog = root.closest('.tag-manage-dialog') as HTMLElement | null
+    if (!dialog) return
+
+    setDialogEl(dialog)
+
+    const dialogRect = dialog.getBoundingClientRect()
+    const triggerRect = trigger.getBoundingClientRect()
+    const footer = dialog.querySelector('.tag-manage-footer')
+    const bottomLimit = footer?.getBoundingClientRect().top ?? dialogRect.bottom
+
+    const spaceBelow = bottomLimit - triggerRect.bottom - gap - 8
+    const spaceAbove = triggerRect.top - dialogRect.top - gap - 8
     const openUp = spaceBelow < 120 && spaceAbove > spaceBelow
     const maxHeight = Math.max(
       96,
-      Math.min(preferredMax, openUp ? spaceAbove : spaceBelow),
+      Math.min(240, openUp ? spaceAbove : spaceBelow),
     )
 
-    setMenuRect(
-      openUp
-        ? {
-            bottom: window.innerHeight - rect.top + gap,
-            left: rect.left,
-            width: rect.width,
-            maxHeight,
-          }
-        : {
-            top: rect.bottom + gap,
-            left: rect.left,
-            width: rect.width,
-            maxHeight,
-          },
-    )
+    setMenuLayout({
+      left: triggerRect.left - dialogRect.left,
+      width: triggerRect.width,
+      top: openUp ? undefined : triggerRect.bottom - dialogRect.top + gap,
+      bottom: openUp
+        ? dialogRect.bottom - triggerRect.top + gap
+        : undefined,
+      maxHeight,
+    })
   }, [])
 
   useLayoutEffect(() => {
-    if (!open) {
-      setMenuRect(null)
-      return
-    }
-    updateMenuRect()
-    window.addEventListener('resize', updateMenuRect)
-    window.addEventListener('scroll', updateMenuRect, true)
+    if (!open) return
+    updateMenuLayout()
+    window.addEventListener('resize', updateMenuLayout)
+    window.addEventListener('scroll', updateMenuLayout, true)
     return () => {
-      window.removeEventListener('resize', updateMenuRect)
-      window.removeEventListener('scroll', updateMenuRect, true)
+      window.removeEventListener('resize', updateMenuLayout)
+      window.removeEventListener('scroll', updateMenuLayout, true)
     }
-  }, [open, updateMenuRect, options.length, emptyLabel])
+  }, [open, updateMenuLayout, options.length, emptyLabel])
 
   useEffect(() => {
     if (!open) return
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node
-      if (
-        rootRef.current?.contains(target) ||
-        document.getElementById(listId)?.contains(target)
-      ) {
-        return
-      }
+      if (rootRef.current?.contains(target)) return
+      const menu = document.getElementById(listId)
+      if (menu?.contains(target)) return
       setOpen(false)
     }
     const onKeyDown = (event: KeyboardEvent) => {
@@ -124,63 +122,54 @@ export function ModalSelect({
   ]
 
   const menu =
-    open && menuRect
-      ? createPortal(
-          <ul
-            id={listId}
-            role="listbox"
-            className="modal-select-menu modal-select-menu--floating"
-            aria-labelledby={id}
-            style={{
-              position: 'fixed',
-              top: menuRect.top,
-              bottom: menuRect.bottom,
-              left: menuRect.left,
-              width: menuRect.width,
-              maxHeight: menuRect.maxHeight,
-            }}
-          >
-            {allOptions.map((option) => {
-              const selected = option.value === value
-              return (
-                <li key={option.value || '__empty'} role="none">
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={selected}
-                    className={`modal-select-option${
-                      selected ? ' modal-select-option--selected' : ''
-                    }`}
-                    onClick={() => {
-                      onChange(option.value)
-                      setOpen(false)
-                    }}
-                  >
-                    <span className="modal-select-option-label">
-                      {option.label}
-                    </span>
-                    {selected ? (
-                      <span
-                        className="modal-select-option-check"
-                        aria-hidden="true"
-                      >
-                        ✓
-                      </span>
-                    ) : null}
-                  </button>
-                </li>
-              )
-            })}
-          </ul>,
-          document.body,
-        )
-      : null
+    open && menuLayout && dialogEl ? (
+      <ul
+        id={listId}
+        role="listbox"
+        className="modal-select-menu modal-select-menu--dialog"
+        aria-labelledby={id}
+        style={{
+          position: 'absolute',
+          left: menuLayout.left,
+          width: menuLayout.width,
+          top: menuLayout.top,
+          bottom: menuLayout.bottom,
+          maxHeight: menuLayout.maxHeight,
+        }}
+      >
+        {allOptions.map((option) => {
+          const selected = option.value === value
+          return (
+            <li key={option.value || '__empty'} role="none">
+              <button
+                type="button"
+                role="option"
+                aria-selected={selected}
+                className={`modal-select-option${
+                  selected ? ' modal-select-option--selected' : ''
+                }`}
+                onClick={() => {
+                  onChange(option.value)
+                  setOpen(false)
+                }}
+              >
+                <span className="modal-select-option-label">
+                  {option.label}
+                </span>
+                {selected ? (
+                  <span className="modal-select-option-check" aria-hidden="true">
+                    ✓
+                  </span>
+                ) : null}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    ) : null
 
   return (
-    <div
-      ref={rootRef}
-      className={`modal-select${open ? ' modal-select--open' : ''}`}
-    >
+    <div ref={rootRef} className={`modal-select${open ? ' modal-select--open' : ''}`}>
       <button
         ref={triggerRef}
         type="button"
@@ -190,7 +179,15 @@ export function ModalSelect({
         aria-expanded={open}
         aria-controls={listId}
         disabled={disabled}
-        onClick={() => setOpen((cur) => !cur)}
+        onClick={() => {
+          setOpen((cur) => {
+            const next = !cur
+            if (next) {
+              queueMicrotask(() => updateMenuLayout())
+            }
+            return next
+          })
+        }}
       >
         <span className="modal-select-value">{selectedLabel}</span>
         <svg
@@ -209,7 +206,7 @@ export function ModalSelect({
           <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
-      {menu}
+      {menu && dialogEl ? createPortal(menu, dialogEl) : null}
     </div>
   )
 }

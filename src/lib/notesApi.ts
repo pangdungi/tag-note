@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { normalizeSourceTitle, sourceTitleKey } from './sourceUtils'
+import { normalizeSourceCategory, normalizeSourceTitle, sourceTitleKey } from './sourceUtils'
 import {
   normalizeTagInput,
   pickColorIndex,
@@ -91,10 +91,13 @@ export type SourceRow = {
   spine_image_url?: string | null
   spine_image_width?: number | null
   spine_image_height?: number | null
+  book_width_mm?: number | null
+  book_length_mm?: number | null
+  book_height_mm?: number | null
 }
 
 const SOURCE_SELECT =
-  'id, title, created_at, isbn, author, publisher, published_year, category, cover_image_url, kyobo_product_id, yes24_goods_no, metadata_source, spine_image_url, spine_image_width, spine_image_height'
+  'id, title, created_at, isbn, author, publisher, published_year, category, cover_image_url, kyobo_product_id, yes24_goods_no, metadata_source, spine_image_url, spine_image_width, spine_image_height, book_width_mm, book_length_mm, book_height_mm'
 
 export type NoteWithTags = {
   id: string
@@ -383,6 +386,9 @@ export async function updateSource(
     spine_image_url?: string | null
     spine_image_width?: number | null
     spine_image_height?: number | null
+    book_width_mm?: number | null
+    book_length_mm?: number | null
+    book_height_mm?: number | null
   },
 ): Promise<SourceRow> {
   const updates: Record<string, unknown> = {}
@@ -419,6 +425,15 @@ export async function updateSource(
   }
   if (patch.spine_image_height !== undefined) {
     updates.spine_image_height = patch.spine_image_height
+  }
+  if (patch.book_width_mm !== undefined) {
+    updates.book_width_mm = patch.book_width_mm
+  }
+  if (patch.book_length_mm !== undefined) {
+    updates.book_length_mm = patch.book_length_mm
+  }
+  if (patch.book_height_mm !== undefined) {
+    updates.book_height_mm = patch.book_height_mm
   }
 
   if (Object.keys(updates).length === 0) {
@@ -469,6 +484,9 @@ export type CreateBookSourceInput = {
   spine_image_url?: string | null
   spine_image_width?: number | null
   spine_image_height?: number | null
+  book_width_mm?: number | null
+  book_length_mm?: number | null
+  book_height_mm?: number | null
 }
 
 /** ISBN 기준 책 출처 생성 또는 기존 행 갱신 */
@@ -503,6 +521,9 @@ export async function createBookSource(
     spine_image_url: input.spine_image_url ?? null,
     spine_image_width: input.spine_image_width ?? null,
     spine_image_height: input.spine_image_height ?? null,
+    book_width_mm: input.book_width_mm ?? null,
+    book_length_mm: input.book_length_mm ?? null,
+    book_height_mm: input.book_height_mm ?? null,
   }
 
   if (existing) {
@@ -521,6 +542,58 @@ export async function createBookSource(
   if (error) {
     if (error.code === '23505') {
       throw new Error('같은 이름 또는 ISBN의 출처가 이미 있습니다.')
+    }
+    throw error
+  }
+
+  return data as SourceRow
+}
+
+export type CreateManualSourceInput = {
+  title: string
+  category?: string | null
+}
+
+/** 제목·분야로 출처 직접 등록 (ISBN 없음) */
+export async function createManualSource(
+  userId: string,
+  input: CreateManualSourceInput,
+): Promise<SourceRow> {
+  const title = normalizeSourceTitle(input.title)
+  if (!title) throw new Error('책 제목이 비었습니다.')
+  const category = normalizeSourceCategory(input.category)
+  const key = sourceTitleKey(title)
+
+  const { data: existing, error: findErr } = await supabase
+    .from('sources')
+    .select(SOURCE_SELECT)
+    .eq('user_id', userId)
+    .eq('title_normalized', key)
+    .maybeSingle()
+  if (findErr) throw findErr
+
+  if (existing) {
+    return updateSource(existing.id, {
+      rawTitle: title,
+      category,
+      metadata_source: existing.metadata_source ?? 'manual',
+    })
+  }
+
+  const { data, error } = await supabase
+    .from('sources')
+    .insert({
+      user_id: userId,
+      title,
+      category,
+      metadata_source: 'manual',
+    })
+    .select(SOURCE_SELECT)
+    .single()
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error('같은 이름의 출처가 이미 있습니다.')
     }
     throw error
   }

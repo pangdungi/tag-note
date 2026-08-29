@@ -35,11 +35,16 @@ export const APP_FONT_CHOICES = [
     label: '그리운 코코초이툰',
     cssFamily: 'TagNote Griun Cocochoitoon',
   },
+  {
+    id: 'bookk_gothic_bold',
+    label: '북크고딕',
+    cssFamily: 'TagNote BookkGothic Bold',
+  },
 ] as const
 
 export type AppFontChoiceId = (typeof APP_FONT_CHOICES)[number]['id']
 
-export const DEFAULT_APP_FONT_ID: AppFontChoiceId = 'griun_myeonheullim'
+export const DEFAULT_APP_FONT_ID: AppFontChoiceId = 'bookk_gothic_bold'
 
 const FONT_ID_SET = new Set<string>(APP_FONT_CHOICES.map((c) => c.id))
 

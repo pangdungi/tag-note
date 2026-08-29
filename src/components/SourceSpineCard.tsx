@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import type { SourceRow } from '../lib/notesApi'
 import { resolveSourceSpineUrl } from '../lib/bookCatalogServer'
-import { displaySourceTitle } from '../lib/sourceUtils'
+import { bookStandingHeightMm, displaySourceTitle } from '../lib/sourceUtils'
 import { formatSpineText } from '../lib/tagUtils'
 
 type SourceSpineCardProps = {
@@ -11,6 +11,7 @@ type SourceSpineCardProps = {
   tagCount: number
   maxSpineHeight?: number
   onSelect: () => void
+  onSpineSize?: (size: { width: number; height: number }) => void
 }
 
 export function SourceSpineCard({
@@ -20,6 +21,7 @@ export function SourceSpineCard({
   tagCount,
   maxSpineHeight,
   onSelect,
+  onSpineSize,
 }: SourceSpineCardProps) {
   const label = displaySourceTitle(source.title)
   const spineUrl = resolveSourceSpineUrl(source)
@@ -35,13 +37,17 @@ export function SourceSpineCard({
     setLoadedSpineSize(null)
   }, [spineUrl])
   const spineHeight =
-    source.spine_image_height && source.spine_image_height > 0
-      ? source.spine_image_height
-      : loadedSpineSize?.height
+    loadedSpineSize?.height && loadedSpineSize.height > 0
+      ? loadedSpineSize.height
+      : source.spine_image_height && source.spine_image_height > 0
+        ? source.spine_image_height
+        : undefined
   const spineWidth =
-    source.spine_image_width && source.spine_image_width > 0
-      ? source.spine_image_width
-      : loadedSpineSize?.width
+    loadedSpineSize?.width && loadedSpineSize.width > 0
+      ? loadedSpineSize.width
+      : source.spine_image_width && source.spine_image_width > 0
+        ? source.spine_image_width
+        : undefined
   const useStoredSpineScale = Boolean(
     source.spine_image_height && source.spine_image_height > 0,
   )
@@ -52,22 +58,19 @@ export function SourceSpineCard({
   )
   const useProportionalScale = useStoredSpineScale || useLoadedSpineScale
 
+  const standingMm = bookStandingHeightMm(source)
+  const naturalH =
+    standingMm ?? spineHeight ?? loadedSpineSize?.height ?? 560
+  const naturalW = spineWidth ?? loadedSpineSize?.width ?? 80
   const cardStyle: CSSProperties = useImage
-    ? useProportionalScale
-      ? {
-          ['--source-spine-natural-h' as string]: String(
-            spineHeight ?? loadedSpineSize?.height ?? 1,
-          ),
-          ['--source-spine-max-h' as string]: String(
-            maxSpineHeight || loadedSpineSize?.height || spineHeight || 1,
-          ),
-        }
-      : {}
-    : {
-        ['--source-spine-text-fill' as string]: String(
-          Math.min(0.94, Math.max(0.5, 0.46 + label.length * 0.014)),
+    ? {
+        ['--source-spine-natural-w' as string]: String(naturalW),
+        ['--source-spine-natural-h' as string]: String(naturalH),
+        ['--source-spine-max-h' as string]: String(
+          maxSpineHeight || naturalH,
         ),
       }
+    : {}
 
   return (
     <div
@@ -106,10 +109,12 @@ export function SourceSpineCard({
             onLoad={(e) => {
               const img = e.currentTarget
               if (img.naturalWidth < 1 || img.naturalHeight < 1) return
-              setLoadedSpineSize({
+              const size = {
                 width: img.naturalWidth,
                 height: img.naturalHeight,
-              })
+              }
+              setLoadedSpineSize(size)
+              onSpineSize?.(size)
             }}
             onError={() => setImageBroken(true)}
           />

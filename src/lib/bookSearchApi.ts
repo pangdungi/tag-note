@@ -1,6 +1,29 @@
-import type { BookSearchHit } from './bookCatalogServer'
+import type {
+  BookSearchHit,
+  Yes24BookPhysicalSize,
+} from './bookCatalogServer'
 
-export type { BookSearchHit }
+export type { BookSearchHit, Yes24BookPhysicalSize }
+
+export async function fetchBookPhysicalSize(opts: {
+  goodsNo?: string
+  isbn?: string
+}): Promise<Yes24BookPhysicalSize | null> {
+  const params = new URLSearchParams()
+  if (opts.goodsNo?.trim()) params.set('goodsNo', opts.goodsNo.trim())
+  if (opts.isbn?.trim()) params.set('isbn', opts.isbn.trim())
+  if ([...params.keys()].length === 0) return null
+
+  const res = await fetch(`/api/books/size?${params.toString()}`)
+  const json = (await res.json()) as {
+    size?: Yes24BookPhysicalSize | null
+    error?: string
+  }
+  if (!res.ok) {
+    throw new Error(json.error ?? '책 크기를 불러오지 못했습니다.')
+  }
+  return json.size ?? null
+}
 
 export async function searchBooks(query: string): Promise<BookSearchHit[]> {
   const q = query.trim()

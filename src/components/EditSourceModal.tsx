@@ -2,11 +2,14 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   startTransition,
 } from 'react'
 import type { CSSProperties } from 'react'
+import { ModalFooter } from './ModalFooter'
+import { ModalSelect } from './ModalSelect'
 import { ConfirmModal } from './ConfirmModal'
 import {
   deleteSourceKeepNotes,
@@ -19,7 +22,17 @@ import {
   readClipboardSpineImage,
   type SourceSpineImageData,
 } from '../lib/sourceSpineImage'
-import { displaySourceTitle, normalizeSourceTitle } from '../lib/sourceUtils'
+import {
+  displaySourceTitle,
+  normalizeSourceCategory,
+  normalizeSourceTitle,
+  SOURCE_CATEGORY_OPTIONS,
+  SOURCE_CATEGORY_UNCategorized,
+} from '../lib/sourceUtils'
+
+function displaySourceCategory(source: SourceRow): string {
+  return source.category?.trim() || SOURCE_CATEGORY_UNCategorized
+}
 
 type Props = {
   open: boolean
@@ -50,8 +63,13 @@ export function EditSourceModal({
   onSyncFromServer,
 }: Props) {
   const titleId = useId()
+  const categoryId = useId()
   const spineFileInputRef = useRef<HTMLInputElement>(null)
   const [title, setTitle] = useState('')
+  const [category, setCategory] = useState(SOURCE_CATEGORY_UNCategorized)
+  const [initialCategory, setInitialCategory] = useState(
+    SOURCE_CATEGORY_UNCategorized,
+  )
   const [spineImage, setSpineImage] = useState<SourceSpineImageData | null>(
     null,
   )
@@ -64,11 +82,32 @@ export function EditSourceModal({
   const [saving, setSaving] = useState(false)
   const [pasteBusy, setPasteBusy] = useState(false)
 
+  const categoryOptions = useMemo(() => {
+    const base = SOURCE_CATEGORY_OPTIONS.filter(
+      (option) => option !== SOURCE_CATEGORY_UNCategorized,
+    ).map((option) => ({ value: option, label: option }))
+    const current = source?.category?.trim()
+    if (
+      current &&
+      current !== SOURCE_CATEGORY_UNCategorized &&
+      !base.some((option) => option.value === current)
+    ) {
+      return [{ value: current, label: current }, ...base]
+    }
+    return base
+  }, [source?.category])
+
+  const categoryValue =
+    category === SOURCE_CATEGORY_UNCategorized ? '' : category
+
   useEffect(() => {
     if (!open || !source) return
     startTransition(() => {
       const existing = spineFromSource(source)
+      const nextCategory = displaySourceCategory(source)
       setTitle(source.title)
+      setCategory(nextCategory)
+      setInitialCategory(nextCategory)
       setSpineImage(existing)
       setInitialSpine(existing)
       setSpineRemoved(false)
@@ -124,13 +163,15 @@ export function EditSourceModal({
 
   const titleChanged =
     normalizeSourceTitle(title) !== normalizeSourceTitle(source.title)
+  const categoryChanged = category !== initialCategory
   const spineChanged =
     spineRemoved ||
     spineImage?.url !== initialSpine?.url ||
     spineImage?.width !== initialSpine?.width ||
     spineImage?.height !== initialSpine?.height
   const canSave =
-    normalizeSourceTitle(title).length > 0 && (titleChanged || spineChanged)
+    normalizeSourceTitle(title).length > 0 &&
+    (titleChanged || categoryChanged || spineChanged)
 
   const previewStyle = (
     spineImage
@@ -196,6 +237,22 @@ export function EditSourceModal({
                 />
               </div>
 
+              <div className="composer-field">
+                <label className="composer-label" htmlFor={categoryId}>
+                  분야
+                </label>
+                <ModalSelect
+                  id={categoryId}
+                  value={categoryValue}
+                  options={categoryOptions}
+                  emptyLabel={SOURCE_CATEGORY_UNCategorized}
+                  disabled={saving || pasteBusy}
+                  onChange={(next) =>
+                    setCategory(next || SOURCE_CATEGORY_UNCategorized)
+                  }
+                />
+              </div>
+
               <div className="composer-field source-spine-edit-field">
                 <div className="composer-label-row">
                   <span className="composer-label">북스파인 이미지</span>
@@ -213,11 +270,6 @@ export function EditSourceModal({
                     </button>
                   ) : null}
                 </div>
-                <p className="source-spine-edit-hint">
-                  교보문고 북스파인은 <strong>우클릭 → 이미지 복사</strong> 후
-                  붙여넣기(Cmd+V)하세요. 다운로드한 jpg(예: 9791169518536_02.jpg)는
-                  아래 칸에 끌어다 놓거나 탭해서 선택할 수 있습니다.
-                </p>
                 <input
                   ref={spineFileInputRef}
                   type="file"
@@ -278,7 +330,7 @@ export function EditSourceModal({
             </div>
             {error ? <p className="composer-error">{error}</p> : null}
           </div>
-          <div className="edit-note-modal-actions">
+          <ModalFooter>
             <button
               type="button"
               className="btn btn--danger"
@@ -296,10 +348,12 @@ export function EditSourceModal({
                 setSaving(true)
                 const sourceId = source.id
                 const saveTitle = title
+                const saveCategory = normalizeSourceCategory(category)
                 const nextSpine = spineRemoved ? null : spineImage
                 const optimistic: SourceRow = {
                   ...source,
                   title: normalizeSourceTitle(saveTitle),
+                  category: saveCategory,
                   spine_image_url: nextSpine?.url ?? null,
                   spine_image_width: nextSpine?.width ?? null,
                   spine_image_height: nextSpine?.height ?? null,
@@ -310,6 +364,7 @@ export function EditSourceModal({
                   try {
                     const row = await updateSource(sourceId, {
                       rawTitle: saveTitle,
+                      category: saveCategory,
                       spine_image_url: nextSpine?.url ?? null,
                       spine_image_width: nextSpine?.width ?? null,
                       spine_image_height: nextSpine?.height ?? null,
@@ -334,7 +389,7 @@ export function EditSourceModal({
             >
               {saving ? '저장 중…' : '저장'}
             </button>
-          </div>
+          </ModalFooter>
         </div>
       </div>
 

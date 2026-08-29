@@ -21,6 +21,7 @@ import {
   fetchNotesPage,
   fetchNotesForMainSearch,
   fetchSources,
+  updateSource,
   fetchSourceDistinctTagCounts,
   fetchNoteTagLinks,
   buildTagMemoCountsFromLinks,
@@ -80,7 +81,16 @@ import {
   groupNotesByDate,
   sortNotesOldestFirst,
 } from '../lib/noteDateUtils'
-import { displaySourceTitle, groupSourcesByCategory, sourceTitleKey } from '../lib/sourceUtils'
+import {
+  bookStandingHeightMm,
+  displaySourceTitle,
+  groupSourcesByCategory,
+  sortSourcesForAllLinksView,
+  sourceTitleKey,
+  type LinksViewMode,
+} from '../lib/sourceUtils'
+import { fetchBookPhysicalSize } from '../lib/bookSearchApi'
+import { ModalSegmentTabs } from '../components/ModalSegmentTabs'
 import { HomeBrowseRailIndex } from '../components/HomeBrowseRailIndex'
 import { HomeDateViewRail } from '../components/HomeDateViewRail'
 import { useParentRailHorizontalTouch } from '../hooks/useParentRailHorizontalTouch'
@@ -97,6 +107,11 @@ import tagIconUrl from '../assets/tag-icon.png'
 import addBookIconUrl from '../assets/addbook.png'
 
 import userCircleIconUrl from '../assets/user-circle-icon.png'
+
+const LINKS_VIEW_TABS = [
+  { id: 'all', label: '도서 전체' },
+  { id: 'category', label: '분류별' },
+] as const
 
 /** 태그 상세(← 태그 목록) 진입 직전 화면 — 뒤로가기 복원용 */
 type TagDetailReturnSnapshot = {
@@ -1318,9 +1333,13 @@ export function HomePage() {
 
   const [addNoteOpen, setAddNoteOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const [homeBrowseNav, setHomeBrowseNav] = useState<HomeBrowseNavId>('books')
+  const [homeBrowseNav, setHomeBrowseNav] = useState<HomeBrowseNavId>('links')
   /** 태그 필터·pull에 쓰는 뷰 맥락 (browse nav와 다를 수 있음) */
-  const [tagFilterNav, setTagFilterNav] = useState<HomeBrowseNavId>('books')
+  const [tagFilterNav, setTagFilterNav] = useState<HomeBrowseNavId>('links')
+  const [linksViewMode, setLinksViewMode] = useState<LinksViewMode>('all')
+  const [measuredSpineSizeById, setMeasuredSpineSizeById] = useState<
+    Record<string, { width: number; height: number }>
+  >({})
   /** 검색 등에서 태그 선택 시 태그 목록 레일 숨기고 메모 목록만 */
   const [tagFilterFocusBoard, setTagFilterFocusBoard] = useState(false)
   const [booksTagFocusBoard, setBooksTagFocusBoard] = useState(false)
@@ -1367,6 +1386,47 @@ export function HomePage() {
   useEffect(() => {
     allSourcesRef.current = allSources
   }, [allSources])
+
+  const bookSizeFetchStartedRef = useRef(new Set<string>())
+  useEffect(() => {
+    if (homeBrowseNav !== 'links') return
+    const missing = allSources.filter((s) => {
+      if (!s.yes24_goods_no?.trim()) return false
+      if (bookStandingHeightMm(s)) return false
+      if (bookSizeFetchStartedRef.current.has(s.id)) return false
+      return true
+    })
+    if (missing.length === 0) return
+
+    let cancelled = false
+    void (async () => {
+      for (const s of missing) {
+        if (cancelled) return
+        bookSizeFetchStartedRef.current.add(s.id)
+        try {
+          const size = await fetchBookPhysicalSize({
+            goodsNo: s.yes24_goods_no ?? '',
+            isbn: s.isbn ?? '',
+          })
+          if (!size || cancelled) continue
+          const row = await updateSource(s.id, {
+            book_width_mm: size.widthMm,
+            book_length_mm: size.lengthMm,
+            book_height_mm: size.heightMm,
+          })
+          setAllSources((prev) =>
+            prev.map((x) => (x.id === row.id ? { ...x, ...row } : x)),
+          )
+        } catch {
+          /* 한 권 실패해도 나머지는 계속 */
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [homeBrowseNav, allSources])
 
   /** 태그 클릭 풀 — 목록+hasMore 캐시 (재클릭 시 네트워크 없음) */
   const tagPullCacheRef = useRef(new Map<string, SelectionPullCacheEntry>())
@@ -3026,15 +3086,55 @@ export function HomePage() {
     [sourcesForLinkModeRail],
   )
 
+  const sourcesForAllLinksView = useMemo(
+    () => sortSourcesForAllLinksView(sourcesForLinkModeRail),
+    [sourcesForLinkModeRail],
+  )
+
+  const maxBookStandingMm = useMemo(() => {
+    let max = 0
+    for (const s of sourcesForLinkModeRail) {
+      const mm = bookStandingHeightMm(s)
+      if (mm && mm > max) max = mm
+    }
+    return max
+  }, [sourcesForLinkModeRail])
+
   const maxLinkSourceSpineHeight = useMemo(() => {
     let max = 0
     for (const s of sourcesForLinkModeRail) {
-      const h = s.spine_image_height ?? 0
+      const measured = measuredSpineSizeById[s.id]?.height ?? 0
+      const stored = s.spine_image_height ?? 0
+      const h = measured > 0 ? measured : stored
       if (h > max) max = h
     }
-    // 저장된 높이 없을 때 예스24 SIDE 이미지 기준값(선반 내 비율·잘림 방지)
     return max || 560
-  }, [sourcesForLinkModeRail])
+  }, [sourcesForLinkModeRail, measuredSpineSizeById])
+
+  const spineHeightMaxFor = useCallback(
+    (source: SourceRow) =>
+      bookStandingHeightMm(source) && maxBookStandingMm
+        ? maxBookStandingMm
+        : maxLinkSourceSpineHeight,
+    [maxBookStandingMm, maxLinkSourceSpineHeight],
+  )
+
+  const rememberSpineSize = useCallback(
+    (sourceId: string, size: { width: number; height: number }) => {
+      setMeasuredSpineSizeById((prev) => {
+        const old = prev[sourceId]
+        if (
+          old &&
+          old.width === size.width &&
+          old.height === size.height
+        ) {
+          return prev
+        }
+        return { ...prev, [sourceId]: size }
+      })
+    },
+    [],
+  )
 
   const tagMemoCounts = useMemo(
     () => new Map(Object.entries(tagMemoCountById)),
@@ -3082,6 +3182,10 @@ export function HomePage() {
     !tagFilterFocusBoard &&
     !tagViewDrillDown &&
     !booksTagFocusBoard
+
+  const showLinksViewModeTabs = Boolean(
+    homeBrowseNav === 'links' && !selectedSourceId && effectiveShowBrowseRail,
+  )
 
   const showTagViewDetail = Boolean(
     homeBrowseNav === 'tags' &&
@@ -3135,7 +3239,9 @@ export function HomePage() {
         : homeBrowseNav === 'dates'
           ? '날짜'
           : homeBrowseNav === 'links'
-          ? '분야별 책장'
+          ? linksViewMode === 'all'
+            ? '도서 전체'
+            : '분야별 책장'
           : '출처'
 
   const browseRailIndexItems = useMemo(() => {
@@ -3168,6 +3274,7 @@ export function HomePage() {
   const showBrowseRailIndex =
     effectiveShowBrowseRail &&
     browseRailIndexItems.length > 0 &&
+    !(homeBrowseNav === 'links' && (selectedSourceId || linksViewMode === 'all')) &&
     (homeBrowseNav === 'tags' ||
       homeBrowseNav === 'books' ||
       homeBrowseNav === 'links')
@@ -3865,6 +3972,10 @@ export function HomePage() {
                 homeBrowseNav === 'books' ? ' parent-tag-rail-section--books-view' : ''
               }${
                 homeBrowseNav === 'links' ? ' parent-tag-rail-section--links-view' : ''
+              }${
+                homeBrowseNav === 'links' && linksViewMode === 'all'
+                  ? ' parent-tag-rail-section--links-all'
+                  : ''
               }`}
               aria-label={browseRailAriaLabel}
             >
@@ -3962,127 +4073,176 @@ export function HomePage() {
                   onTagFilter={openTagViewFromNote}
                 />
               ) : homeBrowseNav === 'links' ? (
-                <div
-                  ref={parentTagRailScrollRef}
-                  className="links-category-scroll"
-                  aria-label="분야별 책장"
-                >
-                  {sourceCategoryShelves.map((shelf) => {
-                    const shelfHasOpen = shelf.sources.some(
-                      (s) => s.id === selectedSourceId,
-                    )
-                    return (
-                      <section
-                        key={shelf.categoryKey}
+                selectedSource ? (
+                  <div
+                    ref={parentTagRailScrollRef}
+                    className="links-source-open-scroll"
+                    aria-label={`${displaySourceTitle(selectedSource.title)} 관련 메모`}
+                  >
+                    <ul className="parent-tag-rail links-source-open-rail">
+                      <li
                         ref={(el) => {
-                          if (el) {
-                            tagSpineSlotRefs.current.set(shelf.categoryKey, el)
-                          } else {
-                            tagSpineSlotRefs.current.delete(shelf.categoryKey)
-                          }
+                          if (el) tagSpineSlotRefs.current.set(selectedSource.id, el)
+                          else tagSpineSlotRefs.current.delete(selectedSource.id)
+                          openParentSpineRef.current = el
                         }}
-                        className={`links-category-shelf${
-                          shelfHasOpen ? ' links-category-shelf--open' : ''
-                        }`}
-                        aria-label={`${shelf.category} 분야`}
+                        className="parent-tag-spine-slot parent-tag-spine-slot--open"
                       >
-                        <h3 className="links-category-shelf-heading">
-                          {shelf.category}
-                        </h3>
-                        <div className="links-category-shelf-scroll">
-                          <ul className="parent-tag-rail links-category-shelf-rail">
-                            {shelf.sources.map((s) => {
-                              const isOpen = selectedSourceId === s.id
-                              const tagCount = sourceTagCounts.get(s.id) ?? 0
-                              return (
-                                <li
-                                  key={s.id}
-                                  ref={(el) => {
-                                    if (el) tagSpineSlotRefs.current.set(s.id, el)
-                                    else tagSpineSlotRefs.current.delete(s.id)
-                                    if (isOpen) {
-                                      openParentSpineRef.current = el
-                                    }
-                                  }}
-                                  className={`parent-tag-spine-slot${
-                                    isOpen ? ' parent-tag-spine-slot--open' : ''
-                                  }`}
-                                >
-                                  <div className="parent-tag-spine-group">
-                                    <SourceSpineCard
-                                      source={s}
-                                      selected={isOpen}
-                                      expanded={isOpen}
-                                      tagCount={tagCount}
-                                      maxSpineHeight={maxLinkSourceSpineHeight}
-                                      onSelect={() => toggleSourceSelect(s.id)}
-                                    />
-                                    {isOpen ? (
-                                      <div
-                                        ref={openTracksRef}
-                                        className="parent-tag-inline-tracks parent-tag-inline-tracks--source-sheet"
-                                        aria-label={`${displaySourceTitle(s.title)} 관련 메모`}
-                                      >
-                                        {s.category || s.author || s.publisher ? (
-                                          <div className="parent-tag-source-meta">
-                                            {s.category ? (
-                                              <span className="parent-tag-source-meta-field">
-                                                {s.category}
-                                              </span>
-                                            ) : null}
-                                            {s.author ? (
-                                              <span className="parent-tag-source-meta-sub">
-                                                {s.author}
-                                              </span>
-                                            ) : null}
-                                            {s.publisher ? (
-                                              <span className="parent-tag-source-meta-sub">
-                                                {s.publisher}
-                                              </span>
-                                            ) : null}
-                                          </div>
-                                        ) : null}
-                                        <InlineRailNotesPanel
-                                          tagLabel={displaySourceTitle(s.title)}
-                                          tagId={s.id}
-                                          tagCatalog={tagCatalogMap}
-                                          sourceCatalog={sourceCatalogMap}
-                                          notes={notesForSelectedSource}
-                                          loading={sourcePullLoading}
-                                          onView={openViewNote}
-                                          onTagFilter={openTagViewFromNote}
-                                          sheetLayout
-                                          sheetSourceMode
-                                          emptyHint="이 출처의 메모가 아직 없습니다."
-                                        />
-                                        {sourceNotesHasMore &&
-                                        notesForSelectedSource.length > 0 ? (
-                                          <button
-                                            type="button"
-                                            className="btn parent-tag-child-load-more"
-                                            disabled={
-                                              sourceNotesLoadingMore ||
-                                              sourcePullLoading
-                                            }
-                                            onClick={() => void loadMoreSourceNotes()}
-                                          >
-                                            {sourceNotesLoadingMore
-                                              ? '불러오는 중…'
-                                              : '이 출처 메모 더 보기'}
-                                          </button>
-                                        ) : null}
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                </li>
-                              )
-                            })}
-                          </ul>
+                        <div className="parent-tag-spine-group">
+                          <SourceSpineCard
+                            source={selectedSource}
+                            selected
+                            expanded
+                            tagCount={sourceTagCounts.get(selectedSource.id) ?? 0}
+                            maxSpineHeight={spineHeightMaxFor(selectedSource)}
+                            onSelect={() => toggleSourceSelect(selectedSource.id)}
+                            onSpineSize={(size) =>
+                              rememberSpineSize(selectedSource.id, size)
+                            }
+                          />
+                          <div
+                            ref={openTracksRef}
+                            className="parent-tag-inline-tracks parent-tag-inline-tracks--source-sheet"
+                            aria-label={`${displaySourceTitle(selectedSource.title)} 관련 메모`}
+                          >
+                            <InlineRailNotesPanel
+                              tagLabel={displaySourceTitle(selectedSource.title)}
+                              tagId={selectedSource.id}
+                              tagCatalog={tagCatalogMap}
+                              sourceCatalog={sourceCatalogMap}
+                              notes={notesForSelectedSource}
+                              loading={sourcePullLoading}
+                              onView={openViewNote}
+                              onTagFilter={openTagViewFromNote}
+                              sheetLayout
+                              sheetSourceMode
+                              emptyHint="이 출처의 메모가 아직 없습니다."
+                            />
+                            {sourceNotesHasMore &&
+                            notesForSelectedSource.length > 0 ? (
+                              <button
+                                type="button"
+                                className="btn parent-tag-child-load-more"
+                                disabled={
+                                  sourceNotesLoadingMore || sourcePullLoading
+                                }
+                                onClick={() => void loadMoreSourceNotes()}
+                              >
+                                {sourceNotesLoadingMore
+                                  ? '불러오는 중…'
+                                  : '이 출처 메모 더 보기'}
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
-                      </section>
-                    )
-                  })}
-                </div>
+                      </li>
+                    </ul>
+                  </div>
+                ) : (
+                  <>
+                    {linksViewMode === 'all' ? (
+                      <div
+                        ref={parentTagRailScrollRef}
+                        className="links-all-scroll"
+                        aria-label="도서 전체"
+                      >
+                        {sourcesForAllLinksView.length === 0 ? (
+                          <p className="notes-hint links-all-empty">
+                            등록된 도서가 없습니다.
+                          </p>
+                        ) : (
+                          <div className="links-all-shelf">
+                            <ul className="parent-tag-rail links-all-rail">
+                              {sourcesForAllLinksView.map((s) => {
+                                const tagCount = sourceTagCounts.get(s.id) ?? 0
+                                return (
+                                  <li
+                                    key={s.id}
+                                    ref={(el) => {
+                                      if (el) tagSpineSlotRefs.current.set(s.id, el)
+                                      else tagSpineSlotRefs.current.delete(s.id)
+                                    }}
+                                    className="parent-tag-spine-slot"
+                                  >
+                                    <div className="parent-tag-spine-group">
+                                      <SourceSpineCard
+                                        source={s}
+                                        selected={false}
+                                        expanded={false}
+                                        tagCount={tagCount}
+                                        maxSpineHeight={spineHeightMaxFor(s)}
+                                        onSelect={() => toggleSourceSelect(s.id)}
+                                        onSpineSize={(size) =>
+                                          rememberSpineSize(s.id, size)
+                                        }
+                                      />
+                                    </div>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div
+                        ref={parentTagRailScrollRef}
+                        className="links-category-scroll"
+                        aria-label="분야별 책장"
+                      >
+                        {sourceCategoryShelves.map((shelf) => (
+                          <section
+                            key={shelf.categoryKey}
+                            ref={(el) => {
+                              if (el) {
+                                tagSpineSlotRefs.current.set(shelf.categoryKey, el)
+                              } else {
+                                tagSpineSlotRefs.current.delete(shelf.categoryKey)
+                              }
+                            }}
+                            className="links-category-shelf"
+                            aria-label={`${shelf.category} 분야`}
+                          >
+                            <h3 className="links-category-shelf-heading">
+                              {shelf.category}
+                            </h3>
+                            <div className="links-category-shelf-scroll">
+                              <ul className="parent-tag-rail links-category-shelf-rail">
+                                {shelf.sources.map((s) => {
+                                  const tagCount = sourceTagCounts.get(s.id) ?? 0
+                                  return (
+                                    <li
+                                      key={s.id}
+                                      ref={(el) => {
+                                        if (el) tagSpineSlotRefs.current.set(s.id, el)
+                                        else tagSpineSlotRefs.current.delete(s.id)
+                                      }}
+                                      className="parent-tag-spine-slot"
+                                    >
+                                      <div className="parent-tag-spine-group">
+                                        <SourceSpineCard
+                                          source={s}
+                                          selected={false}
+                                          expanded={false}
+                                          tagCount={tagCount}
+                                          maxSpineHeight={spineHeightMaxFor(s)}
+                                          onSelect={() => toggleSourceSelect(s.id)}
+                                          onSpineSize={(size) =>
+                                            rememberSpineSize(s.id, size)
+                                          }
+                                        />
+                                      </div>
+                                    </li>
+                                  )
+                                })}
+                              </ul>
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )
               ) : (
                 <div ref={parentTagRailScrollRef} className="parent-tag-rail-scroll">
               <ul className="parent-tag-rail">
@@ -4380,6 +4540,18 @@ export function HomePage() {
                   linksBackMode={showLinksNavBackMode}
                   onLinksBack={collapseLinksSourceRail}
                 />
+                {showLinksViewModeTabs ? (
+                  <div className="home-bottom-links-mode">
+                    <ModalSegmentTabs
+                      tabs={LINKS_VIEW_TABS}
+                      activeId={linksViewMode}
+                      onChange={(id) =>
+                        setLinksViewMode(id as LinksViewMode)
+                      }
+                      ariaLabel="출처 보기 방식"
+                    />
+                  </div>
+                ) : null}
               </div>
               <div className="home-bottom-quick-actions">
                 <HomeQuickActionButtons

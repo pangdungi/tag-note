@@ -1,4 +1,5 @@
 import { useId } from 'react'
+import { ModalFooter } from './ModalFooter'
 
 type Props = {
   open: boolean
@@ -46,27 +47,27 @@ export function ConfirmModal({
           <p id={descId} className="confirm-modal-message">
             {message}
           </p>
-          <div className="confirm-modal-actions">
-            <button
-              type="button"
-              className="btn btn--quiet"
-              disabled={busy}
-              onClick={() => onCancel()}
-            >
-              {cancelLabel}
-            </button>
-            <button
-              type="button"
-              className={
-                danger ? 'btn btn--danger' : 'btn btn--emphasis'
-              }
-              disabled={busy}
-              onClick={() => void onConfirm()}
-            >
-              {confirmLabel}
-            </button>
-          </div>
         </div>
+        <ModalFooter align="end">
+          <button
+            type="button"
+            className="btn btn--quiet"
+            disabled={busy}
+            onClick={() => onCancel()}
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            className={
+              danger ? 'btn btn--danger' : 'btn btn--emphasis'
+            }
+            disabled={busy}
+            onClick={() => void onConfirm()}
+          >
+            {confirmLabel}
+          </button>
+        </ModalFooter>
       </div>
     </div>
   )

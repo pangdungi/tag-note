@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useState, startTransition } from 'react'
+import { ModalFooter } from './ModalFooter'
 import {
   createParentTag,
   filterTagsByMainSearch,
@@ -241,7 +242,7 @@ export function AddParentTagModal({
           {error ? <p className="composer-error">{error}</p> : null}
         </div>
 
-        <div className="edit-note-modal-actions">
+        <ModalFooter>
           <button
             type="button"
             className="btn"
@@ -258,7 +259,7 @@ export function AddParentTagModal({
           >
             {creating ? '만드는 중…' : '만들기'}
           </button>
-        </div>
+        </ModalFooter>
       </div>
     </div>
   )

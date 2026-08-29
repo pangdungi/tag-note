@@ -1,6 +1,7 @@
 import { useId, useLayoutEffect, useState } from 'react'
 import { TagComposer, type SelectedTag } from './TagComposer'
 import { SourceComposer, type SelectedSource } from './SourceComposer'
+import { ModalFooter } from './ModalFooter'
 import { ConfirmModal } from './ConfirmModal'
 import {
   deleteNote,
@@ -177,7 +178,7 @@ export function EditNoteModal({
             />
           </div>
         </div>
-        <div className="edit-note-modal-actions">
+        <ModalFooter>
           <button
             type="button"
             className="btn btn--danger"
@@ -241,7 +242,7 @@ export function EditNoteModal({
             >
               수정
             </button>
-        </div>
+        </ModalFooter>
       </div>
       </div>
 

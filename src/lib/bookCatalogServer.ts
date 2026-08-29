@@ -9,6 +9,16 @@ export type BookSearchHit = {
   spineUrl: string
   yes24GoodsNo: string
   source: 'yes24'
+  widthMm?: number | null
+  lengthMm?: number | null
+  heightMm?: number | null
+}
+
+export type Yes24BookPhysicalSize = {
+  widthMm: number | null
+  lengthMm: number | null
+  heightMm: number | null
+  itemFormat: string | null
 }
 
 const YES24_API_BASE = 'https://apis.yes24.com/v1'
@@ -61,6 +71,10 @@ type Yes24GoodsItem = {
   cover?: string
   publishDate?: string
   link?: string
+  width?: number | null
+  length?: number | null
+  height?: number | null
+  itemFormat?: string | null
 }
 
 type Yes24ApiResponse = {
@@ -206,6 +220,67 @@ export async function lookupYes24ByIsbn(
   const item = json.data?.items?.[0]
   if (!item) return null
   return hitFromYes24Item(item)
+}
+
+function positiveMm(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.round(value)
+    : null
+}
+
+function standingMmFromItemFormat(format?: string | null): number | null {
+  const raw = format?.replace(/\s+/g, '') ?? ''
+  if (!raw) return null
+  if (raw.includes('문고')) return 174
+  if (raw.includes('신국판')) return 223
+  if (raw.includes('국판')) return 210
+  if (raw.includes('사륙')) return 188
+  if (/크라운/i.test(raw)) return 256
+  if (/A5/i.test(raw)) return 210
+  if (/B6/i.test(raw)) return 182
+  if (/A4/i.test(raw)) return 297
+  return null
+}
+
+export function physicalSizeFromYes24Item(
+  item: Yes24GoodsItem,
+): Yes24BookPhysicalSize {
+  const widthMm = positiveMm(item.width)
+  const lengthMm =
+    positiveMm(item.length) ?? standingMmFromItemFormat(item.itemFormat)
+  const heightMm = positiveMm(item.height)
+  return {
+    widthMm,
+    lengthMm,
+    heightMm,
+    itemFormat: item.itemFormat?.trim() || null,
+  }
+}
+
+/** 예스24 상품 실물 크기 (detail=Y) */
+export async function fetchYes24BookPhysicalSize(opts: {
+  goodsNo?: string
+  isbn?: string
+}): Promise<Yes24BookPhysicalSize | null> {
+  const goodsNo = opts.goodsNo?.trim() ?? ''
+  const isbn = extractIsbn13(opts.isbn) ?? opts.isbn?.trim() ?? ''
+  if (!goodsNo && !isbn) return null
+
+  const json = goodsNo
+    ? await yes24ApiGet('/goods/itemDetail', {
+        searchType: 'ItemId',
+        query: goodsNo,
+        detail: 'Y',
+      })
+    : await yes24ApiGet('/goods/itemDetail', {
+        searchType: 'ISBN13',
+        query: isbn,
+        detail: 'Y',
+      })
+
+  const item = json.data?.items?.[0]
+  if (!item) return null
+  return physicalSizeFromYes24Item(item)
 }
 
 /** @deprecated searchYes24Books 사용 */
