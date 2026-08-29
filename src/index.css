@@ -7311,7 +7311,7 @@ button.note-board-tag-pill--link:focus-visible {
 }
 
 .folder-file-stack {
-  --folder-tab-h: 38px;
+  --folder-tab-h: 26px;
   --folder-pane-h: 4.6rem;
   --folder-stack-gap: 17px;
   --folder-line: #111111;
@@ -7385,11 +7385,14 @@ button.note-board-tag-pill--link:focus-visible {
   position: absolute;
   left: 0;
   top: 0;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
   visibility: hidden;
   pointer-events: none;
   white-space: nowrap;
   font-family: var(--folder-tab-font);
-  font-size: 0.88rem;
+  font-size: 0.76rem;
   font-weight: 500;
   letter-spacing: -0.01em;
   line-height: 1;
@@ -7401,16 +7404,29 @@ button.note-board-tag-pill--link:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 2rem;
   height: calc(var(--folder-tab-h) - 1px);
   overflow: hidden;
   color: #111111;
   font-family: var(--folder-tab-font);
-  font-size: 0.88rem;
+  font-size: 0.76rem;
   font-weight: 500;
   letter-spacing: -0.01em;
   line-height: 1;
   white-space: nowrap;
   pointer-events: none;
+}
+
+.folder-file-tab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-file-tab-count {
+  flex-shrink: 0;
+  font-size: 0.56rem;
+  font-weight: 400;
 }
 
 .folder-file-pane {

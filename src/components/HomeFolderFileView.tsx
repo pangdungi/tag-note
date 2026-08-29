@@ -45,8 +45,8 @@ type Props = {
   onTagFilter: (tagId: string, contextParentId?: string) => void
 }
 
-const TAB_H = 38
-const JOIN = 14
+const TAB_H = 26
+const JOIN = 6
 const CORNER = 8
 const STROKE = 1
 const EDGE = 12
@@ -170,7 +170,8 @@ function FolderFileRidge({
       onClick={onClick}
     >
       <span ref={textRef} className="folder-file-tab-probe">
-        {label} {count}
+        <span className="folder-file-tab-name">{label}</span>
+        <span className="folder-file-tab-count">{count}</span>
       </span>
       {ready ? (
         <svg
@@ -200,7 +201,8 @@ function FolderFileRidge({
             width: tabWidth - JOIN * 2,
           }}
         >
-          {label} {count}
+          <span className="folder-file-tab-name">{label}</span>
+          <span className="folder-file-tab-count">{count}</span>
         </span>
       ) : null}
     </button>
