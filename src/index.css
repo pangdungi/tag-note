@@ -538,6 +538,15 @@ body::-webkit-scrollbar,
   padding-right: 2.75rem;
 }
 
+/* 커스텀 글꼴에 ● 글리프가 없으면 비밀번호 마스킹이 안 보임 */
+input.input[type='password'] {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+    'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  color: #111111;
+  -webkit-text-fill-color: #111111;
+  caret-color: #111111;
+}
+
 .password-input-toggle {
   position: absolute;
   right: 0.35rem;
