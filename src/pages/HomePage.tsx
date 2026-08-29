@@ -13,6 +13,7 @@ import { HomeFolderFileView } from '../components/HomeFolderFileView'
 import { HomeSearchResultsRail } from '../components/HomeSearchResultsRail'
 import { EditNoteModal } from '../components/EditNoteModal'
 import { NoteViewModal } from '../components/NoteViewModal'
+import { TagMemosFlipModal } from '../components/TagMemosFlipModal'
 import { AppSplashScreen } from '../components/AppSplashScreen'
 import { AddNoteModal } from '../components/AddNoteModal'
 import { TagNotesPullStatus } from '../components/TagNotesPullStatus'
@@ -1334,6 +1335,7 @@ export function HomePage() {
   const [tagFilterFocusBoard, setTagFilterFocusBoard] = useState(false)
   const [booksTagFocusBoard, setBooksTagFocusBoard] = useState(false)
   const [tagViewDrillDown, setTagViewDrillDown] = useState(false)
+  const [tagMemosFlipOpen, setTagMemosFlipOpen] = useState(false)
 
   const [addParentTagRailOpen, setAddParentTagRailOpen] = useState(false)
   const [addBookModalOpen, setAddBookModalOpen] = useState(false)
@@ -2591,6 +2593,7 @@ export function HomePage() {
 
   function selectBrowseNav(id: HomeBrowseNavId) {
     clearTagDetailReturnContext()
+    setTagMemosFlipOpen(false)
     setHomeBrowseNav(id)
     clearSourceFilter()
     clearDateFilter()
@@ -2683,11 +2686,7 @@ export function HomePage() {
     }
 
     if (homeBrowseNav === 'tags') {
-      if (selectedTagId === tagId) {
-        setViewingNote(null)
-        return
-      }
-      openTagInTagDetailView(tagId)
+      openTagMemosFlip(tagId)
       return
     }
 
@@ -2796,7 +2795,39 @@ export function HomePage() {
     setViewNoteLoading(false)
   }
 
-  /** 태그 뷰 — ← 태그 목록 + 태그 수정 + 메모 카드 (태그 목록에서 태그 클릭과 동일) */
+  function closeTagMemosFlip() {
+    setTagMemosFlipOpen(false)
+    setSelectedTagId(null)
+    setTagPullEntry(null)
+    setTagPullLoading(false)
+  }
+
+  function openTagMemosFlip(tagId: string) {
+    setTagViewDrillDown(false)
+    setTagFilterFocusBoard(false)
+    setBooksTagFocusBoard(false)
+    setBooksRailExpandedParentId(null)
+    setSelectedSourceId(null)
+    setSourceNotesHasMore(false)
+    clearDateFilter()
+    setViewingNote(null)
+    setViewingNoteContextTagId(null)
+    setViewNoteLoading(false)
+    setTagFilterNav('tags')
+    tagFilterNavRef.current = 'tags'
+    const filterTagIds = resolveSelectedTagFilterIds(
+      tagId,
+      'tags',
+      null,
+      allTags,
+      tagParentLinks,
+    )
+    syncTagPullEntryForSelection(tagId, filterTagIds, 'tags')
+    setSelectedTagId(tagId)
+    setTagMemosFlipOpen(true)
+  }
+
+  /** 검색·다른 뷰에서 태그 상세로 들어갈 때 */
   function openTagInTagDetailView(tagId: string) {
     captureTagDetailReturnContext()
     setSelectedSourceId(null)
@@ -4682,6 +4713,23 @@ export function HomePage() {
           subscriptionEnabled={isSupabaseConfigured}
           onAfterOpen={refreshAccountSubscription}
           onSignOut={signOut}
+        />
+      ) : null}
+
+      {user ? (
+        <TagMemosFlipModal
+          open={tagMemosFlipOpen}
+          tagLabel={
+            selectedTagId === TAG_VIEW_NONE_ID
+              ? '태그 없음'
+              : selectedTag
+                ? formatHashtagLabel(selectedTag.name)
+                : '태그'
+          }
+          notes={notesForSelectedTag}
+          loading={tagPullLoading && notesForSelectedTag.length === 0}
+          sourceCatalog={sourceCatalogMap}
+          onClose={closeTagMemosFlip}
         />
       ) : null}
 
