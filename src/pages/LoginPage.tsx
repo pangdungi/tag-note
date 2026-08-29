@@ -9,7 +9,7 @@ type Mode = 'login' | 'signup' | 'forgot'
 
 export function LoginPage() {
   const { signIn, signUp, requestPasswordReset } = useAuth()
-  const [mode, setMode] = useState<Mode>('login')
+  const [mode, setMode] = useState<Mode>('signup')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -77,6 +77,8 @@ export function LoginPage() {
         if (err) {
           setError(userFacingAuthMessage(err.message, 'signup'))
         } else {
+          setMode('login')
+          setShowPassword(false)
           setMessage(
             '가입 확인 메일을 보냈을 수 있습니다. 메일함을 확인하거나 바로 로그인해 보세요. 로그인 후 7일 무료 체험이 이어집니다.',
           )
@@ -122,41 +124,6 @@ export function LoginPage() {
               복사해 호스팅(예: Vercel) 환경 변수에 넣은 뒤{' '}
               <strong>다시 배포</strong>하세요.
             </p>
-          ) : null}
-
-          {mode !== 'forgot' ? (
-            <div className="auth-tabs" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === 'login'}
-                className={mode === 'login' ? 'tab tab-active' : 'tab'}
-                onClick={() => {
-                  setMode('login')
-                  setShowPassword(false)
-                  setError(null)
-                  setMessage(null)
-                }}
-              >
-                로그인
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === 'signup'}
-                className={
-                  mode === 'signup' ? 'tab tab-active' : 'tab'
-                }
-                onClick={() => {
-                  setMode('signup')
-                  setShowPassword(false)
-                  setError(null)
-                  setMessage(null)
-                }}
-              >
-                회원가입
-              </button>
-            </div>
           ) : null}
 
           {mode === 'forgot' ? (
@@ -240,23 +207,6 @@ export function LoginPage() {
               </label>
             ) : null}
 
-            {mode === 'login' ? (
-              <div className="auth-inline-actions auth-inline-actions--center">
-                <button
-                  type="button"
-                  className="auth-text-link"
-                  onClick={() => {
-                    setMode('forgot')
-                    setShowPassword(false)
-                    setError(null)
-                    setMessage(null)
-                  }}
-                >
-                  비밀번호를 잊었나요?
-                </button>
-              </div>
-            ) : null}
-
             {mode === 'forgot' ? (
               <div className="auth-inline-actions auth-inline-actions--start">
                 <button
@@ -291,6 +241,59 @@ export function LoginPage() {
                     ? '재설정 링크 보내기'
                     : '가입하기'}
             </button>
+
+            {mode === 'login' ? (
+              <p className="auth-switch">
+                <button
+                  type="button"
+                  className="auth-text-link"
+                  onClick={() => {
+                    setMode('forgot')
+                    setShowPassword(false)
+                    setError(null)
+                    setMessage(null)
+                  }}
+                >
+                  비밀번호를 잊었나요?
+                </button>
+              </p>
+            ) : null}
+
+            {mode === 'signup' ? (
+              <p className="auth-switch">
+                계정이 있나요?{' '}
+                <button
+                  type="button"
+                  className="auth-text-link"
+                  onClick={() => {
+                    setMode('login')
+                    setShowPassword(false)
+                    setError(null)
+                    setMessage(null)
+                  }}
+                >
+                  로그인
+                </button>
+              </p>
+            ) : null}
+
+            {mode === 'login' ? (
+              <p className="auth-switch">
+                계정이 없나요?{' '}
+                <button
+                  type="button"
+                  className="auth-text-link"
+                  onClick={() => {
+                    setMode('signup')
+                    setShowPassword(false)
+                    setError(null)
+                    setMessage(null)
+                  }}
+                >
+                  회원가입
+                </button>
+              </p>
+            ) : null}
           </form>
         </main>
       </div>

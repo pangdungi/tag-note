@@ -1,4 +1,4 @@
-import appLogoUrl from '../assets/app-logo.png'
+import appLogoUrl from '../assets/auth-logo-doodle-book.png'
 
 type Props = {
   className?: string

@@ -1341,6 +1341,7 @@ export function HomePage() {
   const [booksTagFocusBoard, setBooksTagFocusBoard] = useState(false)
   const [tagViewDrillDown, setTagViewDrillDown] = useState(false)
   const [tagMemosFlipOpen, setTagMemosFlipOpen] = useState(false)
+  const [sourceMemosFlipOpen, setSourceMemosFlipOpen] = useState(false)
 
   const [addParentTagRailOpen, setAddParentTagRailOpen] = useState(false)
   const [addBookModalOpen, setAddBookModalOpen] = useState(false)
@@ -2585,9 +2586,7 @@ export function HomePage() {
   }
 
   function collapseLinksSourceRail() {
-    clearSourceFilter()
-    setViewingNote(null)
-    setViewingNoteContextTagId(null)
+    closeSourceMemosFlip()
   }
 
   function clearDateFilter() {
@@ -2603,6 +2602,7 @@ export function HomePage() {
     if (id === 'dates') return
     clearTagDetailReturnContext()
     setTagMemosFlipOpen(false)
+    setSourceMemosFlipOpen(false)
     setHomeBrowseNav(id)
     clearSourceFilter()
     clearDateFilter()
@@ -2750,6 +2750,7 @@ export function HomePage() {
       setCoverOpeningId(null)
       setPreviewSourceId(null)
       setSelectedSourceId(sourceId)
+      setSourceMemosFlipOpen(true)
       setTagSearch('')
       setSearchNotesResult(null)
       setSearchError(null)
@@ -2774,34 +2775,41 @@ export function HomePage() {
   }, [previewSourceId])
 
   function toggleSourceSelect(sourceId: string) {
-    setSelectedSourceId((cur) => {
-      const next = cur === sourceId ? null : sourceId
-      if (next !== null) {
-        setTagSearch('')
-        setSearchNotesResult(null)
-        setSearchError(null)
-        setSelectedTagId(null)
-        setTagViewDrillDown(false)
-        setSearchOpen(false)
-      }
-      return next
-    })
+    if (sourceMemosFlipOpen && selectedSourceId === sourceId) {
+      closeSourceMemosFlip()
+      return
+    }
+    openSourceMemosFlip(sourceId)
+  }
+
+  function openSourceMemosFlip(sourceId: string) {
+    setTagMemosFlipOpen(false)
+    setSelectedTagId(null)
+    setTagPullEntry(null)
+    setBooksRailExpandedParentId(null)
+    setHomeBrowseNav('links')
+    setSelectedSourceId(sourceId)
+    setSourceMemosFlipOpen(true)
+    setTagSearch('')
+    setSearchNotesResult(null)
+    setSearchError(null)
+    setSelectedTagId(null)
+    setTagViewDrillDown(false)
+    setSearchOpen(false)
+    setViewingNote(null)
+    setViewingNoteContextTagId(null)
+    setViewNoteLoading(false)
+  }
+
+  function closeSourceMemosFlip() {
+    setSourceMemosFlipOpen(false)
+    clearSourceFilter()
     setViewingNote(null)
     setViewingNoteContextTagId(null)
   }
 
   function openSourceViewFromNote(sourceId: string) {
-    setHomeBrowseNav('links')
-    setSelectedSourceId(sourceId)
-    setSelectedTagId(null)
-    setBooksRailExpandedParentId(null)
-    setTagSearch('')
-    setSearchNotesResult(null)
-    setSearchError(null)
-    setSearchOpen(false)
-    setViewingNote(null)
-    setViewingNoteContextTagId(null)
-    setViewNoteLoading(false)
+    openSourceMemosFlip(sourceId)
   }
 
   function closeTagMemosFlip() {
@@ -2818,6 +2826,7 @@ export function HomePage() {
     setBooksRailExpandedParentId(null)
     setSelectedSourceId(null)
     setSourceNotesHasMore(false)
+    setSourceMemosFlipOpen(false)
     clearDateFilter()
     setViewingNote(null)
     setViewingNoteContextTagId(null)
@@ -3247,9 +3256,7 @@ export function HomePage() {
     homeBrowseNav === 'books' && booksRailExpandedParentId,
   )
 
-  const showLinksNavBackMode = Boolean(
-    homeBrowseNav === 'links' && selectedSourceId,
-  )
+  const showLinksNavBackMode = false
 
   const showBrowseRail =
     !showBootstrap &&
@@ -3271,7 +3278,7 @@ export function HomePage() {
     !booksTagFocusBoard
 
   const showLinksViewModeTabs = Boolean(
-    homeBrowseNav === 'links' && !selectedSourceId && effectiveShowBrowseRail,
+    homeBrowseNav === 'links' && effectiveShowBrowseRail,
   )
 
   const showTagViewDetail = Boolean(
@@ -3442,12 +3449,12 @@ export function HomePage() {
 
   /** 출처 뷰에서 출처 미선택 시 + → 책 검색 추가 */
   const showAddBookCompose =
-    homeBrowseNav === 'links' && !hasActiveSearch && !selectedSourceId
+    homeBrowseNav === 'links' && !hasActiveSearch
 
   const selectedOpenSpineId = useMemo(() => {
     if (homeBrowseNav === 'books') return booksRailExpandedParentId
     if (homeBrowseNav === 'tags') return selectedTagId
-    if (homeBrowseNav === 'links') return selectedSourceId
+    if (homeBrowseNav === 'links') return null
     if (homeBrowseNav === 'dates') return selectedDateKey
     return null
   }, [
@@ -4160,72 +4167,6 @@ export function HomePage() {
                   onTagFilter={openTagViewFromNote}
                 />
               ) : homeBrowseNav === 'links' ? (
-                selectedSource ? (
-                  <div
-                    ref={parentTagRailScrollRef}
-                    className="links-source-open-scroll"
-                    aria-label={`${displaySourceTitle(selectedSource.title)} 관련 메모`}
-                  >
-                    <ul className="parent-tag-rail links-source-open-rail">
-                      <li
-                        ref={(el) => {
-                          if (el) tagSpineSlotRefs.current.set(selectedSource.id, el)
-                          else tagSpineSlotRefs.current.delete(selectedSource.id)
-                          openParentSpineRef.current = el
-                        }}
-                        className="parent-tag-spine-slot parent-tag-spine-slot--open"
-                      >
-                        <div className="parent-tag-spine-group">
-                          <SourceSpineCard
-                            source={selectedSource}
-                            selected
-                            expanded
-                            tagCount={sourceTagCounts.get(selectedSource.id) ?? 0}
-                            maxSpineHeight={spineHeightMaxFor(selectedSource)}
-                            onSelect={() => toggleSourceSelect(selectedSource.id)}
-                            onSpineSize={(size) =>
-                              rememberSpineSize(selectedSource.id, size)
-                            }
-                          />
-                          <div
-                            ref={openTracksRef}
-                            className="parent-tag-inline-tracks parent-tag-inline-tracks--source-sheet"
-                            aria-label={`${displaySourceTitle(selectedSource.title)} 관련 메모`}
-                          >
-                            <InlineRailNotesPanel
-                              tagLabel={displaySourceTitle(selectedSource.title)}
-                              tagId={selectedSource.id}
-                              tagCatalog={tagCatalogMap}
-                              sourceCatalog={sourceCatalogMap}
-                              notes={notesForSelectedSource}
-                              loading={sourcePullLoading}
-                              onView={openViewNote}
-                              onTagFilter={openTagViewFromNote}
-                              sheetLayout
-                              sheetSourceMode
-                              emptyHint="이 출처의 메모가 아직 없습니다."
-                            />
-                            {sourceNotesHasMore &&
-                            notesForSelectedSource.length > 0 ? (
-                              <button
-                                type="button"
-                                className="btn parent-tag-child-load-more"
-                                disabled={
-                                  sourceNotesLoadingMore || sourcePullLoading
-                                }
-                                onClick={() => void loadMoreSourceNotes()}
-                              >
-                                {sourceNotesLoadingMore
-                                  ? '불러오는 중…'
-                                  : '이 출처 메모 더 보기'}
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
-                      </li>
-                    </ul>
-                  </div>
-                ) : (
                   <>
                     {linksViewMode === 'all' ? (
                       <div
@@ -4353,7 +4294,6 @@ export function HomePage() {
                       </div>
                     )}
                   </>
-                )
               ) : (
                 <HomeFolderFileView
                   folders={parentTagsForRail}
@@ -4703,6 +4643,23 @@ export function HomePage() {
           loading={tagPullLoading && notesForSelectedTag.length === 0}
           sourceCatalog={sourceCatalogMap}
           onClose={closeTagMemosFlip}
+        />
+      ) : null}
+
+      {user ? (
+        <TagMemosFlipModal
+          open={sourceMemosFlipOpen}
+          tagLabel={
+            selectedSource
+              ? displaySourceTitle(selectedSource.title)
+              : '도서'
+          }
+          notes={notesForSelectedSource}
+          loading={sourcePullLoading && notesForSelectedSource.length === 0}
+          sourceCatalog={sourceCatalogMap}
+          emptyLabel="이 책의 메모가 아직 없습니다."
+          centered
+          onClose={closeSourceMemosFlip}
         />
       ) : null}
 

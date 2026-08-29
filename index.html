@@ -19,8 +19,23 @@
       type="font/ttf"
       crossorigin
     />
+    <link
+      rel="preload"
+      href="/fonts/griun-fromsol.ttf"
+      as="font"
+      type="font/ttf"
+      crossorigin
+    />
     <title>두들노트</title>
     <style>
+      @font-face {
+        font-family: 'TagNote Griun Fromsol';
+        src: url('/fonts/griun-fromsol.ttf') format('truetype');
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+
       #app-boot-splash {
         position: fixed;
         inset: 0;
@@ -45,16 +60,16 @@
 
       #app-boot-splash img {
         display: block;
-        width: min(78vw, 300px);
+        width: min(86vw, 360px);
         height: auto;
-        max-height: 52vh;
+        max-height: 58vh;
         object-fit: contain;
       }
 
       #app-boot-splash p {
         margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
-          'Malgun Gothic', sans-serif;
+        font-family: 'TagNote Griun Fromsol', -apple-system, BlinkMacSystemFont,
+          'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
         font-size: 0.88rem;
         color: #6b7280;
       }
@@ -62,7 +77,7 @@
   </head>
   <body>
     <div id="app-boot-splash" role="status" aria-live="polite">
-      <img src="/splash-screen.png" alt="" width="300" height="375" />
+      <img src="/splash-screen.png" alt="" width="300" height="300" />
       <p>두들노트 준비 중…</p>
     </div>
     <div id="root"></div>

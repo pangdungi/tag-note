@@ -54,6 +54,14 @@
   font-display: block;
 }
 
+@font-face {
+  font-family: 'TagNote Griun Fromsol';
+  src: url('/fonts/griun-fromsol.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
 :root {
   --bg: #ffffff;
   --surface: #ffffff;
@@ -207,13 +215,14 @@ body::-webkit-scrollbar,
     max(1.25rem, env(safe-area-inset-left, 0px));
   background: var(--bg);
   text-align: center;
+  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
 }
 
 .app-splash-screen__art {
   display: block;
-  width: min(78vw, 300px);
+  width: min(86vw, 360px);
   height: auto;
-  max-height: 52vh;
+  max-height: 58vh;
   object-fit: contain;
 }
 
@@ -265,6 +274,9 @@ body::-webkit-scrollbar,
   position: relative;
   overflow: hidden;
   isolation: isolate;
+  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-weight: 700;
+  font-synthesis: weight;
 }
 
 .auth-decor {
@@ -366,8 +378,8 @@ body::-webkit-scrollbar,
 .app-brand-mark {
   display: block;
   width: auto;
-  height: clamp(4.5rem, 22vw, 6.5rem);
-  max-width: min(78vw, 12rem);
+  height: clamp(9rem, 40vw, 13.5rem);
+  max-width: min(86vw, 20rem);
   margin: 0 auto;
   object-fit: contain;
 }
@@ -390,20 +402,26 @@ body::-webkit-scrollbar,
   position: relative;
   z-index: 1;
   width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 2rem 1.75rem 1.75rem;
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 3%),
-    0 10px 40px rgb(0 0 0 / 4%);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 1.25rem 0 0;
+  box-shadow: none;
 }
 
 .auth-title {
-  margin: 0;
+  margin: 0 0 1.15rem;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 800;
   color: var(--text-strong);
+}
+
+.auth-switch {
+  margin: 0.15rem 0 0;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: #111111;
 }
 
 .auth-sub {
@@ -437,15 +455,16 @@ body::-webkit-scrollbar,
   background: none;
   padding: 0;
   font: inherit;
-  font-size: 0.85rem;
-  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: #111111;
   text-decoration: underline;
   cursor: pointer;
   text-underline-offset: 2px;
 }
 
 .auth-text-link:hover {
-  color: var(--text-strong);
+  color: #111111;
 }
 
 .auth-tabs {
@@ -491,6 +510,42 @@ body::-webkit-scrollbar,
   width: 100%;
 }
 
+.auth-form .btn--emphasis {
+  background: #111111;
+  color: #ffffff;
+  border-color: #111111;
+  font-weight: 800;
+  font-synthesis: weight;
+}
+
+.auth-form .btn--emphasis:hover:not(:disabled) {
+  background: #111111;
+  color: #ffffff;
+  border-color: #111111;
+}
+
+.auth-form .input {
+  padding: 0.55rem 0 0.45rem;
+  border: none;
+  border-bottom: 1px solid #111111;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.auth-form .input:focus {
+  border-color: #111111;
+  box-shadow: none;
+}
+
+.auth-form .password-input-wrap .password-input {
+  padding-right: 2.4rem;
+}
+
+.auth-form .password-input-toggle {
+  right: 0;
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -500,8 +555,12 @@ body::-webkit-scrollbar,
 
 .field-label {
   font-size: 0.8rem;
-  font-weight: 500;
+  font-weight: 700;
   color: var(--text-strong);
+}
+
+.auth-form .field-label {
+  color: #9ca3af;
 }
 
 .input {
@@ -6653,14 +6712,15 @@ button.note-board-tag-pill--link:focus-visible {
 }
 
 @media (min-width: 641px) {
-  .tag-memos-flip-overlay {
+  .tag-memos-flip-overlay:not(.tag-memos-flip-overlay--center) {
     justify-content: center;
     align-items: center;
     padding-left: clamp(12rem, 32vw, 22rem);
     padding-right: 1.5rem;
   }
 
-  .tag-memos-flip-dialog {
+  .tag-memos-flip-overlay:not(.tag-memos-flip-overlay--center)
+    .tag-memos-flip-dialog {
     width: min(36vw, 26rem);
   }
 }

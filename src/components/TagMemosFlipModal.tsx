@@ -24,10 +24,12 @@ function PaperFace({
   note,
   loading,
   sourceCatalog,
+  emptyLabel = '이 태그의 메모가 아직 없습니다.',
 }: {
   note: NoteWithTags | null
   loading?: boolean
   sourceCatalog: Map<string, SourceRow>
+  emptyLabel?: string
 }) {
   if (loading) {
     return (
@@ -39,7 +41,7 @@ function PaperFace({
   if (!note) {
     return (
       <div className="tag-memos-flip-sheet">
-        <p className="tag-memos-flip-empty">이 태그의 메모가 아직 없습니다.</p>
+        <p className="tag-memos-flip-empty">{emptyLabel}</p>
       </div>
     )
   }
@@ -70,6 +72,8 @@ type Props = {
   loading: boolean
   sourceCatalog: Map<string, SourceRow>
   onClose: () => void
+  emptyLabel?: string
+  centered?: boolean
 }
 
 export function TagMemosFlipModal({
@@ -79,6 +83,8 @@ export function TagMemosFlipModal({
   loading,
   sourceCatalog,
   onClose,
+  emptyLabel,
+  centered = false,
 }: Props) {
   const titleId = useId()
   const [index, setIndex] = useState(0)
@@ -142,7 +148,12 @@ export function TagMemosFlipModal({
   const frontNote = turn === 'prev' ? prevNote : current
 
   return (
-    <div className="tag-memos-flip-overlay" role="presentation">
+    <div
+      className={`tag-memos-flip-overlay${
+        centered ? ' tag-memos-flip-overlay--center' : ''
+      }`}
+      role="presentation"
+    >
       <div
         className="tag-memos-flip-dialog"
         role="dialog"
@@ -173,6 +184,7 @@ export function TagMemosFlipModal({
               note={loading ? null : underNote}
               loading={loading}
               sourceCatalog={sourceCatalog}
+              emptyLabel={emptyLabel}
             />
           </div>
           <div className="tag-memos-flip-page tag-memos-flip-page--front">
@@ -180,6 +192,7 @@ export function TagMemosFlipModal({
               note={loading ? null : frontNote}
               loading={loading}
               sourceCatalog={sourceCatalog}
+              emptyLabel={emptyLabel}
             />
           </div>
         </div>

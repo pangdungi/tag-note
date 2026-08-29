@@ -25,7 +25,7 @@ export function AppSplashScreen({
         src={splashArtUrl}
         alt=""
         width={320}
-        height={400}
+        height={320}
         decoding="async"
       />
       <p className="app-splash-screen__message">{message}</p>
