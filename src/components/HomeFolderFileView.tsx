@@ -230,19 +230,28 @@ export function HomeFolderFileView({
   onTagFilter,
 }: Props) {
   useLayoutEffect(() => {
-    if (!expandedId) return
     const scroller = scrollRef.current
-    const slot = scroller?.querySelector<HTMLElement>(
+    if (!scroller) return
+
+    if (!expandedId) {
+      scroller.scrollTop = scroller.scrollHeight
+      return
+    }
+
+    const slot = scroller.querySelector<HTMLElement>(
       `[data-folder-id="${expandedId}"]`,
     )
-    if (!scroller || !slot) return
+    if (!slot) return
     const scrollerRect = scroller.getBoundingClientRect()
     const slotRect = slot.getBoundingClientRect()
-    const nextTop = scroller.scrollTop + slotRect.top - scrollerRect.top - 12
-    scroller.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' })
-  }, [expandedId, scrollRef])
+    scroller.scrollTo({
+      top: scroller.scrollTop + slotRect.top - scrollerRect.top - 12,
+      behavior: 'auto',
+    })
+  }, [expandedId, folders.length, scrollRef])
 
   return (
+    <div className="folder-file-cabinet">
     <div
       ref={scrollRef}
       className="folder-file-stack"
@@ -277,53 +286,55 @@ export function HomeFolderFileView({
                   onClick={() => onSelectFolder(folder.id)}
                 />
                 {isOpen ? (
-                  <div className="folder-file-body">
-                    <div className="folder-file-body-bar">
-                      <span className="folder-file-body-count">
-                        메모 {memoCount}
-                      </span>
-                      <button
-                        type="button"
-                        className="folder-file-edit"
-                        aria-label={`${label} 폴더 수정`}
-                        title="폴더 수정"
-                        disabled={!canEdit}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onEditFolder(folder)
-                        }}
+                  <div className="folder-file-paper">
+                    <div className="folder-file-body">
+                      <div className="folder-file-body-bar">
+                        <span className="folder-file-body-count">
+                          메모 {memoCount}
+                        </span>
+                        <button
+                          type="button"
+                          className="folder-file-edit"
+                          aria-label={`${label} 폴더 수정`}
+                          title="폴더 수정"
+                          disabled={!canEdit}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onEditFolder(folder)
+                          }}
+                        >
+                          <img
+                            src={tagIconUrl}
+                            alt=""
+                            className="folder-file-edit-icon"
+                            width={14}
+                            height={14}
+                            decoding="async"
+                          />
+                        </button>
+                      </div>
+                      <div
+                        ref={openTracksRef}
+                        className="folder-file-sheet"
+                        aria-label={`${label} 관련 메모`}
                       >
-                        <img
-                          src={tagIconUrl}
-                          alt=""
-                          className="folder-file-edit-icon"
-                          width={14}
-                          height={14}
-                          decoding="async"
+                        <InlineNotesPanel
+                          tagLabel={label}
+                          tagId={folder.id}
+                          tagCatalog={tagCatalog}
+                          sourceCatalog={sourceCatalog}
+                          notes={notes}
+                          loading={notesLoading}
+                          onView={onViewNote}
+                          onTagFilter={onTagFilter}
+                          sheetLayout
+                          sheetFolderMode
+                          sheetHideParentTagId={folder.id}
+                          sheetFolderTagName={folder.name}
+                          sheetParentTagId={folder.id}
+                          emptyHint="이 폴더의 메모가 아직 없습니다."
                         />
-                      </button>
-                    </div>
-                    <div
-                      ref={openTracksRef}
-                      className="folder-file-sheet"
-                      aria-label={`${label} 관련 메모`}
-                    >
-                      <InlineNotesPanel
-                        tagLabel={label}
-                        tagId={folder.id}
-                        tagCatalog={tagCatalog}
-                        sourceCatalog={sourceCatalog}
-                        notes={notes}
-                        loading={notesLoading}
-                        onView={onViewNote}
-                        onTagFilter={onTagFilter}
-                        sheetLayout
-                        sheetFolderMode
-                        sheetHideParentTagId={folder.id}
-                        sheetFolderTagName={folder.name}
-                        sheetParentTagId={folder.id}
-                        emptyHint="이 폴더의 메모가 아직 없습니다."
-                      />
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -340,6 +351,10 @@ export function HomeFolderFileView({
           )
         })
       )}
+    </div>
+      <div className="folder-file-drawer" aria-hidden="true">
+        <span className="folder-file-drawer-handle" />
+      </div>
     </div>
   )
 }

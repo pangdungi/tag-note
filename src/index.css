@@ -7305,25 +7305,39 @@ button.note-board-tag-pill--link:focus-visible {
 
 .home-main--parent-rail-hero
   .parent-tag-rail-section--books-view
-  .folder-file-stack {
+  .folder-file-cabinet {
   height: 100%;
   min-height: 0;
 }
 
-.folder-file-stack {
+.folder-file-cabinet {
   --folder-tab-h: 26px;
   --folder-pane-h: 4.6rem;
   --folder-stack-gap: 17px;
   --folder-line: #111111;
   --folder-fill: #ffffff;
   --folder-tab-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --folder-drawer-h: 3.35rem;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0 1.5rem;
+  box-sizing: border-box;
+}
+
+.folder-file-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   flex: 1 1 0;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
-  padding: calc(var(--folder-tab-h) + 0.35rem) 1.5rem 2.4rem;
+  padding: calc(var(--folder-tab-h) + 0.35rem) 0 0;
+  margin-bottom: calc(var(--folder-drawer-h) * -0.42);
   box-sizing: border-box;
   scrollbar-width: none;
 }
@@ -7347,7 +7361,39 @@ button.note-board-tag-pill--link:focus-visible {
 }
 
 .folder-file--open + .folder-file {
-  margin-top: 0.7rem;
+  margin-top: 0;
+}
+
+.folder-file-drawer {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 var(--folder-drawer-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border: 1px solid var(--folder-line);
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+}
+
+.folder-file-drawer-handle {
+  display: block;
+  width: 2.55rem;
+  height: 0.38rem;
+  border-radius: 999px;
+  background: #111111;
+}
+
+.folder-file-paper {
+  height: auto;
+  max-height: min(38vh, 18rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  background: #ffffff;
+  color: #111111;
 }
 
 .folder-file-card {
@@ -7355,7 +7401,11 @@ button.note-board-tag-pill--link:focus-visible {
   background: var(--folder-fill);
   border: 1px solid var(--folder-line);
   border-top: none;
-  border-radius: 0 0 8px 8px;
+  border-radius: 0;
+}
+
+.folder-file:last-child .folder-file-card {
+  border-bottom: none;
 }
 
 .folder-file-ridge {
@@ -7422,7 +7472,7 @@ button.note-board-tag-pill--link:focus-visible {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 0.84rem;
+  font-size: 0.78rem;
   font-weight: 700;
 }
 
@@ -7503,12 +7553,8 @@ button.note-board-tag-pill--link:focus-visible {
 }
 
 .folder-file-sheet {
-  min-height: 8.5rem;
-  max-height: min(58vh, 26rem);
-  overflow-x: hidden;
-  overflow-y: auto;
+  min-height: 6rem;
+  overflow: visible;
   background: #ffffff;
   color: #111111;
-  border: 1px solid #111111;
-  border-radius: 4px;
 }
