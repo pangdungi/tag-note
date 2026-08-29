@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react'
 import type { SourceRow } from '../lib/notesApi'
 import { resolveSourceSpineUrl } from '../lib/bookCatalogServer'
 import { bookStandingHeightMm, displaySourceTitle } from '../lib/sourceUtils'
@@ -10,7 +10,7 @@ type SourceSpineCardProps = {
   expanded: boolean
   tagCount: number
   maxSpineHeight?: number
-  onSelect: () => void
+  onSelect: (event: MouseEvent<HTMLButtonElement>) => void
   onSpineSize?: (size: { width: number; height: number }) => void
 }
 
@@ -95,7 +95,7 @@ export function SourceSpineCard({
         aria-expanded={expanded}
         aria-label={label}
         title={label}
-        onClick={onSelect}
+        onClick={(event) => onSelect(event)}
       >
         {useImage && spineUrl ? (
           <img

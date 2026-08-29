@@ -38,6 +38,18 @@ export function yes24CoverImageUrl(goodsNo: string | number): string {
   return `https://image.yes24.com/goods/${goodsNo}/XL`
 }
 
+/** DB 표지 URL → 없으면 yes24_goods_no로 표지 URL 생성 */
+export function resolveSourceCoverUrl(source: {
+  cover_image_url?: string | null
+  yes24_goods_no?: string | null
+}): string | null {
+  const direct = source.cover_image_url?.trim()
+  if (direct) return direct
+  const goodsNo = source.yes24_goods_no?.trim()
+  if (goodsNo) return yes24CoverImageUrl(goodsNo)
+  return null
+}
+
 /** DB spine URL → 없으면 yes24_goods_no로 SIDE URL 생성 */
 export function resolveSourceSpineUrl(source: {
   spine_image_url?: string | null

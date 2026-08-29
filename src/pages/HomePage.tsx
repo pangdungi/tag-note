@@ -4,6 +4,7 @@ import { SourceComposer, type SelectedSource } from '../components/SourceCompose
 import { AddParentTagModal } from '../components/AddParentTagModal'
 import { AddBookModal } from '../components/AddBookModal'
 import { SourceSpineCard } from '../components/SourceSpineCard'
+import { SourceCoverPreview } from '../components/SourceCoverPreview'
 import { EditParentTagModal } from '../components/EditParentTagModal'
 import { EditTagModal } from '../components/EditTagModal'
 import { EditSourceModal } from '../components/EditSourceModal'
@@ -86,6 +87,7 @@ import {
   displaySourceTitle,
   groupSourcesByCategory,
   sortSourcesForAllLinksView,
+  SOURCE_CATEGORY_UNCategorized,
   sourceTitleKey,
   type LinksViewMode,
 } from '../lib/sourceUtils'
@@ -1310,6 +1312,10 @@ export function HomePage() {
   const [sourceNotesLoadingMore, setSourceNotesLoadingMore] = useState(false)
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null)
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
+  const [previewSourceId, setPreviewSourceId] = useState<string | null>(null)
+  const [previewSpineHeight, setPreviewSpineHeight] = useState(160)
+  const [coverOpeningId, setCoverOpeningId] = useState<string | null>(null)
+  const COVER_OPEN_MS = 560
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
   /** 상위태그 모드 — 하위 태그 메모만 닫아도 펼친 상위 스파인 유지 */
   const [booksRailExpandedParentId, setBooksRailExpandedParentId] = useState<
@@ -2710,6 +2716,70 @@ export function HomePage() {
     syncTagPullEntryForSelection(null)
     setViewingNote(null)
   }
+
+  function openSourceCoverPreview(
+    sourceId: string,
+    event: { currentTarget: EventTarget & HTMLElement },
+  ) {
+    if (coverOpeningId) return
+    if (previewSourceId === sourceId) {
+      setPreviewSourceId(null)
+      return
+    }
+    const card = event.currentTarget.closest('.parent-tag-card')
+    const height = (card ?? event.currentTarget).getBoundingClientRect().height
+    setPreviewSpineHeight(height > 0 ? height : 160)
+    setPreviewSourceId(sourceId)
+  }
+
+  function closeSourceCoverPreview() {
+    setCoverOpeningId(null)
+    setPreviewSourceId(null)
+  }
+
+  function openSourceFromCoverPreview() {
+    if (!previewSourceId || coverOpeningId) return
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      const sourceId = previewSourceId
+      closeSourceCoverPreview()
+      toggleSourceSelect(sourceId)
+      return
+    }
+    setCoverOpeningId(previewSourceId)
+  }
+
+  useEffect(() => {
+    if (!coverOpeningId) return
+    const sourceId = coverOpeningId
+    const timer = window.setTimeout(() => {
+      setCoverOpeningId(null)
+      setPreviewSourceId(null)
+      setSelectedSourceId(sourceId)
+      setTagSearch('')
+      setSearchNotesResult(null)
+      setSearchError(null)
+      setSelectedTagId(null)
+      setTagViewDrillDown(false)
+      setSearchOpen(false)
+      setViewingNote(null)
+      setViewingNoteContextTagId(null)
+    }, COVER_OPEN_MS)
+    return () => window.clearTimeout(timer)
+  }, [coverOpeningId])
+
+  useEffect(() => {
+    if (homeBrowseNav !== 'links') closeSourceCoverPreview()
+  }, [homeBrowseNav])
+
+  useLayoutEffect(() => {
+    if (!previewSourceId) return
+    const cover = document.querySelector('.links-shelf-cover')
+    if (!(cover instanceof HTMLElement)) return
+    cover.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+  }, [previewSourceId])
 
   function toggleSourceSelect(sourceId: string) {
     setSelectedSourceId((cur) => {
@@ -4171,11 +4241,21 @@ export function HomePage() {
                                         expanded={false}
                                         tagCount={tagCount}
                                         maxSpineHeight={spineHeightMaxFor(s)}
-                                        onSelect={() => toggleSourceSelect(s.id)}
+                                        onSelect={(event) =>
+                                          openSourceCoverPreview(s.id, event)
+                                        }
                                         onSpineSize={(size) =>
                                           rememberSpineSize(s.id, size)
                                         }
                                       />
+                                      {previewSourceId === s.id ? (
+                                        <SourceCoverPreview
+                                          source={s}
+                                          spineHeight={previewSpineHeight}
+                                          opening={coverOpeningId === s.id}
+                                          onOpen={openSourceFromCoverPreview}
+                                        />
+                                      ) : null}
                                     </div>
                                   </li>
                                 )
@@ -4200,7 +4280,11 @@ export function HomePage() {
                                 tagSpineSlotRefs.current.delete(shelf.categoryKey)
                               }
                             }}
-                            className="links-category-shelf"
+                            className={`links-category-shelf${
+                              shelf.category === SOURCE_CATEGORY_UNCategorized
+                                ? ' links-category-shelf--uncategorized'
+                                : ''
+                            }`}
                             aria-label={`${shelf.category} 분야`}
                           >
                             <h3 className="links-category-shelf-heading">
@@ -4226,11 +4310,21 @@ export function HomePage() {
                                           expanded={false}
                                           tagCount={tagCount}
                                           maxSpineHeight={spineHeightMaxFor(s)}
-                                          onSelect={() => toggleSourceSelect(s.id)}
+                                          onSelect={(event) =>
+                                            openSourceCoverPreview(s.id, event)
+                                          }
                                           onSpineSize={(size) =>
                                             rememberSpineSize(s.id, size)
                                           }
                                         />
+                                        {previewSourceId === s.id ? (
+                                          <SourceCoverPreview
+                                            source={s}
+                                            spineHeight={previewSpineHeight}
+                                            opening={coverOpeningId === s.id}
+                                            onOpen={openSourceFromCoverPreview}
+                                          />
+                                        ) : null}
                                       </div>
                                     </li>
                                   )
