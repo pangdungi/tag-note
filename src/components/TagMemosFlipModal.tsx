@@ -7,7 +7,7 @@ import {
 import { displaySourceTitle } from '../lib/sourceUtils'
 import { MemoBodyContent } from './MemoBodyContent'
 
-const FLIP_MS = 720
+const SLIDE_MS = 480
 
 function formatNoteWhen(iso: string) {
   try {
@@ -106,11 +106,8 @@ export function TagMemosFlipModal({
       }
     }
     window.addEventListener('keydown', onKey)
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
     return () => {
       window.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prevOverflow
     }
   }, [open, onClose])
 
@@ -119,7 +116,7 @@ export function TagMemosFlipModal({
     const reduce =
       typeof window !== 'undefined' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const delay = reduce ? 0 : FLIP_MS
+    const delay = reduce ? 0 : SLIDE_MS
     const timer = window.setTimeout(() => {
       setIndex((cur) =>
         turn === 'next'
@@ -146,13 +143,6 @@ export function TagMemosFlipModal({
 
   return (
     <div className="tag-memos-flip-overlay" role="presentation">
-      <button
-        type="button"
-        className="tag-memos-flip-backdrop"
-        aria-hidden="true"
-        tabIndex={-1}
-        onClick={() => onClose()}
-      />
       <div
         className="tag-memos-flip-dialog"
         role="dialog"
@@ -186,14 +176,11 @@ export function TagMemosFlipModal({
             />
           </div>
           <div className="tag-memos-flip-page tag-memos-flip-page--front">
-            <div className="tag-memos-flip-face tag-memos-flip-face--front">
-              <PaperFace
-                note={loading ? null : frontNote}
-                loading={loading}
-                sourceCatalog={sourceCatalog}
-              />
-            </div>
-            <div className="tag-memos-flip-face tag-memos-flip-face--back" />
+            <PaperFace
+              note={loading ? null : frontNote}
+              loading={loading}
+              sourceCatalog={sourceCatalog}
+            />
           </div>
         </div>
 

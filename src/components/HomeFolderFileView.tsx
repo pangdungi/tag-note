@@ -129,12 +129,14 @@ function FolderFileRidge({
   count,
   slot,
   isOpen,
+  zIndex,
   onClick,
 }: {
   label: string
   count: number
   slot: number
   isOpen: boolean
+  zIndex: number
   onClick: () => void
 }) {
   const boxRef = useRef<HTMLButtonElement>(null)
@@ -173,6 +175,7 @@ function FolderFileRidge({
       ref={boxRef}
       type="button"
       className="folder-file-ridge"
+      style={{ zIndex }}
       aria-pressed={isOpen}
       aria-expanded={isOpen}
       aria-label={`${label} ${count}`}
@@ -280,19 +283,22 @@ export function HomeFolderFileView({
               key={folder.id}
               ref={(el) => slotRef(folder.id, el)}
               data-folder-id={folder.id}
-              style={{ zIndex: index + 1 }}
               className={`folder-file folder-file--slot-${slot}${
                 isOpen ? ' folder-file--open' : ''
               }`}
             >
-              <div className="folder-file-card">
-                <FolderFileRidge
-                  label={label}
-                  count={memoCount}
-                  slot={slot}
-                  isOpen={isOpen}
-                  onClick={() => onSelectFolder(folder.id)}
-                />
+              <FolderFileRidge
+                label={label}
+                count={memoCount}
+                slot={slot}
+                isOpen={isOpen}
+                zIndex={folders.length + index + 1}
+                onClick={() => onSelectFolder(folder.id)}
+              />
+              <div
+                className="folder-file-card"
+                style={{ zIndex: index + 1 }}
+              >
                 {isOpen ? (
                   <div className="folder-file-paper">
                     <div className="folder-file-body">

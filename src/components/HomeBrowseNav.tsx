@@ -1,8 +1,7 @@
 import tagNavIconUrl from '../assets/home-nav-tag-icon.png'
-import bookNavIconUrl from '../assets/home-nav-book-icon.png'
+import doodleBookIconUrl from '../assets/home-nav-doodle-book.png'
+import doodleFolderIconUrl from '../assets/home-nav-doodle-folder.png'
 import backNavIconUrl from '../assets/home-nav-back-icon.png'
-import linkNavIconUrl from '../assets/home-nav-link-icon.png'
-import calendarNavIconUrl from '../assets/home-nav-calendar-icon.png'
 import eyeNavIconUrl from '../assets/home-nav-eye-icon.png'
 
 import type { HomeBrowseNavMode } from '../lib/tagUtils'
@@ -15,10 +14,9 @@ const NAV_ITEMS: {
   title: string
   icon: string
 }[] = [
-  { id: 'links', label: '출처', title: '출처별 보기', icon: linkNavIconUrl },
-  { id: 'books', label: '파일', title: '폴더별 보기', icon: bookNavIconUrl },
+  { id: 'links', label: '책', title: '책·출처별 보기', icon: doodleBookIconUrl },
+  { id: 'books', label: '폴더', title: '폴더별 보기', icon: doodleFolderIconUrl },
   { id: 'tags', label: '태그', title: '태그별 보기', icon: tagNavIconUrl },
-  { id: 'dates', label: '날짜', title: '날짜별 보기', icon: calendarNavIconUrl },
 ]
 
 type HomeBrowseNavButtonsProps = {
@@ -65,7 +63,11 @@ export function HomeBrowseNavButtons({
           <button
             key={item.id}
             type="button"
-            className={`btn btn--icon${isActive ? ' btn--active' : ''}`}
+            className={`btn btn--icon${
+              item.id === 'links' || item.id === 'books'
+                ? ' btn--icon-doodle'
+                : ''
+            }${isActive ? ' btn--active' : ''}`}
             aria-label={isNavBack ? backLabel : item.label}
             title={isNavBack ? backTitle : item.title}
             aria-pressed={isActive}

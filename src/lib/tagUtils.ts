@@ -271,14 +271,13 @@ export function getIndependentTags(
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
-/** 태그 뷰 레일 — 폴더(is_parent) 태그만 제외 */
+/** 태그 뷰 나선 — 폴더·일반 구분 없이 전부 */
 export function getTagsForTagViewRail(
   tags: TagHierarchyRow[],
-  links?: TagParentLink[],
+  _links?: TagParentLink[],
 ): TagHierarchyRow[] {
-  return tags
-    .filter((t) => !isBooksRailParentTag(t, tags, links))
-    .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  void _links
+  return [...tags].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
 export function resolveTagFilterIds(

@@ -1,12 +1,16 @@
-import { useLayoutEffect, useMemo, useState, type RefObject } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { TagRow } from '../lib/notesApi'
 import { formatHashtagLabel, TAG_VIEW_NONE_ID } from '../lib/tagUtils'
 
 const ANGLE_STEP = 0.078
 const ITEM_STRIDE = 32
 const VISIBLE_RAD = 0.7
+const START_ANGLE = -0.42
 const LEFT = 48
 const PAD_Y = 0.18
+const PAD_UNITS = -START_ANGLE / ANGLE_STEP
+const PAD_PX = PAD_UNITS * ITEM_STRIDE
+const END_PAD = ITEM_STRIDE * 3
 
 type SpiralItem = {
   id: string
@@ -33,8 +37,9 @@ export function HomeTagSpiralRail({
   slotRef,
   onSelect,
 }: Props) {
-  const [scrollTop, setScrollTop] = useState(0)
+  const [scrollTop, setScrollTop] = useState(PAD_PX)
   const [view, setView] = useState({ width: 0, height: 0 })
+  const primedRef = useRef(false)
 
   const items = useMemo<SpiralItem[]>(
     () => [
@@ -48,9 +53,16 @@ export function HomeTagSpiralRail({
     [tags, memoCounts, noneCount],
   )
 
+  const count = items.length
+  const spacerH = PAD_PX + count * ITEM_STRIDE + END_PAD
+
+  useLayoutEffect(() => {
+    primedRef.current = false
+  }, [count])
+
   useLayoutEffect(() => {
     const scroller = scrollRef.current
-    if (!scroller) return
+    if (!scroller || count === 0) return
 
     const sync = () => {
       setScrollTop(scroller.scrollTop)
@@ -58,6 +70,12 @@ export function HomeTagSpiralRail({
         width: scroller.clientWidth,
         height: scroller.clientHeight,
       })
+    }
+
+    if (!primedRef.current) {
+      primedRef.current = true
+      scroller.scrollTop = PAD_PX
+      setScrollTop(PAD_PX)
     }
 
     sync()
@@ -68,17 +86,20 @@ export function HomeTagSpiralRail({
       scroller.removeEventListener('scroll', sync)
       observer.disconnect()
     }
-  }, [scrollRef, items.length])
+  }, [scrollRef, count])
 
   const innerH = Math.max(view.height * (1 - PAD_Y * 2), 160)
   const radius = Math.max(innerH * 0.78, 180)
   const cx = -radius + LEFT
   const cy = view.height * 0.5
-  const ready = view.width > 0 && view.height > 0
-  const spacerH = Math.max(
-    items.length * ITEM_STRIDE,
-    (items.length - 1) * ITEM_STRIDE + Math.round(view.height * 0.45),
-  )
+  const ready = view.width > 0 && view.height > 0 && count > 0
+
+  function scrollToCenter(id: string) {
+    const scroller = scrollRef.current
+    const index = items.findIndex((item) => item.id === id)
+    if (!scroller || index < 0) return
+    scroller.scrollTo({ top: index * ITEM_STRIDE, behavior: 'smooth' })
+  }
 
   return (
     <div
@@ -94,9 +115,9 @@ export function HomeTagSpiralRail({
           {ready
             ? items.map((item, index) => {
                 const theta =
-                  -0.42 +
+                  START_ANGLE +
                   index * ANGLE_STEP -
-                  (scrollTop / ITEM_STRIDE) * ANGLE_STEP
+                  ((scrollTop - PAD_PX) / ITEM_STRIDE) * ANGLE_STEP
                 if (Math.abs(theta) > VISIBLE_RAD) return null
                 const x = cx + radius * Math.cos(theta)
                 const y = cy + radius * Math.sin(theta)
@@ -115,7 +136,10 @@ export function HomeTagSpiralRail({
                     aria-pressed={isSelected}
                     aria-label={item.label}
                     title={item.label}
-                    onClick={() => onSelect(item.id)}
+                    onClick={() => {
+                      scrollToCenter(item.id)
+                      onSelect(item.id)
+                    }}
                   >
                     <span className="tag-view-spiral-label">{item.label}</span>
                     <span className="tag-view-spiral-count">{item.count}</span>
@@ -126,6 +150,7 @@ export function HomeTagSpiralRail({
         </div>
       </div>
       <div className="tag-view-spiral-spacer" style={{ height: spacerH }}>
+        <div style={{ height: PAD_PX }} />
         {items.map((item) => (
           <div
             key={item.id}
@@ -134,6 +159,7 @@ export function HomeTagSpiralRail({
             style={{ height: ITEM_STRIDE }}
           />
         ))}
+        <div style={{ height: END_PAD }} />
       </div>
     </div>
   )

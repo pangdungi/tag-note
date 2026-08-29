@@ -997,6 +997,7 @@ type HomeQuickActionButtonsProps = {
   onAddBook: () => void
   onOpenAccount: () => void
   mobileBrowseFab?: ReactNode
+  showAccount?: boolean
 }
 
 type RailEditContext =
@@ -1069,6 +1070,7 @@ function HomeQuickActionButtons({
   onAddBook,
   onOpenAccount,
   mobileBrowseFab,
+  showAccount = true,
 }: HomeQuickActionButtonsProps) {
   const showSpecialAdd = showAddParentTagCompose || showAddBookCompose
   const specialAddLabel = showAddBookCompose
@@ -1155,23 +1157,25 @@ function HomeQuickActionButtons({
         )}
       </button>
       {mobileBrowseFab}
-      <button
-        type="button"
-        className="btn btn--icon"
-        aria-label="내 계정"
-        title="내 계정"
-        disabled={!user}
-        onClick={onOpenAccount}
-      >
-        <img
-          src={userCircleIconUrl}
-          alt=""
-          className="btn--icon-img"
-          width={20}
-          height={20}
-          decoding="async"
-        />
-      </button>
+      {showAccount ? (
+        <button
+          type="button"
+          className="btn btn--icon"
+          aria-label="내 계정"
+          title="내 계정"
+          disabled={!user}
+          onClick={onOpenAccount}
+        >
+          <img
+            src={userCircleIconUrl}
+            alt=""
+            className="btn--icon-img"
+            width={20}
+            height={20}
+            decoding="async"
+          />
+        </button>
+      ) : null}
     </>
   )
 }
@@ -1443,6 +1447,9 @@ export function HomePage() {
   }, [selectedTagId])
   useEffect(() => {
     homeBrowseNavRef.current = homeBrowseNav
+  }, [homeBrowseNav])
+  useEffect(() => {
+    if (homeBrowseNav === 'dates') setHomeBrowseNav('tags')
   }, [homeBrowseNav])
   useEffect(() => {
     tagFilterNavRef.current = tagFilterNav
@@ -2593,6 +2600,7 @@ export function HomePage() {
   }
 
   function selectBrowseNav(id: HomeBrowseNavId) {
+    if (id === 'dates') return
     clearTagDetailReturnContext()
     setTagMemosFlipOpen(false)
     setHomeBrowseNav(id)
@@ -3350,13 +3358,7 @@ export function HomePage() {
         ? ('분야' as const)
         : ('태그' as const)
 
-  const showBrowseRailIndex =
-    effectiveShowBrowseRail &&
-    browseRailIndexItems.length > 0 &&
-    !(homeBrowseNav === 'links' && (selectedSourceId || linksViewMode === 'all')) &&
-    (homeBrowseNav === 'tags' ||
-      homeBrowseNav === 'books' ||
-      homeBrowseNav === 'links')
+  const showBrowseRailIndex = false
 
   const scrollToBrowseRailIndex = useCallback(
     (key: TagRailIndexKey) => {
@@ -3729,6 +3731,51 @@ export function HomePage() {
           showRailViewport ? 'home-rail-viewport' : 'home-page-shell'
         }
       >
+        {!showBootstrap ? (
+          <header className="home-top-chrome">
+            <div className="home-top-chrome-start">
+              <HomeBrowseNavButtons
+                activeId={homeBrowseNav}
+                disabled={!canUseCompose}
+                onSelect={selectBrowseNav}
+                booksBackMode={showBooksNavBackMode}
+                onBooksBack={collapseBooksParentRail}
+                linksBackMode={showLinksNavBackMode}
+                onLinksBack={collapseLinksSourceRail}
+              />
+              {showLinksViewModeTabs ? (
+                <div className="home-bottom-links-mode">
+                  <ModalSegmentTabs
+                    tabs={LINKS_VIEW_TABS}
+                    activeId={linksViewMode}
+                    onChange={(id) =>
+                      setLinksViewMode(id as LinksViewMode)
+                    }
+                    ariaLabel="출처 보기 방식"
+                  />
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className="btn btn--icon"
+              aria-label="내 계정"
+              title="내 계정"
+              disabled={!user}
+              onClick={() => setAccountModalOpen(true)}
+            >
+              <img
+                src={userCircleIconUrl}
+                alt=""
+                className="btn--icon-img"
+                width={20}
+                height={20}
+                decoding="async"
+              />
+            </button>
+          </header>
+        ) : null}
+
         {!showBootstrap && showHomeTopTagSearch ? (
           <>
             <header
@@ -4510,30 +4557,7 @@ export function HomePage() {
 
         {!showBootstrap ? (
           <nav className="home-bottom-menu-bar" aria-label="메뉴">
-            <div className="home-bottom-menu-bar-inner">
-              <div className="home-bottom-browse-nav">
-                <HomeBrowseNavButtons
-                  activeId={homeBrowseNav}
-                  disabled={!canUseCompose}
-                  onSelect={selectBrowseNav}
-                  booksBackMode={showBooksNavBackMode}
-                  onBooksBack={collapseBooksParentRail}
-                  linksBackMode={showLinksNavBackMode}
-                  onLinksBack={collapseLinksSourceRail}
-                />
-                {showLinksViewModeTabs ? (
-                  <div className="home-bottom-links-mode">
-                    <ModalSegmentTabs
-                      tabs={LINKS_VIEW_TABS}
-                      activeId={linksViewMode}
-                      onChange={(id) =>
-                        setLinksViewMode(id as LinksViewMode)
-                      }
-                      ariaLabel="출처 보기 방식"
-                    />
-                  </div>
-                ) : null}
-              </div>
+            <div className="home-bottom-menu-bar-inner home-bottom-menu-bar-inner--actions">
               <div className="home-bottom-quick-actions">
                 <HomeQuickActionButtons
                   canUseCompose={canUseCompose}
@@ -4542,6 +4566,7 @@ export function HomePage() {
                   showAddBookCompose={showAddBookCompose}
                   searchActive={searchOpen || hasActiveSearch}
                   user={user}
+                  showAccount={false}
                   showRailSettings={
                     railEditContext !== null && railEditContext.kind !== 'parent'
                   }
