@@ -32,6 +32,7 @@ type Props = {
   tagCatalog: Map<string, TagRow>
   sourceCatalog: Map<string, SourceRow>
   onEdit?: (note: NoteWithTags) => void
+  onEditFolder?: () => void
   onTagFilter?: (tagId: string) => void
   onSourceFilter?: (sourceId: string) => void
 }
@@ -155,10 +156,12 @@ function FolderPageTabHead({
   title,
   extraTags,
   onTagFilter,
+  onEditFolder,
 }: {
   title: string
   extraTags: TagRow[]
   onTagFilter?: (tagId: string) => void
+  onEditFolder?: () => void
 }) {
   const boxRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLHeadingElement>(null)
@@ -229,6 +232,28 @@ function FolderPageTabHead({
           {title}
         </h2>
       ) : null}
+      {onEditFolder ? (
+        <button
+          type="button"
+          className="folder-memos-page-tab-edit"
+          aria-label="폴더 수정"
+          title="폴더 수정"
+          onClick={onEditFolder}
+        >
+          <svg
+            className="folder-memos-page-tab-edit-icon"
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            aria-hidden
+          >
+            <path
+              fill="currentColor"
+              d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.04a1 1 0 0 0 0-1.41l-2.51-2.51a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.99-1.66z"
+            />
+          </svg>
+        </button>
+      ) : null}
       {extraTags.length > 0 ? (
         <div className="folder-memos-page-tags folder-memos-page-tab-tags">
           {extraTags.map((tg) =>
@@ -264,6 +289,7 @@ export function FolderMemosView({
   tagCatalog,
   sourceCatalog,
   onEdit,
+  onEditFolder,
   onTagFilter,
   onSourceFilter,
 }: Props) {
@@ -347,6 +373,7 @@ export function FolderMemosView({
             title={titleLabel}
             extraTags={extraTags}
             onTagFilter={onTagFilter}
+            onEditFolder={onEditFolder}
           />
         ) : titleLabel || extraTags.length > 0 ? (
           <div className="tag-memos-flip-head folder-memos-page-head">

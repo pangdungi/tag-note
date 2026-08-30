@@ -7159,6 +7159,38 @@ body:has(.tag-memos-flip-overlay) .tag-view-spiral {
   line-height: 1;
 }
 
+.folder-memos-page-tab-edit {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: calc(1.75rem - 1px);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.folder-memos-page-tab-edit:hover:not(:disabled) {
+  color: #6b7280;
+}
+
+.folder-memos-page-tab-edit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.folder-memos-page-tab-edit-icon {
+  display: block;
+}
+
 .folder-memos-page-tab-title {
   position: absolute;
   top: 0;

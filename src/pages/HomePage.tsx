@@ -4520,6 +4520,15 @@ export function HomePage() {
                   tagCatalog={tagCatalogMap}
                   sourceCatalog={sourceCatalogMap}
                   onEdit={canUseCompose ? openEditNote : undefined}
+                  onEditFolder={
+                    canUseCompose && selectedTag
+                      ? () => {
+                          setRailEditingSource(null)
+                          setRailEditingTag(null)
+                          setRailEditingParentTag(selectedTag)
+                        }
+                      : undefined
+                  }
                   onTagFilter={openTagViewFromNote}
                   onSourceFilter={filterBySourceFromCard}
                 />
