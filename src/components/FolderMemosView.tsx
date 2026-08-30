@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
-  resolveNoteTagChips,
   resolveNoteSourceTitle,
+  resolveNoteTagChips,
   type NoteWithTags,
   type SourceRow,
   type TagRow,
 } from '../lib/notesApi'
-import { displayTagName } from '../lib/tagUtils'
 import { displaySourceTitle } from '../lib/sourceUtils'
+import { formatHashtagLabel } from '../lib/tagUtils'
 import { MemoBodyContent } from './MemoBodyContent'
 
 function formatNoteWhen(iso: string) {
@@ -24,7 +24,11 @@ function formatNoteWhen(iso: string) {
 type Props = {
   notes: NoteWithTags[]
   loading: boolean
-  folderTagId: string
+  folderTagId?: string
+  sourceId?: string
+  titleLabel?: string
+  folderTab?: boolean
+  emptyHint?: string
   tagCatalog: Map<string, TagRow>
   sourceCatalog: Map<string, SourceRow>
   onEdit?: (note: NoteWithTags) => void
@@ -32,55 +36,48 @@ type Props = {
   onSourceFilter?: (sourceId: string) => void
 }
 
-function useNoteChrome(
-  note: NoteWithTags | null,
-  folderTagId: string,
-  tagCatalog: Map<string, TagRow>,
-) {
-  return useMemo(() => {
-    if (!note) {
-      return [] as { id: string; name: string; color_index: number }[]
-    }
-    const sortedTags = [...resolveNoteTagChips(note, tagCatalog)].sort((a, b) =>
-      a.name.localeCompare(b.name, 'ko'),
-    )
-    const resolvedPrimary =
-      sortedTags.find((t) => t.id === folderTagId) ?? sortedTags[0] ?? null
-    return resolvedPrimary
-      ? sortedTags.filter((t) => t.id !== resolvedPrimary.id)
-      : []
-  }, [note, folderTagId, tagCatalog])
-}
-
-function FolderMemoArticle({
+function PaperSheet({
   note,
-  folderTagId,
-  tagCatalog,
-  sourceCatalog,
+  sourceId,
   loading,
+  emptyHint,
+  sourceCatalog,
   onEdit,
-  onTagFilter,
   onSourceFilter,
 }: {
-  note: NoteWithTags
-  folderTagId: string
-  tagCatalog: Map<string, TagRow>
-  sourceCatalog: Map<string, SourceRow>
+  note: NoteWithTags | null
+  sourceId?: string
   loading?: boolean
+  emptyHint: string
+  sourceCatalog: Map<string, SourceRow>
   onEdit?: (note: NoteWithTags) => void
-  onTagFilter?: (tagId: string) => void
   onSourceFilter?: (sourceId: string) => void
 }) {
-  const otherTags = useNoteChrome(note, folderTagId, tagCatalog)
+  if (loading && !note) {
+    return (
+      <div className="tag-memos-flip-sheet">
+        <p className="tag-memos-flip-empty">불러오는 중…</p>
+      </div>
+    )
+  }
+  if (!note) {
+    return (
+      <div className="tag-memos-flip-sheet">
+        <p className="tag-memos-flip-empty">{emptyHint}</p>
+      </div>
+    )
+  }
+
   const src = resolveNoteSourceTitle(note, sourceCatalog)
   const srcId = note.source_id ?? note.sources?.id ?? null
+  const hideSource = Boolean(sourceId && srcId === sourceId)
   const body = note.body?.trim() ?? ''
   const canEdit = Boolean(onEdit) && !loading
 
   return (
-    <article
-      className={`folder-memos-article${
-        canEdit ? ' folder-memos-article--edit' : ''
+    <div
+      className={`tag-memos-flip-sheet${
+        canEdit ? ' tag-memos-flip-sheet--edit' : ''
       }`}
       role={canEdit ? 'button' : undefined}
       tabIndex={canEdit ? 0 : undefined}
@@ -96,39 +93,16 @@ function FolderMemoArticle({
         }
       }}
     >
-      {otherTags.length > 0 ? (
-        <div className="folder-memos-article-tags" aria-label="함께 붙은 태그">
-          {otherTags.map((tg) =>
-            onTagFilter ? (
-              <button
-                key={tg.id}
-                type="button"
-                className="note-board-tag-pill note-board-tag-pill--link"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onTagFilter(tg.id)
-                }}
-              >
-                {displayTagName(tg.name)}
-              </button>
-            ) : (
-              <span key={tg.id} className="note-board-tag-pill">
-                {displayTagName(tg.name)}
-              </span>
-            ),
-          )}
-        </div>
-      ) : null}
       <MemoBodyContent
         as="div"
         body={loading ? '' : body}
-        className={`note-view-modal-text${
-          !body && !loading ? ' note-view-modal-text--empty' : ''
+        className={`tag-memos-flip-text${
+          !body && !loading ? ' tag-memos-flip-text--empty' : ''
         }`}
         emptyLabel={loading ? '불러오는 중…' : '내용 없음'}
       />
-      <div className="note-view-modal-meta">
-        {src ? (
+      <div className="tag-memos-flip-meta">
+        {src && !hideSource ? (
           srcId && onSourceFilter ? (
             <button
               type="button"
@@ -141,14 +115,141 @@ function FolderMemoArticle({
               {displaySourceTitle(src)}
             </button>
           ) : (
-            <span className="note-view-modal-source-static">
-              {displaySourceTitle(src)}
-            </span>
+            <span>{displaySourceTitle(src)}</span>
           )
         ) : null}
         <time dateTime={note.created_at}>{formatNoteWhen(note.created_at)}</time>
       </div>
-    </article>
+    </div>
+  )
+}
+
+const FOLDER_TAB_H = 28
+const FOLDER_TAB_JOIN = 6
+const FOLDER_TAB_CORNER = 8
+const FOLDER_TAB_STROKE = 1.25
+const FOLDER_TAB_PAD = 10
+
+function folderPageTabPath(width: number, tabLeft: number, tabWidth: number) {
+  const y = FOLDER_TAB_H - FOLDER_TAB_STROKE / 2
+  const top = FOLDER_TAB_STROKE / 2
+  const start = tabLeft
+  const end = tabLeft + tabWidth
+  const wallL = start + FOLDER_TAB_JOIN
+  const wallR = end - FOLDER_TAB_JOIN
+  return [
+    `M 0 ${y}`,
+    `H ${start}`,
+    `Q ${wallL} ${y} ${wallL} ${y - FOLDER_TAB_JOIN}`,
+    `L ${wallL} ${top + FOLDER_TAB_CORNER}`,
+    `Q ${wallL} ${top} ${wallL + FOLDER_TAB_CORNER} ${top}`,
+    `H ${wallR - FOLDER_TAB_CORNER}`,
+    `Q ${wallR} ${top} ${wallR} ${top + FOLDER_TAB_CORNER}`,
+    `L ${wallR} ${y - FOLDER_TAB_JOIN}`,
+    `Q ${wallR} ${y} ${end} ${y}`,
+    `H ${width}`,
+  ].join(' ')
+}
+
+function FolderPageTabHead({
+  title,
+  extraTags,
+  onTagFilter,
+}: {
+  title: string
+  extraTags: TagRow[]
+  onTagFilter?: (tagId: string) => void
+}) {
+  const boxRef = useRef<HTMLDivElement>(null)
+  const textRef = useRef<HTMLHeadingElement>(null)
+  const [geom, setGeom] = useState({ width: 0, textW: 80 })
+
+  useLayoutEffect(() => {
+    const box = boxRef.current
+    const text = textRef.current
+    if (!box || !text) return
+    const update = () => {
+      setGeom({
+        width: box.clientWidth,
+        textW: Math.ceil(text.getBoundingClientRect().width),
+      })
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(box)
+    observer.observe(text)
+    return () => observer.disconnect()
+  }, [title])
+
+  const tabWidth = Math.max(
+    geom.textW + FOLDER_TAB_JOIN * 2 + FOLDER_TAB_PAD * 2,
+    64,
+  )
+  const width = Math.max(geom.width, tabWidth + 8)
+  const tabLeft = 0
+  const ready = geom.width > 0
+
+  return (
+    <div
+      className={`folder-memos-page-tab${
+        extraTags.length > 0 ? ' folder-memos-page-tab--tags' : ''
+      }`}
+      ref={boxRef}
+    >
+      <h2 ref={textRef} className="folder-memos-page-tab-probe">
+        {title}
+      </h2>
+      {ready ? (
+        <svg
+          className="folder-memos-page-tab-svg"
+          viewBox={`0 0 ${width} ${FOLDER_TAB_H}`}
+          width={width}
+          height={FOLDER_TAB_H}
+          aria-hidden
+        >
+          <path
+            d={folderPageTabPath(width, tabLeft, tabWidth)}
+            fill="none"
+            stroke="#111111"
+            strokeWidth={FOLDER_TAB_STROKE}
+            strokeLinejoin="round"
+            strokeLinecap="butt"
+            shapeRendering="geometricPrecision"
+          />
+        </svg>
+      ) : null}
+      {ready ? (
+        <h2
+          className="folder-memos-page-tab-title"
+          style={{
+            left: tabLeft + FOLDER_TAB_JOIN + FOLDER_TAB_PAD,
+            width: tabWidth - FOLDER_TAB_JOIN * 2 - FOLDER_TAB_PAD * 2,
+          }}
+        >
+          {title}
+        </h2>
+      ) : null}
+      {extraTags.length > 0 ? (
+        <div className="folder-memos-page-tags folder-memos-page-tab-tags">
+          {extraTags.map((tg) =>
+            onTagFilter ? (
+              <button
+                key={tg.id}
+                type="button"
+                className="folder-memos-page-tag"
+                onClick={() => onTagFilter(tg.id)}
+              >
+                {formatHashtagLabel(tg.name)}
+              </button>
+            ) : (
+              <span key={tg.id} className="folder-memos-page-tag">
+                {formatHashtagLabel(tg.name)}
+              </span>
+            ),
+          )}
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -156,6 +257,10 @@ export function FolderMemosView({
   notes,
   loading,
   folderTagId,
+  sourceId,
+  titleLabel,
+  folderTab = false,
+  emptyHint = '이 폴더의 메모가 아직 없습니다.',
   tagCatalog,
   sourceCatalog,
   onEdit,
@@ -168,7 +273,7 @@ export function FolderMemosView({
 
   useEffect(() => {
     setIndex(0)
-  }, [folderTagId])
+  }, [folderTagId, sourceId])
 
   useEffect(() => {
     if (notes.length === 0) {
@@ -179,9 +284,16 @@ export function FolderMemosView({
   }, [notes.length])
 
   const note = notes[index] ?? null
+  const extraTags = useMemo(() => {
+    if (!note) return []
+    return [...resolveNoteTagChips(note, tagCatalog)]
+      .filter((t) => t.id !== folderTagId)
+      .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  }, [note, folderTagId, tagCatalog])
+  const count = notes.length
   const hasPrev = index > 0
-  const hasNext = index < notes.length - 1
-  const showNav = notes.length > 1
+  const hasNext = index < count - 1
+  const showNav = count > 0
 
   function goBy(delta: number) {
     setIndex((cur) => {
@@ -201,36 +313,11 @@ export function FolderMemosView({
     return () => window.removeEventListener('keydown', onKey)
   }, [notes.length])
 
-  if (loading && notes.length === 0) {
-    return (
-      <div className="folder-memos-view folder-memos-view--page" aria-busy="true" aria-label="폴더 메모">
-        <div className="folder-memos-page">
-          <div className="folder-memos-page-block">
-            <p className="notes-hint folder-memos-empty">불러오는 중…</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (notes.length === 0) {
-    return (
-      <div className="folder-memos-view folder-memos-view--page" aria-label="폴더 메모">
-        <div className="folder-memos-page">
-          <div className="folder-memos-page-block">
-            <p className="notes-hint folder-memos-empty">
-              이 폴더의 메모가 아직 없습니다.
-            </p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div
-      className="folder-memos-view folder-memos-view--page"
-      aria-label="폴더 메모 페이지"
+      className="folder-memos-view folder-memos-view--page folder-memos-view--flip"
+      aria-busy={loading}
+      aria-label="메모 페이지"
       onTouchStart={(event) => {
         const t = event.changedTouches[0]
         if (!t) return
@@ -240,7 +327,7 @@ export function FolderMemosView({
         const start = touchStart.current
         touchStart.current = null
         const t = event.changedTouches[0]
-        if (!start || !t || !showNav) return
+        if (!start || !t || count < 2) return
         const dx = t.clientX - start.x
         const dy = t.clientY - start.y
         if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.2) return
@@ -254,44 +341,77 @@ export function FolderMemosView({
         event.stopPropagation()
       }}
     >
-      {showNav ? (
-        <button
-          type="button"
-          className="note-view-nav note-view-nav--prev"
-          aria-label="이전 메모"
-          disabled={!hasPrev}
-          onClick={() => goBy(-1)}
-        >
-          &lt;
-        </button>
-      ) : null}
-      {showNav ? (
-        <button
-          type="button"
-          className="note-view-nav note-view-nav--next"
-          aria-label="다음 메모"
-          disabled={!hasNext}
-          onClick={() => goBy(1)}
-        >
-          &gt;
-        </button>
-      ) : null}
-      {note ? (
-        <div className="folder-memos-page">
-          <div className="folder-memos-page-block">
-            <FolderMemoArticle
+      <div className="tag-memos-flip-dialog folder-memos-flip-dialog">
+        {folderTab && titleLabel ? (
+          <FolderPageTabHead
+            title={titleLabel}
+            extraTags={extraTags}
+            onTagFilter={onTagFilter}
+          />
+        ) : titleLabel || extraTags.length > 0 ? (
+          <div className="tag-memos-flip-head folder-memos-page-head">
+            {titleLabel ? (
+              <h2 className="tag-memos-flip-title">{titleLabel}</h2>
+            ) : null}
+            {extraTags.length > 0 ? (
+              <div className="folder-memos-page-tags" aria-label="함께 붙은 태그">
+                {extraTags.map((tg) =>
+                  onTagFilter ? (
+                    <button
+                      key={tg.id}
+                      type="button"
+                      className="folder-memos-page-tag"
+                      onClick={() => onTagFilter(tg.id)}
+                    >
+                      {formatHashtagLabel(tg.name)}
+                    </button>
+                  ) : (
+                    <span key={tg.id} className="folder-memos-page-tag">
+                      {formatHashtagLabel(tg.name)}
+                    </span>
+                  ),
+                )}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="tag-memos-flip-stage">
+          <div className="tag-memos-flip-page tag-memos-flip-page--front">
+            <PaperSheet
               note={note}
-              folderTagId={folderTagId}
-              tagCatalog={tagCatalog}
-              sourceCatalog={sourceCatalog}
+              sourceId={sourceId}
               loading={loading}
+              emptyHint={emptyHint}
+              sourceCatalog={sourceCatalog}
               onEdit={onEdit}
-              onTagFilter={onTagFilter}
               onSourceFilter={onSourceFilter}
             />
           </div>
         </div>
-      ) : null}
+        {showNav ? (
+          <div className="tag-memos-flip-nav">
+            <button
+              type="button"
+              className="tag-memos-flip-nav-btn"
+              disabled={!hasPrev || loading}
+              onClick={() => goBy(-1)}
+            >
+              이전
+            </button>
+            <span className="tag-memos-flip-count" aria-live="polite">
+              {loading && count === 0 ? '0 / 0' : `${index + 1} / ${count}`}
+            </span>
+            <button
+              type="button"
+              className="tag-memos-flip-nav-btn"
+              disabled={!hasNext || loading}
+              onClick={() => goBy(1)}
+            >
+              다음
+            </button>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

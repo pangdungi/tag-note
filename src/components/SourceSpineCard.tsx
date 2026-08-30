@@ -126,7 +126,7 @@ export function SourceSpineCard({
       </button>
       {!useImage ? (
         <span className="parent-tag-spine-stat" aria-label={`태그 ${tagCount}개`}>
-          #{tagCount}
+          {tagCount}
         </span>
       ) : null}
     </div>

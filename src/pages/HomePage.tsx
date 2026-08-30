@@ -16,7 +16,6 @@ import { HomeTagSpiralRail } from '../components/HomeTagSpiralRail'
 import { HomeSearchResultsRail } from '../components/HomeSearchResultsRail'
 import { EditNoteModal } from '../components/EditNoteModal'
 import { NoteViewModal } from '../components/NoteViewModal'
-import { TagMemosFlipModal } from '../components/TagMemosFlipModal'
 import { AppSplashScreen } from '../components/AppSplashScreen'
 import { AddNoteModal } from '../components/AddNoteModal'
 import { TagNotesPullStatus } from '../components/TagNotesPullStatus'
@@ -2826,7 +2825,7 @@ export function HomePage() {
   }, [previewSourceId])
 
   function toggleSourceSelect(sourceId: string) {
-    if (sourceMemosFlipOpen && selectedSourceId === sourceId) {
+    if (selectedSourceId === sourceId) {
       closeSourceMemosFlip()
       return
     }
@@ -2834,17 +2833,18 @@ export function HomePage() {
   }
 
   function openSourceMemosFlip(sourceId: string) {
+    closeSourceCoverPreview()
     setTagMemosFlipOpen(false)
+    setSourceMemosFlipOpen(false)
     setSelectedTagId(null)
     setTagPullEntry(null)
     setBooksRailExpandedParentId(null)
     setHomeBrowseNav('links')
+    setHomeHubOpen(false)
     setSelectedSourceId(sourceId)
-    setSourceMemosFlipOpen(true)
     setTagSearch('')
     setSearchNotesResult(null)
     setSearchError(null)
-    setSelectedTagId(null)
     setTagViewDrillDown(false)
     setSearchOpen(false)
     setViewingNote(null)
@@ -2893,7 +2893,7 @@ export function HomePage() {
     )
     syncTagPullEntryForSelection(tagId, filterTagIds, 'tags')
     setSelectedTagId(tagId)
-    setTagMemosFlipOpen(true)
+    setTagMemosFlipOpen(false)
   }
 
   /** 검색·다른 뷰에서 태그 상세로 들어갈 때 */
@@ -2932,13 +2932,7 @@ export function HomePage() {
   }
 
   function filterBySourceFromCard(sourceId: string) {
-    setSelectedSourceId(sourceId)
-    setSelectedTagId(null)
-    setTagSearch('')
-    setSearchNotesResult(null)
-    setSearchError(null)
-    setSearchOpen(false)
-    setViewingNote(null)
+    openSourceMemosFlip(sourceId)
   }
 
   const openViewNote = useCallback(
@@ -3322,13 +3316,19 @@ export function HomePage() {
     !tagViewDrillDown &&
     !booksTagFocusBoard
 
+  const linksSourceMemosOpen = Boolean(
+    homeBrowseNav === 'links' && selectedSourceId && !hasActiveSearch,
+  )
+
   const showLinksViewModeTabs = Boolean(
-    homeBrowseNav === 'links' && effectiveShowBrowseRail,
+    homeBrowseNav === 'links' &&
+      effectiveShowBrowseRail &&
+      !linksSourceMemosOpen,
   )
 
   const showBooksMemoViewTabs = Boolean(
-    homeBrowseNav === 'books' &&
-      booksRailExpandedParentId &&
+    ((homeBrowseNav === 'books' && booksRailExpandedParentId) ||
+      linksSourceMemosOpen) &&
       effectiveShowBrowseRail &&
       !hasActiveSearch,
   )
@@ -3501,7 +3501,7 @@ export function HomePage() {
 
   /** 출처 뷰에서 출처 미선택 시 + → 책 검색 추가 */
   const showAddBookCompose =
-    homeBrowseNav === 'links' && !hasActiveSearch
+    homeBrowseNav === 'links' && !hasActiveSearch && !selectedSourceId
 
   const selectedOpenSpineId = useMemo(() => {
     if (homeBrowseNav === 'books') return booksRailExpandedParentId
@@ -3814,10 +3814,20 @@ export function HomePage() {
                     collapseBooksParentRail()
                     return
                   }
+                  if (homeBrowseNav === 'links' && selectedSourceId) {
+                    collapseLinksSourceRail()
+                    return
+                  }
+                  if (homeBrowseNav === 'tags' && selectedTagId) {
+                    closeTagMemosFlip()
+                    return
+                  }
                   returnToHomeHub()
                 }}
               >
-                {homeBrowseNav === 'books' && booksRailExpandedParentId
+                {(homeBrowseNav === 'books' && booksRailExpandedParentId) ||
+                (homeBrowseNav === 'links' && selectedSourceId) ||
+                (homeBrowseNav === 'tags' && selectedTagId)
                   ? '뒤로'
                   : '메뉴'}
               </button>
@@ -3858,7 +3868,9 @@ export function HomePage() {
                 searchActive={searchOpen || hasActiveSearch}
                 user={user}
                 showAccount={false}
-                showSearch={homeBrowseNav !== 'books'}
+                showSearch={
+                  homeBrowseNav !== 'books' && !linksSourceMemosOpen
+                }
                 showRailSettings={
                   railEditContext !== null && railEditContext.kind !== 'parent'
                 }
@@ -3874,9 +3886,18 @@ export function HomePage() {
           </header>
         ) : null}
 
-        {showBooksMemoViewTabs && selectedTag ? (
+        {showBooksMemoViewTabs &&
+        booksMemoViewMode === 'scroll' &&
+        homeBrowseNav === 'books' &&
+        selectedTag ? (
           <h2 className="home-folder-open-title">
             {displayTagName(selectedTag.name)}
+          </h2>
+        ) : showBooksMemoViewTabs &&
+          booksMemoViewMode === 'scroll' &&
+          selectedSource ? (
+          <h2 className="home-folder-open-title">
+            {displaySourceTitle(selectedSource.title)}
           </h2>
         ) : null}
 
@@ -4217,7 +4238,9 @@ export function HomePage() {
               }${
                 homeBrowseNav === 'links' ? ' parent-tag-rail-section--links-view' : ''
               }${
-                homeBrowseNav === 'links' && linksViewMode === 'all'
+                homeBrowseNav === 'links' &&
+                linksViewMode === 'all' &&
+                !selectedSourceId
                   ? ' parent-tag-rail-section--links-all'
                   : ''
               }`}
@@ -4231,20 +4254,45 @@ export function HomePage() {
                 />
               ) : null}
               {homeBrowseNav === 'tags' ? (
-                <div className="tag-view-rail-layout">
-                  <HomeTagSpiralRail
-                    tags={tagsForTagModeRail}
-                    selectedId={selectedTagId}
-                    memoCounts={tagMemoCounts}
-                    noneCount={tagViewNoneMemoCount}
-                    scrollRef={parentTagRailScrollRef}
-                    slotRef={(id, el) => {
-                      if (el) tagSpineSlotRefs.current.set(id, el)
-                      else tagSpineSlotRefs.current.delete(id)
-                    }}
-                    onSelect={toggleTagSelect}
+                selectedTagId ? (
+                  <FolderMemosView
+                    notes={notesForSelectedTag}
+                    loading={tagPullLoading}
+                    folderTagId={
+                      selectedTagId === TAG_VIEW_NONE_ID
+                        ? undefined
+                        : selectedTagId
+                    }
+                    titleLabel={
+                      selectedTagId === TAG_VIEW_NONE_ID
+                        ? '태그 없음'
+                        : selectedTag
+                          ? formatHashtagLabel(selectedTag.name)
+                          : '태그'
+                    }
+                    emptyHint="이 태그의 메모가 아직 없습니다."
+                    tagCatalog={tagCatalogMap}
+                    sourceCatalog={sourceCatalogMap}
+                    onEdit={canUseCompose ? openEditNote : undefined}
+                    onTagFilter={openTagViewFromNote}
+                    onSourceFilter={filterBySourceFromCard}
                   />
-                </div>
+                ) : (
+                  <div className="tag-view-rail-layout">
+                    <HomeTagSpiralRail
+                      tags={tagsForTagModeRail}
+                      selectedId={selectedTagId}
+                      memoCounts={tagMemoCounts}
+                      noneCount={tagViewNoneMemoCount}
+                      scrollRef={parentTagRailScrollRef}
+                      slotRef={(id, el) => {
+                        if (el) tagSpineSlotRefs.current.set(id, el)
+                        else tagSpineSlotRefs.current.delete(id)
+                      }}
+                      onSelect={toggleTagSelect}
+                    />
+                  </div>
+                )
               ) : homeBrowseNav === 'dates' ? (
                 <HomeDateViewRail
                   groups={notesByDateGroups}
@@ -4263,6 +4311,46 @@ export function HomePage() {
                   onViewNote={openViewNote}
                   onTagFilter={openTagViewFromNote}
                 />
+              ) : homeBrowseNav === 'links' && selectedSourceId ? (
+                booksMemoViewMode === 'scroll' ? (
+                  <div className="folder-memos-view folder-memos-view--scroll">
+                    <div className="folder-memos-scroll folder-memos-scroll--sheet">
+                      <InlineRailNotesPanel
+                        tagLabel={
+                          selectedSource
+                            ? displaySourceTitle(selectedSource.title)
+                            : '도서'
+                        }
+                        tagId={selectedSourceId}
+                        tagCatalog={tagCatalogMap}
+                        sourceCatalog={sourceCatalogMap}
+                        notes={notesForSelectedSource}
+                        loading={sourcePullLoading}
+                        onView={openViewNote}
+                        onTagFilter={openTagViewFromNote}
+                        sheetLayout
+                        sheetSourceMode
+                        emptyHint="이 책의 메모가 아직 없습니다."
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <FolderMemosView
+                    notes={notesForSelectedSource}
+                    loading={sourcePullLoading}
+                    sourceId={selectedSourceId}
+                    titleLabel={
+                      selectedSource
+                        ? displaySourceTitle(selectedSource.title)
+                        : '도서'
+                    }
+                    emptyHint="이 책의 메모가 아직 없습니다."
+                    tagCatalog={tagCatalogMap}
+                    sourceCatalog={sourceCatalogMap}
+                    onEdit={canUseCompose ? openEditNote : undefined}
+                    onTagFilter={openTagViewFromNote}
+                  />
+                )
               ) : homeBrowseNav === 'links' ? (
                   <>
                     {linksViewMode === 'all' ? (
@@ -4425,6 +4513,10 @@ export function HomePage() {
                   notes={notesForSelectedTag}
                   loading={tagPullLoading}
                   folderTagId={booksRailExpandedParentId}
+                  folderTab
+                  titleLabel={
+                    selectedTag ? displayTagName(selectedTag.name) : '폴더'
+                  }
                   tagCatalog={tagCatalogMap}
                   sourceCatalog={sourceCatalogMap}
                   onEdit={canUseCompose ? openEditNote : undefined}
@@ -4721,40 +4813,6 @@ export function HomePage() {
           subscriptionEnabled={isSupabaseConfigured}
           onAfterOpen={refreshAccountSubscription}
           onSignOut={signOut}
-        />
-      ) : null}
-
-      {user ? (
-        <TagMemosFlipModal
-          open={tagMemosFlipOpen}
-          tagLabel={
-            selectedTagId === TAG_VIEW_NONE_ID
-              ? '태그 없음'
-              : selectedTag
-                ? formatHashtagLabel(selectedTag.name)
-                : '태그'
-          }
-          notes={notesForSelectedTag}
-          loading={tagPullLoading && notesForSelectedTag.length === 0}
-          sourceCatalog={sourceCatalogMap}
-          onClose={closeTagMemosFlip}
-        />
-      ) : null}
-
-      {user ? (
-        <TagMemosFlipModal
-          open={sourceMemosFlipOpen}
-          tagLabel={
-            selectedSource
-              ? displaySourceTitle(selectedSource.title)
-              : '도서'
-          }
-          notes={notesForSelectedSource}
-          loading={sourcePullLoading && notesForSelectedSource.length === 0}
-          sourceCatalog={sourceCatalogMap}
-          emptyLabel="이 책의 메모가 아직 없습니다."
-          centered
-          onClose={closeSourceMemosFlip}
         />
       ) : null}
 

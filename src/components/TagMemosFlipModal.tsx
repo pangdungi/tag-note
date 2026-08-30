@@ -25,11 +25,13 @@ function PaperFace({
   loading,
   sourceCatalog,
   emptyLabel = '이 태그의 메모가 아직 없습니다.',
+  onEdit,
 }: {
   note: NoteWithTags | null
   loading?: boolean
   sourceCatalog: Map<string, SourceRow>
   emptyLabel?: string
+  onEdit?: (note: NoteWithTags) => void
 }) {
   if (loading) {
     return (
@@ -47,8 +49,26 @@ function PaperFace({
   }
   const src = resolveNoteSourceTitle(note, sourceCatalog)
   const body = note.body?.trim() ?? ''
+  const canEdit = Boolean(onEdit) && !loading
   return (
-    <div className="tag-memos-flip-sheet">
+    <div
+      className={`tag-memos-flip-sheet${
+        canEdit ? ' tag-memos-flip-sheet--edit' : ''
+      }`}
+      role={canEdit ? 'button' : undefined}
+      tabIndex={canEdit ? 0 : undefined}
+      aria-label={canEdit ? '메모 수정' : undefined}
+      onClick={() => {
+        if (canEdit && note) onEdit?.(note)
+      }}
+      onKeyDown={(event) => {
+        if (!canEdit || !note) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onEdit?.(note)
+        }
+      }}
+    >
       <MemoBodyContent
         as="div"
         body={body}
@@ -72,6 +92,7 @@ type Props = {
   loading: boolean
   sourceCatalog: Map<string, SourceRow>
   onClose: () => void
+  onEdit?: (note: NoteWithTags) => void
   emptyLabel?: string
   centered?: boolean
 }
@@ -83,6 +104,7 @@ export function TagMemosFlipModal({
   loading,
   sourceCatalog,
   onClose,
+  onEdit,
   emptyLabel,
   centered = false,
 }: Props) {
@@ -153,25 +175,19 @@ export function TagMemosFlipModal({
         centered ? ' tag-memos-flip-overlay--center' : ''
       }`}
       role="presentation"
+      onClick={() => onClose()}
     >
       <div
         className="tag-memos-flip-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        onClick={(event) => event.stopPropagation()}
       >
         <div className="tag-memos-flip-head">
           <h2 id={titleId} className="tag-memos-flip-title">
             {tagLabel}
           </h2>
-          <button
-            type="button"
-            className="tag-memos-flip-close"
-            aria-label="닫기"
-            onClick={() => onClose()}
-          >
-            ×
-          </button>
         </div>
 
         <div
@@ -185,6 +201,7 @@ export function TagMemosFlipModal({
               loading={loading}
               sourceCatalog={sourceCatalog}
               emptyLabel={emptyLabel}
+              onEdit={onEdit}
             />
           </div>
           <div className="tag-memos-flip-page tag-memos-flip-page--front">
@@ -193,6 +210,7 @@ export function TagMemosFlipModal({
               loading={loading}
               sourceCatalog={sourceCatalog}
               emptyLabel={emptyLabel}
+              onEdit={onEdit}
             />
           </div>
         </div>
