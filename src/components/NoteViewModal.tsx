@@ -93,11 +93,12 @@ export function NoteViewModal({
 
   useEffect(() => {
     if (!open || !onNoteChange) return
+    const changeNote = onNoteChange
     function onKey(event: KeyboardEvent) {
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
       event.preventDefault()
       const next = queue[index + (event.key === 'ArrowLeft' ? -1 : 1)]
-      if (next) onNoteChange(next)
+      if (next) changeNote(next)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

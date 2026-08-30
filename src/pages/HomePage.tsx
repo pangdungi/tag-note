@@ -1349,8 +1349,6 @@ export function HomePage() {
   const [tagFilterFocusBoard, setTagFilterFocusBoard] = useState(false)
   const [booksTagFocusBoard, setBooksTagFocusBoard] = useState(false)
   const [tagViewDrillDown, setTagViewDrillDown] = useState(false)
-  const [tagMemosFlipOpen, setTagMemosFlipOpen] = useState(false)
-  const [sourceMemosFlipOpen, setSourceMemosFlipOpen] = useState(false)
 
   const [addParentTagRailOpen, setAddParentTagRailOpen] = useState(false)
   const [addBookModalOpen, setAddBookModalOpen] = useState(false)
@@ -2641,8 +2639,6 @@ export function HomePage() {
 
   function returnToHomeHub() {
     setHomeHubOpen(true)
-    setTagMemosFlipOpen(false)
-    setSourceMemosFlipOpen(false)
     setAccountModalOpen(false)
     collapseBooksParentRail()
   }
@@ -2651,8 +2647,6 @@ export function HomePage() {
     if (id === 'dates') return
     setHomeHubOpen(false)
     clearTagDetailReturnContext()
-    setTagMemosFlipOpen(false)
-    setSourceMemosFlipOpen(false)
     setHomeBrowseNav(id)
     clearSourceFilter()
     clearDateFilter()
@@ -2800,7 +2794,6 @@ export function HomePage() {
       setCoverOpeningId(null)
       setPreviewSourceId(null)
       setSelectedSourceId(sourceId)
-      setSourceMemosFlipOpen(true)
       setTagSearch('')
       setSearchNotesResult(null)
       setSearchError(null)
@@ -2834,8 +2827,6 @@ export function HomePage() {
 
   function openSourceMemosFlip(sourceId: string) {
     closeSourceCoverPreview()
-    setTagMemosFlipOpen(false)
-    setSourceMemosFlipOpen(false)
     setSelectedTagId(null)
     setTagPullEntry(null)
     setBooksRailExpandedParentId(null)
@@ -2853,7 +2844,6 @@ export function HomePage() {
   }
 
   function closeSourceMemosFlip() {
-    setSourceMemosFlipOpen(false)
     clearSourceFilter()
     setViewingNote(null)
     setViewingNoteContextTagId(null)
@@ -2864,7 +2854,6 @@ export function HomePage() {
   }
 
   function closeTagMemosFlip() {
-    setTagMemosFlipOpen(false)
     setSelectedTagId(null)
     setTagPullEntry(null)
     setTagPullLoading(false)
@@ -2877,7 +2866,6 @@ export function HomePage() {
     setBooksRailExpandedParentId(null)
     setSelectedSourceId(null)
     setSourceNotesHasMore(false)
-    setSourceMemosFlipOpen(false)
     clearDateFilter()
     setViewingNote(null)
     setViewingNoteContextTagId(null)
@@ -2893,7 +2881,6 @@ export function HomePage() {
     )
     syncTagPullEntryForSelection(tagId, filterTagIds, 'tags')
     setSelectedTagId(tagId)
-    setTagMemosFlipOpen(false)
   }
 
   /** 검색·다른 뷰에서 태그 상세로 들어갈 때 */
