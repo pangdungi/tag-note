@@ -105,6 +105,10 @@ export async function saveUserAppFontChoice(
 ): Promise<void> {
   applyAppFontToDocument(id)
   setStoredAppFontId(id)
-  await upsertUserAppFontId(userId, id)
+  try {
+    await upsertUserAppFontId(userId, id)
+  } catch {
+    /* 서버 제약이 아직 예전 글꼴만 허용하면 이 기기에는 적용 */
+  }
   await waitForAppFonts(id)
 }

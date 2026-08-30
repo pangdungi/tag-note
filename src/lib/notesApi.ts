@@ -107,6 +107,8 @@ export type NoteWithTags = {
   source_id: string | null
   sources?: { id: string; title: string } | null
   created_at: string
+  /** 계정별 고정. 컬럼 없으면 조회 시 false */
+  is_pinned?: boolean
   note_tags: {
     tag_id: string
     tags: {
@@ -116,6 +118,10 @@ export type NoteWithTags = {
       parent_id?: string | null
     } | null
   }[]
+}
+
+export function noteIsPinned(note: Pick<NoteWithTags, 'is_pinned'>): boolean {
+  return Boolean(note.is_pinned)
 }
 
 export function noteSourceLabel(note: NoteWithTags): string {
@@ -172,6 +178,7 @@ type NoteRowDb = {
   source: string
   source_id?: string | null
   created_at: string
+  is_pinned?: boolean | null
   sources?: { id: string; title: string } | { id: string; title: string }[] | null
   note_tags?: NoteWithTags['note_tags']
 }
@@ -186,6 +193,7 @@ function mapNoteRowFromDb(row: NoteRowDb): NoteWithTags {
     source_id: row.source_id ?? joined?.id ?? null,
     sources: joined ? { id: joined.id, title: joined.title } : null,
     created_at: row.created_at,
+    is_pinned: Boolean(row.is_pinned),
     note_tags: row.note_tags ?? [],
   }
 }
@@ -742,6 +750,7 @@ const NOTE_WITH_TAGS_SELECT = `
       source,
       source_id,
       created_at,
+      is_pinned,
       sources ( id, title ),
       note_tags (
         tag_id,
@@ -756,6 +765,7 @@ const NOTE_WITH_TAG_FILTER_SELECT = `
       source,
       source_id,
       created_at,
+      is_pinned,
       sources ( id, title ),
       note_tags!inner (
         tag_id,
@@ -831,6 +841,18 @@ export async function fetchNoteWithTagsById(
     .single()
   if (error) throw error
   return mapNoteRowFromDb(data as unknown as NoteRowDb)
+}
+
+/** 로그인한 계정의 고정 메모만 (RLS + user_id) */
+export async function fetchPinnedNotes(): Promise<NoteWithTags[]> {
+  const { data, error } = await supabase
+    .from('notes')
+    .select(NOTE_WITH_TAGS_SELECT)
+    .eq('is_pinned', true)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  const rows = (data ?? []) as unknown as NoteRowDb[]
+  return rows.map((r) => mapNoteRowFromDb(r))
 }
 
 /** 특정 태그 메모 — 최신순 페이지 (전체 note_tags 포함, 1회 조회) */
@@ -1163,6 +1185,7 @@ type NoteRowCore = {
   source: string
   source_id?: string | null
   created_at: string
+  is_pinned?: boolean | null
 }
 
 function buildNoteWithTags(
@@ -1185,6 +1208,7 @@ function buildNoteWithTags(
     sources:
       srcId && srcTitle ? { id: srcId, title: srcTitle } : null,
     created_at: noteRow.created_at,
+    is_pinned: Boolean(noteRow.is_pinned),
     note_tags: tagLinks.map(({ tag_id, name, color_index, parent_id }) => ({
       tag_id,
       tags: { id: tag_id, name, color_index, parent_id: parent_id ?? null },
@@ -1940,7 +1964,7 @@ export async function createNoteWithTags(
       source: sourceRef?.title ?? sourceTrim,
       source_id: sourceRef?.id ?? null,
     })
-    .select('id, body, source, source_id, created_at')
+    .select('id, body, source, source_id, created_at, is_pinned')
     .single()
   if (nErr) {
     logNoteSaveError('create', 'notes insert', { userId, ...meta }, nErr)
@@ -1971,6 +1995,7 @@ export async function updateNoteWithTags(
   tagCache: TagRow[],
   source?: string,
   sourceCache: SourceRow[] = [],
+  isPinned?: boolean,
 ): Promise<NoteWithTags> {
   const trimmed = body.trim()
   const sourceTrim = (source ?? '').trim()
@@ -2012,9 +2037,10 @@ export async function updateNoteWithTags(
       body,
       source: sourceRef?.title ?? sourceTrim,
       source_id: sourceRef?.id ?? null,
+      ...(typeof isPinned === 'boolean' ? { is_pinned: isPinned } : {}),
     })
     .eq('id', noteId)
-    .select('id, body, source, source_id, created_at')
+    .select('id, body, source, source_id, created_at, is_pinned')
     .maybeSingle()
   if (uErr) {
     logNoteSaveError('update', 'notes update', meta, uErr)

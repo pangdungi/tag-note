@@ -16,6 +16,7 @@ import {
 } from '../lib/notesApi'
 import { MemoNoteEditor } from './MemoNoteEditor'
 import { readMemoEditorBody } from '../lib/memoQuickEmojis'
+import pinClipUrl from '../assets/home-hub-pin-clip.png'
 
 function noteToSelectedTags(note: NoteWithTags, allTags: TagRow[]): SelectedTag[] {
   return resolveNoteTagChips(note, buildTagCatalogMap(allTags)).map((t) => ({
@@ -43,6 +44,7 @@ function buildLocalPreviewNote(
   body: string,
   source: SelectedSource | null,
   tags: SelectedTag[],
+  isPinned: boolean,
 ): NoteWithTags {
   const srcTitle = source?.title.trim() ?? ''
   return {
@@ -54,6 +56,7 @@ function buildLocalPreviewNote(
       ? { id: source.id, title: srcTitle }
       : null,
     created_at: createdAt,
+    is_pinned: isPinned,
     note_tags: tags.map((t) => ({
       tag_id: t.id ?? `pending-${t.name}`,
       tags: {
@@ -99,6 +102,7 @@ export function EditNoteModal({
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [seededNoteId, setSeededNoteId] = useState<string | null>(null)
+  const [isPinned, setIsPinned] = useState(false)
 
   useLayoutEffect(() => {
     if (!open || !note) {
@@ -108,10 +112,11 @@ export function EditNoteModal({
     setTags(noteToSelectedTags(note, allTags))
     setBody(note.body ?? '')
     setSelectedSource(noteToSelectedSource(note, allSources))
+    setIsPinned(Boolean(note.is_pinned))
     setError(null)
     setDeleteConfirmOpen(false)
     setSeededNoteId(note.id)
-  }, [open, note, note?.id, note?.body, allTags, allSources])
+  }, [open, note, note?.id, note?.body, note?.is_pinned, allTags, allSources])
 
   if (!open || !note) return null
 
@@ -132,14 +137,35 @@ export function EditNoteModal({
           <h2 id={titleId} className="tag-manage-title">
             메모 수정
           </h2>
-          <button
-            type="button"
-            className="tag-manage-close"
-            aria-label="메모 수정 닫기"
-            onClick={() => onClose()}
-          >
-            ×
-          </button>
+          <div className="edit-note-modal-head-actions">
+            <button
+              type="button"
+              className={`edit-note-pin-btn${
+                isPinned ? ' edit-note-pin-btn--on' : ''
+              }`}
+              aria-pressed={isPinned}
+              aria-label={isPinned ? '메모 고정 해제' : '메모 고정하기'}
+              title={isPinned ? '고정 해제' : '메모 고정'}
+              onClick={() => setIsPinned((cur) => !cur)}
+            >
+              <img
+                src={pinClipUrl}
+                alt=""
+                className="edit-note-pin-icon"
+                width={128}
+                height={128}
+                decoding="async"
+              />
+            </button>
+            <button
+              type="button"
+              className="tag-manage-close"
+              aria-label="메모 수정 닫기"
+              onClick={() => onClose()}
+            >
+              ×
+            </button>
+          </div>
         </div>
         <div className="edit-note-modal-scroll">
           <div className="edit-note-modal-body">
@@ -206,6 +232,7 @@ export function EditNoteModal({
                   saveBody,
                   selectedSource,
                   tags,
+                  isPinned,
                 )
                 void onNoteUpdated(preview)
                 onClose()
@@ -219,6 +246,7 @@ export function EditNoteModal({
                       [...allTags],
                       saveSource,
                       [...allSources],
+                      isPinned,
                     )
                     await onNoteUpdated(updated)
                     await onSourcesChanged?.()

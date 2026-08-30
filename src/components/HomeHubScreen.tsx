@@ -4,12 +4,14 @@ import hubTagIconUrl from '../assets/home-hub-icon-tag.png'
 import hubLogoUrl from '../assets/home-hub-logo.png'
 import hubWordmarkUrl from '../assets/home-hub-wordmark.png'
 import searchDoodleIconUrl from '../assets/home-search-doodle.png'
+import hubPinClipUrl from '../assets/home-hub-pin-clip.png'
 import type { HomeBrowseNavId } from './HomeBrowseNav'
 
 type Props = {
   onSelectView: (id: HomeBrowseNavId) => void
   onOpenAccount: () => void
   onOpenSearch: () => void
+  onOpenPins: () => void
 }
 
 const VIEW_ITEMS: {
@@ -26,6 +28,7 @@ export function HomeHubScreen({
   onSelectView,
   onOpenAccount,
   onOpenSearch,
+  onOpenPins,
 }: Props) {
   return (
     <div className="home-hub">
@@ -84,13 +87,30 @@ export function HomeHubScreen({
               decoding="async"
             />
           </button>
-          <button
-            type="button"
-            className="home-hub-account"
-            onClick={onOpenAccount}
-          >
-            나의 계정
-          </button>
+          <div className="home-hub-account-row">
+            <button
+              type="button"
+              className="home-hub-account"
+              onClick={onOpenAccount}
+            >
+              나의 계정
+            </button>
+            <button
+              type="button"
+              className="home-hub-pin"
+              aria-label="고정된 메모"
+              onClick={onOpenPins}
+            >
+              <img
+                src={hubPinClipUrl}
+                alt=""
+                className="home-hub-pin-icon"
+                width={128}
+                height={128}
+                decoding="async"
+              />
+            </button>
+          </div>
         </div>
       </nav>
     </div>

@@ -11,34 +11,9 @@ export const APP_FONT_CHOICES = [
     cssFamily: 'TagNote Griun Fromsol',
   },
   {
-    id: 'griun_myeonheullim',
-    label: '그리운 묘은흘림',
-    cssFamily: 'TagNote GriunMyoenHeullim',
-  },
-  {
-    id: 'ongeulip_gongbujalhajana',
-    label: '온글잎 공부잘하자나',
-    cssFamily: 'TagNote Onguelip Gongbujalhajana',
-  },
-  {
-    id: 'ongeulip_ryuryu',
-    label: '온글잎 류류체',
-    cssFamily: 'TagNote Onguelip Ryuryu',
-  },
-  {
-    id: 'griun_mongtori',
-    label: '그리운 몽토리',
-    cssFamily: 'TagNote Griun Mongtori',
-  },
-  {
-    id: 'griun_cherry1spoon',
-    label: '그리운 체리1스푼',
-    cssFamily: 'TagNote Griun Cherry1Spoon',
-  },
-  {
-    id: 'griun_cocochoitoon',
-    label: '그리운 코코초이툰',
-    cssFamily: 'TagNote Griun Cocochoitoon',
+    id: 'leeseoyun',
+    label: '이서윤체',
+    cssFamily: 'TagNote LeeSeoyun',
   },
 ] as const
 
@@ -50,7 +25,6 @@ const FONT_ID_SET = new Set<string>(APP_FONT_CHOICES.map((c) => c.id))
 
 const LEGACY_FONT_IDS = new Set([
   'system',
-  'leeseoyun',
   'donoun_medium',
   'adultkid',
   'pak_yong_jun',
@@ -58,6 +32,12 @@ const LEGACY_FONT_IDS = new Set([
   'spoqa',
   'dos_gothic',
   'bookk_gothic_bold',
+  'griun_myeonheullim',
+  'ongeulip_gongbujalhajana',
+  'ongeulip_ryuryu',
+  'griun_mongtori',
+  'griun_cherry1spoon',
+  'griun_cocochoitoon',
 ])
 
 export function isAppFontChoiceId(v: string): v is AppFontChoiceId {
@@ -81,8 +61,8 @@ export function appFontStack(id: AppFontChoiceId): string {
   return `'${family}', ${SYSTEM_STACK}`
 }
 
-export function applyAppFontToDocument(_id: AppFontChoiceId = DEFAULT_APP_FONT_ID): void {
-  const stack = appFontStack(DEFAULT_APP_FONT_ID)
+export function applyAppFontToDocument(id: AppFontChoiceId = DEFAULT_APP_FONT_ID): void {
+  const stack = appFontStack(id)
   const root = document.documentElement
   root.classList.add('app-font')
   root.style.setProperty('--app-font-family', stack)

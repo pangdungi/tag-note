@@ -6,6 +6,13 @@ import {
 } from '../lib/subscription'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { deleteOwnAccount } from '../lib/accountApi'
+import {
+  APP_FONT_CHOICES,
+  appFontStack,
+  getStoredAppFontId,
+  type AppFontChoiceId,
+} from '../lib/appFont'
+import { saveUserAppFontChoice } from '../lib/userPreferencesApi'
 
 type Props = {
   open: boolean
@@ -53,6 +60,9 @@ export function AccountModal({
   const [withdrawPhase, setWithdrawPhase] = useState<'idle' | 'confirm'>('idle')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [fontId, setFontId] = useState<AppFontChoiceId>(getStoredAppFontId)
+  const [fontSaving, setFontSaving] = useState(false)
+  const [fontError, setFontError] = useState<string | null>(null)
 
   const profileName = displayNameFromUser(user)
   const joinedAt = formatKoDateTime(user.created_at)
@@ -62,6 +72,8 @@ export function AccountModal({
     setWithdrawPhase('idle')
     setDeleteError(null)
     setDeleteBusy(false)
+    setFontError(null)
+    setFontSaving(false)
     onClose()
   }, [onClose])
 
@@ -70,6 +82,9 @@ export function AccountModal({
     setWithdrawPhase('idle')
     setDeleteError(null)
     setDeleteBusy(false)
+    setFontId(getStoredAppFontId())
+    setFontError(null)
+    setFontSaving(false)
     void onAfterOpen()
   }, [open, onAfterOpen])
 
@@ -119,6 +134,64 @@ export function AccountModal({
                 </div>
               ) : null}
             </dl>
+          </section>
+
+          <section className="tag-manage-account-section" aria-label="글꼴">
+            <h3 className="tag-manage-account-section-title">글꼴</h3>
+            <p className="tag-manage-account-font-lead">
+              메뉴에 들어간 뒤부터 쓰일 손글씨를 고릅니다. 메인 메뉴·로그인·회원가입은 두들 글꼴입니다.
+            </p>
+            {fontError ? (
+              <p className="tag-manage-account-font-error" role="alert">
+                {fontError}
+              </p>
+            ) : null}
+            <ul className="tag-manage-account-font-list">
+              {APP_FONT_CHOICES.map((choice) => {
+                const selected = fontId === choice.id
+                return (
+                  <li key={choice.id}>
+                    <button
+                      type="button"
+                      className={`tag-manage-account-font-option${
+                        selected
+                          ? ' tag-manage-account-font-option--selected'
+                          : ''
+                      }`}
+                      style={{ fontFamily: appFontStack(choice.id) }}
+                      aria-pressed={selected}
+                      disabled={fontSaving}
+                      onClick={() => {
+                        if (selected || fontSaving) return
+                        void (async () => {
+                          setFontSaving(true)
+                          setFontError(null)
+                          try {
+                            await saveUserAppFontChoice(user.id, choice.id)
+                            setFontId(choice.id)
+                          } catch {
+                            setFontError(
+                              '글꼴을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+                            )
+                          } finally {
+                            setFontSaving(false)
+                          }
+                        })()
+                      }}
+                    >
+                      <span className="tag-manage-account-font-option-label">
+                        {choice.label}
+                      </span>
+                      {selected ? (
+                        <span className="tag-manage-account-font-option-meta">
+                          사용 중
+                        </span>
+                      ) : null}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
           </section>
 
           <section className="tag-manage-account-section" aria-label="구독">

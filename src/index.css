@@ -62,6 +62,14 @@
   font-display: block;
 }
 
+@font-face {
+  font-family: 'TagNote LeeSeoyun';
+  src: url('/fonts/lee-seoyun.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
 :root {
   --bg: #ffffff;
   --surface: #ffffff;
@@ -94,8 +102,9 @@
   --note-paper-edge: #d1d5db;
   --note-paper-line: #ececef;
 
-  --app-font-family: 'TagNote Griun Fromsol', -apple-system, BlinkMacSystemFont,
+  --doodle-font-family: 'TagNote Griun Fromsol', -apple-system, BlinkMacSystemFont,
     'SF Pro Text', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --app-font-family: var(--doodle-font-family);
 
   --memo-font-family: var(--app-font-family);
   --spine-font-family: var(--app-font-family);
@@ -150,6 +159,17 @@ html {
 
 .app-font :is(code, pre, kbd, .inline-code) {
   font-family: ui-monospace, monospace;
+}
+
+/* 허브·로그인·회원가입은 계정 글꼴과 무관하게 두들(그리운 프롬솔) */
+.auth-shell,
+.home-layout--hub-font,
+.app-splash-screen {
+  --app-font-family: var(--doodle-font-family);
+  --memo-font-family: var(--doodle-font-family);
+  --spine-font-family: var(--doodle-font-family);
+  --tag-font-family: var(--doodle-font-family);
+  font-family: var(--doodle-font-family);
 }
 
 body {
@@ -230,7 +250,7 @@ body::-webkit-scrollbar,
     max(1.25rem, env(safe-area-inset-left, 0px));
   background: var(--bg);
   text-align: center;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
 }
 
 .app-splash-screen__art {
@@ -275,7 +295,8 @@ body::-webkit-scrollbar,
   }
 }
 
-.home-layout:has(.home-hub) {
+.home-layout:has(.home-hub),
+.home-layout:has(.pinned-notes-board) {
   min-height: 100svh;
   min-height: 100dvh;
 }
@@ -296,7 +317,7 @@ body::-webkit-scrollbar,
     max(1.25rem, env(safe-area-inset-bottom, 0px))
     max(1.5rem, env(safe-area-inset-left, 0px));
   box-sizing: border-box;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
 }
 
 .home-hub-brand {
@@ -370,6 +391,12 @@ body::-webkit-scrollbar,
   padding: 0 0.35rem;
 }
 
+.home-hub-account-row {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
 .home-hub-account {
   appearance: none;
   -webkit-appearance: none;
@@ -382,12 +409,36 @@ body::-webkit-scrollbar,
   background: none;
   box-shadow: none;
   color: #111111;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-size: 1.15rem;
   font-weight: 400;
   line-height: 1.3;
   text-align: left;
   cursor: pointer;
+}
+
+.home-hub-pin {
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.home-hub-pin-icon {
+  display: block;
+  width: 1.85rem;
+  height: 1.85rem;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .home-hub-search {
@@ -413,6 +464,108 @@ body::-webkit-scrollbar,
   object-fit: contain;
 }
 
+.pinned-notes-board {
+  flex: 1 1 0;
+  align-self: stretch;
+  width: 100%;
+  min-height: 100svh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: max(0.85rem, env(safe-area-inset-top, 0px))
+    max(0.9rem, env(safe-area-inset-right, 0px))
+    max(1.1rem, env(safe-area-inset-bottom, 0px))
+    max(0.9rem, env(safe-area-inset-left, 0px));
+  overflow: auto;
+  font-family: var(--app-font-family);
+}
+
+.pinned-notes-board-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  margin-bottom: 0.85rem;
+}
+
+.pinned-notes-board-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 400;
+  color: #111111;
+  line-height: 1.3;
+}
+
+.pinned-notes-board-status {
+  margin: 1.5rem 0.25rem;
+  color: #555555;
+  font-size: 0.98rem;
+  line-height: 1.45;
+}
+
+.pinned-notes-masonry {
+  column-count: 2;
+  column-gap: 0.7rem;
+}
+
+.pinned-notes-card {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-block;
+  width: 100%;
+  margin: 0 0 0.7rem;
+  padding: 0.85rem 0.8rem 0.7rem;
+  break-inside: avoid;
+  border: 1px solid #e6ddd0;
+  border-radius: 0;
+  background: #fffcf6;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+  color: #111111;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pinned-notes-card-body {
+  margin: 0;
+  max-height: 14rem;
+  overflow: hidden;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.pinned-notes-card-tags {
+  margin: 0.55rem 0 0;
+  color: #6b6258;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.pinned-notes-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.55rem;
+  margin-top: 0.55rem;
+  color: #8a8278;
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+@media (min-width: 720px) {
+  .pinned-notes-masonry {
+    column-count: 3;
+  }
+}
+
+@media (min-width: 1080px) {
+  .pinned-notes-masonry {
+    column-count: 4;
+  }
+}
+
 /* Auth */
 .auth-shell {
   min-height: 100vh;
@@ -427,7 +580,7 @@ body::-webkit-scrollbar,
   position: relative;
   overflow: hidden;
   isolation: isolate;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-weight: 700;
   font-synthesis: weight;
 }
@@ -1406,7 +1559,7 @@ body:has(.parent-tag-rail-section--books-view) .home-top-chrome {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-size: 1.05rem;
   font-weight: 400;
   line-height: 1.2;
@@ -1432,7 +1585,7 @@ body:has(.parent-tag-rail-section--books-view) .home-top-chrome {
   border-radius: 0;
   background: transparent;
   color: #111111;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-size: 1.05rem;
   font-weight: 400;
   line-height: 1.2;
@@ -1473,7 +1626,7 @@ body:has(.parent-tag-rail-section--books-view) .home-add-text-btn {
   border: none;
   background: transparent;
   color: #111111;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-size: 1.15rem;
   font-weight: 400;
   cursor: pointer;
@@ -1538,7 +1691,7 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
   min-width: 0;
   padding: 0.28rem 0.62rem;
   border-radius: 999px;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-size: 0.92rem;
   font-weight: 400;
   line-height: 1.2;
@@ -1606,18 +1759,20 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
     box-sizing: border-box;
   }
 
-  .home-layout:has(.home-hub) {
+  .home-layout:has(.home-hub),
+  .home-layout:has(.pinned-notes-board) {
     min-height: 0;
   }
 
-  .home-hub {
+  .home-hub,
+  .pinned-notes-board {
     flex: 1 1 0;
     min-height: 0;
     height: auto;
   }
 
   /* 헤더 없을 때 상태바 여백 (북스파인·허브 화면 제외) */
-  .home-layout:not(:has(.home-top-tag-search)):not(:has(.home-main--parent-rail-hero)):not(:has(.home-top-chrome)):not(:has(.home-hub)) {
+  .home-layout:not(:has(.home-top-tag-search)):not(:has(.home-main--parent-rail-hero)):not(:has(.home-top-chrome)):not(:has(.home-hub)):not(:has(.pinned-notes-board)) {
     padding-top: max(3rem, env(safe-area-inset-top, 0px));
   }
 
@@ -1748,7 +1903,8 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
     top: max(2.75rem, calc(0.5rem + env(safe-area-inset-top, 0px)));
   }
 
-  .home-hub {
+  .home-hub,
+  .pinned-notes-board {
     padding-top: max(2.75rem, calc(0.5rem + env(safe-area-inset-top, 0px)));
   }
 
@@ -3371,7 +3527,7 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
   flex-shrink: 0;
   margin: 0;
   padding: 0.6rem 1rem 0.35rem;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-size: 1.05rem;
   font-weight: 400;
   line-height: 1.3;
@@ -4662,7 +4818,7 @@ button.parent-tag-card {
   max-height: min(92dvh, 820px);
   display: flex;
   flex-direction: column;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
 }
 
 .tag-manage-dialog--add-book :is(
@@ -4691,7 +4847,7 @@ button.parent-tag-card {
   select,
   button
 ) {
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
 }
 
 .tag-manage-dialog--add-book .add-book-modal-body {
@@ -4923,7 +5079,7 @@ button.parent-tag-card {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 18;
   overflow: hidden;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-size: 0.82rem;
   font-weight: 400;
   line-height: 1.55;
@@ -5570,7 +5726,7 @@ button.note-board-tag-pill--link:focus-visible {
 
 .note-board-card-preview {
   margin: 0;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-size: 0.88rem;
   line-height: 1.55;
   color: var(--text-strong);
@@ -5782,7 +5938,7 @@ button.note-board-tag-pill--link:focus-visible {
 .note-board-sheet-memo {
   padding: 0.55rem 0.65rem;
   min-height: 3.25rem;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-size: 0.88rem;
   line-height: 1.55;
   color: var(--text-strong);
@@ -6185,7 +6341,7 @@ button.note-board-tag-pill--link:focus-visible {
   border: 1px solid var(--border);
   border-radius: 12px;
     background: #ffffff;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-size: 0.95rem;
   line-height: 1.5;
   color: var(--text-strong);
@@ -6253,7 +6409,7 @@ button.note-board-tag-pill--link:focus-visible {
 .memo-note-editor:empty::before {
   content: attr(data-placeholder);
   color: #b8bcc4;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   pointer-events: none;
 }
 
@@ -6623,7 +6779,7 @@ button.note-board-tag-pill--link:focus-visible {
   .edit-note-modal-note,
   .note-view-modal-text
 ) {
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
 }
 
 .tag-manage-overlay--nested {
@@ -6673,7 +6829,7 @@ button.note-board-tag-pill--link:focus-visible {
   input,
   textarea
 ) {
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
 }
 
 .tag-manage-dialog--edit-tag {
@@ -6727,6 +6883,51 @@ button.note-board-tag-pill--link:focus-visible {
   padding: 0.75rem 1rem 0.85rem;
   border-top: 1px solid var(--border);
   background: #ffffff;
+}
+
+.edit-note-modal-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  flex-shrink: 0;
+}
+
+.edit-note-pin-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.32;
+}
+
+.edit-note-pin-btn:hover {
+  background: var(--btn-hover-bg);
+  opacity: 0.55;
+}
+
+.edit-note-pin-btn--on {
+  opacity: 1;
+}
+
+.edit-note-pin-btn--on:hover {
+  opacity: 1;
+}
+
+.edit-note-pin-icon {
+  display: block;
+  width: 1.25rem;
+  height: 1.25rem;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .tag-manage-dialog--edit-note .composer-field:has(.memo-note-editor) {
@@ -6912,7 +7113,7 @@ button.note-board-tag-pill--link:focus-visible {
   border: none;
   background: transparent;
   color: #111111;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-size: 1.55rem;
   line-height: 1;
   transform: translateY(-50%);
@@ -7026,7 +7227,7 @@ button.note-board-tag-pill--link:focus-visible {
 
 .note-view-modal-text {
   margin: 0;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-size: 0.95rem;
   line-height: 1.7;
   color: var(--text-strong);
@@ -7358,7 +7559,7 @@ button.folder-memos-page-tag:hover {
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
-  font-family: 'TagNote Griun Fromsol', var(--app-font-family);
+  font-family: var(--app-font-family);
   font-size: 0.95rem;
   line-height: 1.7;
   color: #111111;
@@ -8151,6 +8352,7 @@ button.folder-memos-page-tag:hover {
 .tag-manage-account-font-option-label {
   flex: 1 1 0;
   min-width: 0;
+  font-size: 1.08rem;
 }
 
 .tag-manage-account-font-option-meta {
@@ -8484,7 +8686,7 @@ button.folder-memos-page-tag:hover {
   --folder-stack-gap: calc(var(--folder-tab-h) + 3px);
   --folder-line: #111111;
   --folder-fill: #ffffff;
-  --folder-tab-font: 'TagNote Griun Fromsol', var(--app-font-family);
+  --folder-tab-font: var(--app-font-family);
   --folder-drawer-h: 3.35rem;
   --folder-end-r: 7px;
   display: flex;

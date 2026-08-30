@@ -10,6 +10,7 @@ import { EditTagModal } from '../components/EditTagModal'
 import { EditSourceModal } from '../components/EditSourceModal'
 import type { HomeBrowseNavId } from '../components/HomeBrowseNav'
 import { HomeHubScreen } from '../components/HomeHubScreen'
+import { PinnedNotesBoard } from '../components/PinnedNotesBoard'
 import { HomeFolderFileView } from '../components/HomeFolderFileView'
 import { FolderMemosView } from '../components/FolderMemosView'
 import { HomeTagSpiralRail } from '../components/HomeTagSpiralRail'
@@ -23,6 +24,8 @@ import { useAuth } from '../contexts/useAuth'
 import {
   createNoteWithTags,
   fetchNoteWithTagsById,
+  fetchPinnedNotes,
+  noteIsPinned,
   fetchNotesPage,
   fetchNotesForMainSearch,
   fetchSources,
@@ -1205,6 +1208,13 @@ function tagPullCacheKey(filterTagIds: string[]): string {
   return `${filterTagIds.join('+')}:v5`
 }
 
+function filterIdsFromTagPullCacheKey(key: string): string[] | null {
+  if (key === 'tags:none:v5') return [TAG_VIEW_NONE_ID]
+  if (!key.endsWith(':v5')) return null
+  const ids = key.slice(0, -3).split('+').filter(Boolean)
+  return ids.length > 0 ? ids : null
+}
+
 function readLocalNotesForTagFilter(
   filterTagIds: string[],
   prev: NoteWithTags[],
@@ -1337,6 +1347,10 @@ export function HomePage() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [homeBrowseNav, setHomeBrowseNav] = useState<HomeBrowseNavId>('links')
   const [homeHubOpen, setHomeHubOpen] = useState(true)
+  const [pinnedBoardOpen, setPinnedBoardOpen] = useState(false)
+  const [pinnedNotes, setPinnedNotes] = useState<NoteWithTags[]>([])
+  const [pinnedNotesLoading, setPinnedNotesLoading] = useState(false)
+  const [pinnedNotesError, setPinnedNotesError] = useState<string | null>(null)
   /** 태그 필터·pull에 쓰는 뷰 맥락 (browse nav와 다를 수 있음) */
   const [tagFilterNav, setTagFilterNav] = useState<HomeBrowseNavId>('links')
   const [linksViewMode, setLinksViewMode] = useState<LinksViewMode>('all')
@@ -1366,6 +1380,8 @@ export function HomePage() {
     string | null
   >(null)
   const [viewNoteLoading, setViewNoteLoading] = useState(false)
+  /** 방금 쓴 메모 — 폴더/태그 페이지에서 그 장으로 바로 연다 */
+  const [focusMemoId, setFocusMemoId] = useState<string | null>(null)
 
   /** 이 계정에서 첫 데이터 패치가 끝났는지 — 이후엔 태그 칸 전체「불러오는 중」을 안 띄움 */
   const homeDataInitialLoadDoneRef = useRef(false)
@@ -1468,10 +1484,26 @@ export function HomePage() {
     tagPullInFlightRef.current.clear()
   }, [])
 
+  const rebuildTagPullCachesFromNotes = useCallback(
+    (notesList: NoteWithTags[]) => {
+      notesRef.current = notesList
+      for (const key of [...tagPullCacheRef.current.keys()]) {
+        const ids = filterIdsFromTagPullCacheKey(key)
+        if (!ids) continue
+        tagPullCacheRef.current.set(key, {
+          notes: readLocalNotesForTagFilter(ids, notesList),
+          hasMore: false,
+        })
+      }
+    },
+    [],
+  )
+
   const reconcileTagPullForNotes = useCallback((notesList: NoteWithTags[]) => {
+    notesRef.current = notesList
+    rebuildTagPullCachesFromNotes(notesList)
     const tagId = selectedTagIdRef.current
     if (!tagId) {
-      setTagPullEntry(null)
       return
     }
     const nav = tagFilterNavRef.current
@@ -1487,7 +1519,7 @@ export function HomePage() {
     tagPullCacheRef.current.set(key, { notes: fresh, hasMore: false })
     setTagPullEntry({ tagId, filterTagIds, nav, notes: fresh })
     setTagPullLoading(false)
-  }, [])
+  }, [rebuildTagPullCachesFromNotes])
 
   const clearTagPullCache = useCallback((tagId?: string) => {
     invalidateTagPullRequests()
@@ -1714,9 +1746,12 @@ export function HomePage() {
           ),
           note,
         ])
+        notesRef.current = next
         reconcileTagPullForNotes(next)
         return next
       })
+      sourcePullCacheRef.current.clear()
+      setFocusMemoId(note.id)
       setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
       setAllSources((prev) => mergeSourcesFromNoteIntoAllSources(prev, note))
       setTagSearch('')
@@ -1739,6 +1774,7 @@ export function HomePage() {
     invalidateTagPullRequests()
     setNotes((prev) => {
       const next = prev.filter((n) => n.id !== noteId)
+      notesRef.current = next
       reconcileTagPullForNotes(next)
       return next
     })
@@ -1755,11 +1791,19 @@ export function HomePage() {
       invalidateTagPullRequests()
       setNotes((prev) => {
         const next = prev.map((n) => (n.id === note.id ? note : n))
+        notesRef.current = next
         reconcileTagPullForNotes(next)
         return next
       })
       setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, note))
       setAllSources((prev) => mergeSourcesFromNoteIntoAllSources(prev, note))
+      setPinnedNotes((prev) => {
+        if (!noteIsPinned(note)) return prev.filter((n) => n.id !== note.id)
+        const exists = prev.some((n) => n.id === note.id)
+        return exists
+          ? prev.map((n) => (n.id === note.id ? note : n))
+          : [note, ...prev]
+      })
       setSaveError(null)
       void refreshHomeTagCounts()
     },
@@ -1771,10 +1815,12 @@ export function HomePage() {
       invalidateTagPullRequests()
       setNotes((prev) => {
         const next = prev.filter((n) => n.id !== noteId)
+        notesRef.current = next
         reconcileTagPullForNotes(next)
         return next
       })
       sourcePullCacheRef.current.clear()
+      setPinnedNotes((prev) => prev.filter((n) => n.id !== noteId))
       setEditingNote((cur) => (cur?.id === noteId ? null : cur))
       setViewingNote((cur) => (cur?.id === noteId ? null : cur))
       setViewingNoteContextTagId((ctx) =>
@@ -1796,6 +1842,13 @@ export function HomePage() {
       try {
         const fresh = await fetchNoteWithTagsById(noteId)
         setNotes((prev) => prev.map((n) => (n.id === noteId ? fresh : n)))
+        setPinnedNotes((prev) => {
+          if (!noteIsPinned(fresh)) return prev.filter((n) => n.id !== noteId)
+          const exists = prev.some((n) => n.id === noteId)
+          return exists
+            ? prev.map((n) => (n.id === noteId ? fresh : n))
+            : [fresh, ...prev]
+        })
         setEditingNote((cur) => (cur?.id === noteId ? fresh : cur))
         setAllTags((prev) => mergeTagsFromNoteIntoAllTags(prev, fresh))
       } catch {
@@ -1822,6 +1875,9 @@ export function HomePage() {
       return [...next].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
     })
     setNotes((prev) =>
+      mapNotesWithRenamedTag(prev, row.id, row.name, row.color_index),
+    )
+    setPinnedNotes((prev) =>
       mapNotesWithRenamedTag(prev, row.id, row.name, row.color_index),
     )
     setTagPullEntry((cur) =>
@@ -1857,6 +1913,9 @@ export function HomePage() {
         return [...next].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
       })
       setNotes((prev) =>
+        mapNotesWithRenamedTag(prev, row.id, row.name, row.color_index),
+      )
+      setPinnedNotes((prev) =>
         mapNotesWithRenamedTag(prev, row.id, row.name, row.color_index),
       )
       setTagPullEntry((cur) =>
@@ -1904,6 +1963,7 @@ export function HomePage() {
         reconcileTagPullForNotes(next)
         return next
       })
+      setPinnedNotes((prev) => applyBulk(prev))
       setTagPullEntry((cur) =>
         cur ? { ...cur, notes: applyBulk(cur.notes) } : cur,
       )
@@ -2060,6 +2120,7 @@ export function HomePage() {
       ),
     )
     setNotes((prev) => mapNotesWithRenamedSource(prev, row.id, row.title))
+    setPinnedNotes((prev) => mapNotesWithRenamedSource(prev, row.id, row.title))
     setTagPullEntry((cur) =>
       cur
         ? {
@@ -2102,6 +2163,9 @@ export function HomePage() {
       setSelectedSourceId((s) => (s === sourceId ? null : s))
       setAllSources((prev) => prev.filter((s) => s.id !== sourceId))
       setNotes((prev) =>
+        mapNotesWithClearedSource(prev, sourceId, titleKey),
+      )
+      setPinnedNotes((prev) =>
         mapNotesWithClearedSource(prev, sourceId, titleKey),
       )
       sourcePullCacheRef.current.clear()
@@ -2187,33 +2251,34 @@ export function HomePage() {
       tagParentLinksRef.current,
     )
     const cacheKey = tagPullCacheKey(filterTagIds)
+    const localNotes = readLocalNotesForTagFilter(
+      filterTagIds,
+      notesRef.current,
+    )
     const cached = tagPullCacheRef.current.get(cacheKey)
-    if (cached) {
-      const merged = readLocalNotesForTagFilter(
-        filterTagIds,
-        mergeNotesById(notesRef.current, cached.notes),
-      )
-      tagPullCacheRef.current.set(cacheKey, {
-        notes: merged,
-        hasMore: false,
-      })
-      setTagPullEntry({
-        tagId: pullTagId,
-        filterTagIds,
-        nav: pullNav,
-        notes: merged,
-      })
-      setTagPullLoading(false)
-      return
-    }
-
+    const initial = cached
+      ? readLocalNotesForTagFilter(
+          filterTagIds,
+          mergeNotesById(localNotes, cached.notes),
+        )
+      : localNotes
+    tagPullCacheRef.current.set(cacheKey, {
+      notes: initial,
+      hasMore: false,
+    })
     setTagPullEntry({
       tagId: pullTagId,
       filterTagIds,
       nav: pullNav,
-      notes: [],
+      notes: initial,
     })
-    setTagPullLoading(true)
+
+    if (cached) {
+      setTagPullLoading(false)
+      return
+    }
+
+    setTagPullLoading(initial.length === 0)
 
     const pullGen = tagPullGenerationRef.current
     let cancelled = false
@@ -2252,7 +2317,11 @@ export function HomePage() {
           nav: pullNav,
           notes: mergedNotes,
         })
-        setNotes((prev) => mergeNotesById(prev, page.notes))
+        setNotes((prev) => {
+          const next = mergeNotesById(prev, page.notes)
+          notesRef.current = next
+          return next
+        })
         setLoadError(null)
         void refreshHomeCountMaps(uid)
       } catch (e) {
@@ -2271,7 +2340,6 @@ export function HomePage() {
     })()
     return () => {
       cancelled = true
-      setTagPullLoading(false)
     }
   }, [tagPullFilterKey, tagFilterNav, user?.id, refreshHomeCountMaps])
 
@@ -2433,13 +2501,17 @@ export function HomePage() {
       allTags,
       tagParentLinks,
     )
+    const localNotes = readLocalNotesForTagFilter(filterTagIds, notes)
     if (
       tagPullEntry?.tagId === selectedTagId &&
       tagFilterIdsEqual(tagPullEntry.filterTagIds, filterTagIds)
     ) {
-      return tagPullEntry.notes
+      return readLocalNotesForTagFilter(
+        filterTagIds,
+        mergeNotesById(localNotes, tagPullEntry.notes),
+      )
     }
-    return readLocalNotesForTagFilter(filterTagIds, notes)
+    return localNotes
   }, [
     selectedTagId,
     tagFilterNav,
@@ -2638,9 +2710,38 @@ export function HomePage() {
   }
 
   function returnToHomeHub() {
+    setPinnedBoardOpen(false)
+    setPinnedNotesError(null)
     setHomeHubOpen(true)
     setAccountModalOpen(false)
     collapseBooksParentRail()
+  }
+
+  const loadPinnedNotes = useCallback(async () => {
+    setPinnedNotesLoading(true)
+    setPinnedNotesError(null)
+    try {
+      const rows = await fetchPinnedNotes()
+      setPinnedNotes(rows)
+    } catch (e) {
+      setPinnedNotesError(
+        supabaseErrorMessage(e, '고정 메모를 불러오지 못했습니다.'),
+      )
+    } finally {
+      setPinnedNotesLoading(false)
+    }
+  }, [])
+
+  function openPinnedBoard() {
+    setPinnedBoardOpen(true)
+    setHomeHubOpen(false)
+    void loadPinnedNotes()
+  }
+
+  function closePinnedBoard() {
+    setPinnedBoardOpen(false)
+    setPinnedNotesError(null)
+    setHomeHubOpen(true)
   }
 
   function selectBrowseNav(id: HomeBrowseNavId) {
@@ -2682,6 +2783,7 @@ export function HomePage() {
   ) {
     if (!tagId) {
       setTagPullEntry(null)
+      setTagPullLoading(false)
       return
     }
     const nav = navOverride ?? tagFilterNavRef.current
@@ -2694,13 +2796,22 @@ export function HomePage() {
         allTagsRef.current,
         tagParentLinksRef.current,
       )
+    const cacheKey = tagPullCacheKey(filterTagIds)
+    const localNotes = readLocalNotesForTagFilter(filterTagIds, notesRef.current)
+    const cached = tagPullCacheRef.current.get(cacheKey)
+    const merged = cached
+      ? readLocalNotesForTagFilter(
+          filterTagIds,
+          mergeNotesById(localNotes, cached.notes),
+        )
+      : localNotes
     setTagPullEntry({
       tagId,
       filterTagIds,
       nav,
-      notes: [],
+      notes: merged,
     })
-    setTagPullLoading(true)
+    setTagPullLoading(merged.length === 0 && !cached)
   }
 
   function toggleTagSelect(
@@ -2935,6 +3046,10 @@ export function HomePage() {
     setViewingNoteContextTagId(null)
     setEditingNote(note)
   }
+
+  const clearFocusMemoId = useCallback(() => {
+    setFocusMemoId(null)
+  }, [])
 
   async function loadMoreSourceNotes() {
     if (!selectedSourceId || sourceNotesLoadingMore || !sourceNotesHasMore) return
@@ -3708,7 +3823,13 @@ export function HomePage() {
     openTagInTagDetailView(tagId)
   }
 
-  if (!homeHubOpen && !homeDataReady && loading && !loadError) {
+  if (
+    !homeHubOpen &&
+    !pinnedBoardOpen &&
+    !homeDataReady &&
+    loading &&
+    !loadError
+  ) {
     return (
       <AppSplashScreen
         message="태그와 메모를 불러오는 중…"
@@ -3718,7 +3839,11 @@ export function HomePage() {
   }
 
   return (
-    <div className="home-layout">
+    <div
+      className={
+        homeHubOpen ? 'home-layout home-layout--hub-font' : 'home-layout'
+      }
+    >
       {loadError ? (
         <div className="setup-banner" role="status">
           <p className="setup-banner-title">데이터를 불러오지 못했습니다</p>
@@ -3772,7 +3897,17 @@ export function HomePage() {
         </div>
       ) : null}
 
-      {homeHubOpen ? (
+      {pinnedBoardOpen ? (
+        <PinnedNotesBoard
+          notes={pinnedNotes}
+          loading={pinnedNotesLoading}
+          error={pinnedNotesError}
+          allTags={allTags}
+          allSources={allSources}
+          onBack={closePinnedBoard}
+          onOpenNote={openEditNote}
+        />
+      ) : homeHubOpen ? (
         <HomeHubScreen
           onSelectView={enterBrowseFromHub}
           onOpenAccount={() => setAccountModalOpen(true)}
@@ -3780,6 +3915,7 @@ export function HomePage() {
             enterBrowseFromHub(homeBrowseNav)
             setSearchOpen(true)
           }}
+          onOpenPins={openPinnedBoard}
         />
       ) : (
       <div
@@ -4245,6 +4381,8 @@ export function HomePage() {
                   <FolderMemosView
                     notes={notesForSelectedTag}
                     loading={tagPullLoading}
+                    focusNoteId={focusMemoId}
+                    onFocusNoteConsumed={clearFocusMemoId}
                     folderTagId={
                       selectedTagId === TAG_VIEW_NONE_ID
                         ? undefined
@@ -4325,6 +4463,8 @@ export function HomePage() {
                   <FolderMemosView
                     notes={notesForSelectedSource}
                     loading={sourcePullLoading}
+                    focusNoteId={focusMemoId}
+                    onFocusNoteConsumed={clearFocusMemoId}
                     sourceId={selectedSourceId}
                     titleLabel={
                       selectedSource
@@ -4499,6 +4639,8 @@ export function HomePage() {
                 <FolderMemosView
                   notes={notesForSelectedTag}
                   loading={tagPullLoading}
+                  focusNoteId={focusMemoId}
+                  onFocusNoteConsumed={clearFocusMemoId}
                   folderTagId={booksRailExpandedParentId}
                   folderTab
                   titleLabel={

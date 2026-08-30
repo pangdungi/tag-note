@@ -26,6 +26,8 @@ type Props = {
   loading: boolean
   folderTagId?: string
   sourceId?: string
+  /** 방금 저장한 메모 — 그 장으로 연다 */
+  focusNoteId?: string | null
   titleLabel?: string
   folderTab?: boolean
   emptyHint?: string
@@ -35,6 +37,7 @@ type Props = {
   onEditFolder?: () => void
   onTagFilter?: (tagId: string) => void
   onSourceFilter?: (sourceId: string) => void
+  onFocusNoteConsumed?: () => void
 }
 
 function PaperSheet({
@@ -283,6 +286,7 @@ export function FolderMemosView({
   loading,
   folderTagId,
   sourceId,
+  focusNoteId,
   titleLabel,
   folderTab = false,
   emptyHint = '이 폴더의 메모가 아직 없습니다.',
@@ -292,22 +296,39 @@ export function FolderMemosView({
   onEditFolder,
   onTagFilter,
   onSourceFilter,
+  onFocusNoteConsumed,
 }: Props) {
   const [index, setIndex] = useState(0)
   const touchStart = useRef<{ x: number; y: number } | null>(null)
   const skipEditClick = useRef(false)
+  const openKey = `${folderTagId ?? ''}|${sourceId ?? ''}`
+  const seededOpenKey = useRef('')
 
-  useEffect(() => {
-    setIndex(0)
-  }, [folderTagId, sourceId])
-
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (focusNoteId) {
+      const focused = notes.findIndex((n) => n.id === focusNoteId)
+      if (focused >= 0) {
+        setIndex(focused)
+        onFocusNoteConsumed?.()
+        seededOpenKey.current = openKey
+        return
+      }
+    }
+    if (seededOpenKey.current !== openKey) {
+      if (notes.length === 0) {
+        setIndex(0)
+        return
+      }
+      seededOpenKey.current = openKey
+      setIndex(notes.length - 1)
+      return
+    }
     if (notes.length === 0) {
       setIndex(0)
       return
     }
     setIndex((cur) => Math.min(cur, notes.length - 1))
-  }, [notes.length])
+  }, [openKey, notes, focusNoteId, onFocusNoteConsumed])
 
   const note = notes[index] ?? null
   const extraTags = useMemo(() => {
