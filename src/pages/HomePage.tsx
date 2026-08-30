@@ -48,6 +48,7 @@ import {
   resolveNoteSourceTitle,
   mergeNotesById,
   mapNotesWithClearedSource,
+  mapNotesWithMovedSource,
   mapNotesWithRenamedSource,
   noteBodyMatchesMainSearch,
   noteSourceLabel,
@@ -2174,6 +2175,33 @@ export function HomePage() {
     [allSources, clearTagPullCache],
   )
 
+  const applyNotesMovedToSource = useCallback(
+    (fromSourceId: string, toSource: SourceRow) => {
+      const from = allSources.find((s) => s.id === fromSourceId)
+      const titleKey = from ? sourceTitleKey(from.title) : undefined
+      const move = (list: NoteWithTags[]) =>
+        mapNotesWithMovedSource(list, fromSourceId, toSource, titleKey)
+      setNotes((prev) => move(prev))
+      setPinnedNotes((prev) => move(prev))
+      setTagPullEntry((cur) =>
+        cur ? { ...cur, notes: move(cur.notes) } : cur,
+      )
+      for (const [key, entry] of tagPullCacheRef.current.entries()) {
+        tagPullCacheRef.current.set(key, {
+          ...entry,
+          notes: move(entry.notes),
+        })
+      }
+      setSelectedSourceId((cur) => (cur === fromSourceId ? toSource.id : cur))
+      setPreviewSourceId((cur) => (cur === fromSourceId ? null : cur))
+      setAllSources((prev) => prev.filter((s) => s.id !== fromSourceId))
+      sourcePullCacheRef.current.clear()
+      setSaveError(null)
+      void refreshHomeTagCounts()
+    },
+    [allSources, refreshHomeTagCounts],
+  )
+
   useEffect(() => {
     const uid = user?.id ?? null
     if (!uid) {
@@ -3994,9 +4022,7 @@ export function HomePage() {
                 showSearch={
                   homeBrowseNav !== 'books' && !linksSourceMemosOpen
                 }
-                showRailSettings={
-                  railEditContext !== null && railEditContext.kind !== 'parent'
-                }
+                showRailSettings={railEditContext?.kind === 'tag'}
                 railSettingsLabel={railSettingsLabel}
                 onOpenRailSettings={openRailSettings}
                 onToggleSearch={() => toggleSearch()}
@@ -4524,6 +4550,15 @@ export function HomePage() {
                                           spineHeight={previewSpineHeight}
                                           opening={coverOpeningId === s.id}
                                           onOpen={openSourceFromCoverPreview}
+                                          onEdit={
+                                            canUseCompose
+                                              ? () => {
+                                                  setRailEditingTag(null)
+                                                  setRailEditingParentTag(null)
+                                                  setRailEditingSource(s)
+                                                }
+                                              : undefined
+                                          }
                                         />
                                       ) : null}
                                     </div>
@@ -4593,6 +4628,15 @@ export function HomePage() {
                                             spineHeight={previewSpineHeight}
                                             opening={coverOpeningId === s.id}
                                             onOpen={openSourceFromCoverPreview}
+                                            onEdit={
+                                              canUseCompose
+                                                ? () => {
+                                                    setRailEditingTag(null)
+                                                    setRailEditingParentTag(null)
+                                                    setRailEditingSource(s)
+                                                  }
+                                                : undefined
+                                            }
                                           />
                                         ) : null}
                                       </div>
@@ -4935,9 +4979,11 @@ export function HomePage() {
       <EditSourceModal
         open={railEditingSource !== null}
         source={railEditingSource}
+        allSources={allSources}
         onClose={() => setRailEditingSource(null)}
         onSourceUpdated={applySourceUpdated}
         onSourceDeleted={applySourceDeleted}
+        onNotesMovedToSource={applyNotesMovedToSource}
         onSourceError={(message) => setSaveError(message)}
         onSyncFromServer={syncAllFromServer}
       />

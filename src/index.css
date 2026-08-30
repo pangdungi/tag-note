@@ -3231,6 +3231,15 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
   padding: 0.5rem 0 1.25rem;
 }
 
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .links-all-scroll:has(.links-shelf-cover-edit),
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .links-category-scroll:has(.links-shelf-cover-edit) {
+  padding-bottom: 2.35rem;
+}
+
 .links-all-shelf {
   flex: 0 0 auto;
   display: flex;
@@ -4715,6 +4724,24 @@ button.parent-tag-card {
 
 .source-spine-edit-field {
   margin-top: 0.25rem;
+}
+
+.source-move-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.source-move-row .modal-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.source-move-submit {
+  flex: 0 0 auto;
+  min-width: 5.25rem;
+  padding-left: 0.95rem;
+  padding-right: 0.95rem;
 }
 
 .source-spine-edit-file-input {
@@ -7363,33 +7390,32 @@ body:has(.tag-memos-flip-overlay) .tag-view-spiral {
 .folder-memos-page-tab-edit {
   position: absolute;
   top: 0;
-  right: 0;
   z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 1.75rem;
   height: calc(1.75rem - 1px);
   margin: 0;
-  padding: 0;
+  padding: 0 0.1rem;
   border: none;
   background: transparent;
-  color: #9ca3af;
+  color: #6b7280;
+  font-family: var(--app-font-family);
+  font-size: 0.72rem;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
 .folder-memos-page-tab-edit:hover:not(:disabled) {
-  color: #6b7280;
+  color: #111111;
 }
 
 .folder-memos-page-tab-edit:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-.folder-memos-page-tab-edit-icon {
-  display: block;
 }
 
 .folder-memos-page-tab-title {
@@ -8513,14 +8539,49 @@ button.folder-memos-page-tag:hover {
   color: var(--tag-d-fg);
 }
 
-.links-shelf-cover-hinge {
+.links-shelf-cover-block {
   flex: 0 0 auto;
   align-self: flex-end;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.links-shelf-cover-hinge {
+  flex: 0 0 auto;
   position: relative;
   z-index: 2;
   margin: 0;
   perspective: 1100px;
   transform-style: preserve-3d;
+}
+
+.links-shelf-cover-edit {
+  appearance: none;
+  -webkit-appearance: none;
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 50%;
+  z-index: 3;
+  display: block;
+  margin: 0;
+  padding: 0.05rem 0.1rem;
+  border: none;
+  background: none;
+  color: #111111;
+  font-family: var(--app-font-family);
+  font-size: 0.95rem;
+  font-weight: 400;
+  line-height: 1.25;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  cursor: pointer;
+}
+
+.links-shelf-cover-edit:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
 }
 
 .parent-tag-spine-group:has(.links-shelf-cover-hinge--opening) {

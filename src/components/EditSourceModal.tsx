@@ -13,6 +13,7 @@ import { ModalSelect } from './ModalSelect'
 import { ConfirmModal } from './ConfirmModal'
 import {
   deleteSourceKeepNotes,
+  moveNotesToSource,
   updateSource,
   type SourceRow,
 } from '../lib/notesApi'
@@ -38,8 +39,13 @@ type Props = {
   open: boolean
   onClose: () => void
   source: SourceRow | null
+  allSources: SourceRow[]
   onSourceUpdated: (row: SourceRow) => void
   onSourceDeleted: (sourceId: string) => void
+  onNotesMovedToSource?: (
+    fromSourceId: string,
+    toSource: SourceRow,
+  ) => void | Promise<void>
   onSourceError?: (message: string) => void
   onSyncFromServer?: () => void | Promise<void>
 }
@@ -57,8 +63,10 @@ export function EditSourceModal({
   open,
   onClose,
   source,
+  allSources,
   onSourceUpdated,
   onSourceDeleted,
+  onNotesMovedToSource,
   onSourceError,
   onSyncFromServer,
 }: Props) {
@@ -79,6 +87,9 @@ export function EditSourceModal({
   )
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [moveTargetId, setMoveTargetId] = useState('')
+  const [moveConfirmOpen, setMoveConfirmOpen] = useState(false)
+  const [moving, setMoving] = useState(false)
   const [saving, setSaving] = useState(false)
   const [pasteBusy, setPasteBusy] = useState(false)
 
@@ -100,6 +111,23 @@ export function EditSourceModal({
   const categoryValue =
     category === SOURCE_CATEGORY_UNCategorized ? '' : category
 
+  const moveTargetOptions = useMemo(() => {
+    if (!source) return []
+    return allSources
+      .filter((row) => row.id !== source.id)
+      .slice()
+      .sort((a, b) => a.title.localeCompare(b.title, 'ko'))
+      .map((row) => ({
+        value: row.id,
+        label: displaySourceTitle(row.title),
+      }))
+  }, [allSources, source])
+
+  const moveTarget = useMemo(
+    () => allSources.find((row) => row.id === moveTargetId) ?? null,
+    [allSources, moveTargetId],
+  )
+
   useEffect(() => {
     if (!open || !source) return
     startTransition(() => {
@@ -113,6 +141,9 @@ export function EditSourceModal({
       setSpineRemoved(false)
       setError(null)
       setDeleteConfirmOpen(false)
+      setMoveTargetId('')
+      setMoveConfirmOpen(false)
+      setMoving(false)
       setSaving(false)
       setPasteBusy(false)
     })
@@ -327,6 +358,41 @@ export function EditSourceModal({
                   </div>
                 )}
               </div>
+
+              <div className="composer-field">
+                <label className="composer-label" htmlFor="edit-source-move">
+                  다른 출처로 옮기기
+                </label>
+                {moveTargetOptions.length === 0 ? (
+                  <p className="composer-field-hint">
+                    옮길 다른 출처가 없습니다.
+                  </p>
+                ) : (
+                  <>
+                    <p className="composer-field-hint">
+                      이 출처의 모든 메모를 선택한 출처로 옮깁니다.
+                    </p>
+                    <div className="source-move-row">
+                      <ModalSelect
+                        id="edit-source-move"
+                        value={moveTargetId}
+                        options={moveTargetOptions}
+                        emptyLabel="옮길 출처 선택"
+                        disabled={saving || pasteBusy || moving}
+                        onChange={setMoveTargetId}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn--emphasis source-move-submit"
+                        disabled={!moveTarget || saving || pasteBusy || moving}
+                        onClick={() => setMoveConfirmOpen(true)}
+                      >
+                        옮기기
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
             {error ? <p className="composer-error">{error}</p> : null}
           </div>
@@ -334,7 +400,7 @@ export function EditSourceModal({
             <button
               type="button"
               className="btn btn--danger"
-              disabled={deleteConfirmOpen || saving}
+              disabled={deleteConfirmOpen || saving || moving}
               onClick={() => setDeleteConfirmOpen(true)}
             >
               출처 삭제
@@ -342,7 +408,7 @@ export function EditSourceModal({
             <button
               type="button"
               className="btn btn--emphasis edit-note-modal-submit"
-              disabled={!canSave || saving || pasteBusy}
+              disabled={!canSave || saving || pasteBusy || moving}
               onClick={() => {
                 setError(null)
                 setSaving(true)
@@ -418,6 +484,50 @@ export function EditSourceModal({
               onSourceError?.(
                 e instanceof Error ? e.message : '삭제하지 못했습니다.',
               )
+            }
+          })()
+        }}
+      />
+
+      <ConfirmModal
+        open={moveConfirmOpen && moveTarget !== null}
+        title="다른 출처로 옮기기"
+        message={
+          moveTarget
+            ? `「${displaySourceTitle(source.title)}」의 모든 메모를 「${displaySourceTitle(moveTarget.title)}」로 옮길까요? 옮긴 뒤 이 출처는 목록에서 삭제됩니다.`
+            : ''
+        }
+        cancelLabel="취소"
+        confirmLabel={moving ? '옮기는 중…' : '옮기기'}
+        busy={moving}
+        onCancel={() => {
+          if (moving) return
+          setMoveConfirmOpen(false)
+        }}
+        onConfirm={() => {
+          if (!moveTarget || moving) return
+          const fromId = source.id
+          const toSource = moveTarget
+          setMoving(true)
+          setError(null)
+          void onNotesMovedToSource?.(fromId, toSource)
+          setMoveConfirmOpen(false)
+          onClose()
+          void (async () => {
+            try {
+              await moveNotesToSource(fromId, toSource)
+              void onNotesMovedToSource?.(fromId, toSource)
+            } catch (e) {
+              console.error('[태그노트] EditSourceModal 출처 옮기기 실패', {
+                fromId,
+                toId: toSource.id,
+              }, e)
+              await onSyncFromServer?.()
+              onSourceError?.(
+                e instanceof Error ? e.message : '옮기지 못했습니다.',
+              )
+            } finally {
+              setMoving(false)
             }
           })()
         }}

@@ -191,7 +191,7 @@ function FolderPageTabHead({
     geom.textW + FOLDER_TAB_JOIN * 2 + FOLDER_TAB_PAD * 2,
     64,
   )
-  const width = Math.max(geom.width, tabWidth + 8)
+  const width = Math.max(geom.width, tabWidth + (onEditFolder ? 78 : 8))
   const tabLeft = 0
   const ready = geom.width > 0
 
@@ -239,22 +239,10 @@ function FolderPageTabHead({
         <button
           type="button"
           className="folder-memos-page-tab-edit"
-          aria-label="폴더 수정"
-          title="폴더 수정"
+          style={ready ? { left: tabWidth + 8 } : undefined}
           onClick={onEditFolder}
         >
-          <svg
-            className="folder-memos-page-tab-edit-icon"
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            aria-hidden
-          >
-            <path
-              fill="currentColor"
-              d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.04a1 1 0 0 0 0-1.41l-2.51-2.51a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.99-1.66z"
-            />
-          </svg>
+          폴더 수정
         </button>
       ) : null}
       {extraTags.length > 0 ? (

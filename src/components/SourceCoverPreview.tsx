@@ -8,6 +8,7 @@ type SourceCoverPreviewProps = {
   spineHeight: number
   opening?: boolean
   onOpen: () => void
+  onEdit?: () => void
 }
 
 const COVER_RATIO = 0.68
@@ -27,6 +28,7 @@ export function SourceCoverPreview({
   spineHeight,
   opening = false,
   onOpen,
+  onEdit,
 }: SourceCoverPreviewProps) {
   const label = displaySourceTitle(source.title)
   const coverUrl = resolveSourceCoverUrl(source)
@@ -42,40 +44,54 @@ export function SourceCoverPreview({
   }, [coverUrl])
 
   return (
-    <div
-      className={`links-shelf-cover-hinge${
-        opening ? ' links-shelf-cover-hinge--opening' : ''
-      }`}
-      style={{ width, height }}
-    >
-      <span className="links-shelf-cover-inside" aria-hidden="true" />
-      <button
-        type="button"
-        className="links-shelf-cover"
-        aria-label={`${label} 메모 보기`}
-        disabled={opening}
-        onClick={onOpen}
+    <div className="links-shelf-cover-block">
+      <div
+        className={`links-shelf-cover-hinge${
+          opening ? ' links-shelf-cover-hinge--opening' : ''
+        }`}
+        style={{ width, height }}
       >
-        {showCover && coverUrl ? (
-          <img
-            className="links-shelf-cover-image"
-            src={coverUrl}
-            alt=""
-            draggable={false}
-            referrerPolicy="no-referrer"
-            onLoad={(event) => {
-              const img = event.currentTarget
-              if (img.naturalWidth < 1 || img.naturalHeight < 1) return
-              setImageRatio(img.naturalWidth / img.naturalHeight)
-            }}
-            onError={() => setImageBroken(true)}
-          />
-        ) : (
-          <span className="links-shelf-cover-blank">
-            <span className="links-shelf-cover-title">{label}</span>
-          </span>
-        )}
-      </button>
+        <span className="links-shelf-cover-inside" aria-hidden="true" />
+        <button
+          type="button"
+          className="links-shelf-cover"
+          aria-label={`${label} 메모 보기`}
+          disabled={opening}
+          onClick={onOpen}
+        >
+          {showCover && coverUrl ? (
+            <img
+              className="links-shelf-cover-image"
+              src={coverUrl}
+              alt=""
+              draggable={false}
+              referrerPolicy="no-referrer"
+              onLoad={(event) => {
+                const img = event.currentTarget
+                if (img.naturalWidth < 1 || img.naturalHeight < 1) return
+                setImageRatio(img.naturalWidth / img.naturalHeight)
+              }}
+              onError={() => setImageBroken(true)}
+            />
+          ) : (
+            <span className="links-shelf-cover-blank">
+              <span className="links-shelf-cover-title">{label}</span>
+            </span>
+          )}
+        </button>
+      </div>
+      {onEdit && !opening ? (
+        <button
+          type="button"
+          className="links-shelf-cover-edit"
+          onClick={(event) => {
+            event.stopPropagation()
+            onEdit()
+          }}
+        >
+          책 수정
+        </button>
+      ) : null}
     </div>
   )
 }

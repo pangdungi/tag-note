@@ -683,6 +683,78 @@ export function mapNotesWithClearedSource(
   })
 }
 
+/** 한 출처의 메모를 다른 출처로 옮긴 뒤 로컬 목록에 반영 */
+export function mapNotesWithMovedSource(
+  notes: NoteWithTags[],
+  fromSourceId: string,
+  toSource: Pick<SourceRow, 'id' | 'title'>,
+  fromTitleKey?: string,
+): NoteWithTags[] {
+  const title = normalizeSourceTitle(toSource.title)
+  return notes.map((n) => {
+    const linked =
+      n.source_id === fromSourceId || n.sources?.id === fromSourceId
+    const legacy =
+      Boolean(fromTitleKey) &&
+      !n.source_id &&
+      sourceTitleKey(noteSourceLabel(n)) === fromTitleKey
+    if (!linked && !legacy) return n
+    return {
+      ...n,
+      source: title,
+      source_id: toSource.id,
+      sources: { id: toSource.id, title },
+    }
+  })
+}
+
+/** 해당 출처의 모든 메모를 다른 출처로 옮김. 비면 원래 출처는 삭제 */
+export async function moveNotesToSource(
+  fromSourceId: string,
+  toSource: Pick<SourceRow, 'id' | 'title'>,
+): Promise<void> {
+  if (fromSourceId === toSource.id) {
+    throw new Error('같은 출처로는 옮길 수 없습니다.')
+  }
+  const title = normalizeSourceTitle(toSource.title)
+  if (!title) throw new Error('옮길 출처 이름이 비었습니다.')
+
+  const { data: src, error: srcErr } = await supabase
+    .from('sources')
+    .select('title')
+    .eq('id', fromSourceId)
+    .single()
+  if (srcErr) throw srcErr
+  const fromKey = sourceTitleKey((src as { title: string }).title)
+
+  const { error: linkedErr } = await supabase
+    .from('notes')
+    .update({ source: title, source_id: toSource.id })
+    .eq('source_id', fromSourceId)
+  if (linkedErr) throw linkedErr
+
+  const { data: legacyRows, error: legacyErr } = await supabase
+    .from('notes')
+    .select('id, source')
+    .is('source_id', null)
+    .not('source', 'eq', '')
+  if (legacyErr) throw legacyErr
+
+  const legacyIds = (legacyRows ?? [])
+    .filter((row) => sourceTitleKey((row as { source: string }).source) === fromKey)
+    .map((row) => (row as { id: string }).id)
+
+  if (legacyIds.length > 0) {
+    const { error: moveLegacyErr } = await supabase
+      .from('notes')
+      .update({ source: title, source_id: toSource.id })
+      .in('id', legacyIds)
+    if (moveLegacyErr) throw moveLegacyErr
+  }
+
+  await deleteSourceIfOrphan(fromSourceId)
+}
+
 /** 출처 이름 변경 시 연결된 메모 카드에 반영 */
 export function mapNotesWithRenamedSource(
   notes: NoteWithTags[],

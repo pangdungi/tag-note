@@ -141,12 +141,12 @@ export function EditParentTagModal({
         >
           <div className="tag-manage-head">
             <h2 id={titleId} className="tag-manage-title">
-              상위태그 수정
+              폴더 수정
             </h2>
             <button
               type="button"
               className="tag-manage-close"
-              aria-label="상위태그 수정 닫기"
+              aria-label="폴더 수정 닫기"
               onClick={() => onClose()}
             >
               ×
@@ -156,7 +156,7 @@ export function EditParentTagModal({
             <div className="composer-stack">
               <div className="composer-field">
                 <label className="composer-label" htmlFor="edit-parent-tag-name">
-                  상위태그 이름
+                  폴더 이름
                 </label>
                 <input
                   id="edit-parent-tag-name"
@@ -164,7 +164,7 @@ export function EditParentTagModal({
                   className="composer-source"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="상위태그 이름"
+                  placeholder="폴더 이름"
                   autoComplete="off"
                   spellCheck={false}
                   autoFocus
@@ -293,7 +293,7 @@ export function EditParentTagModal({
               disabled={deleteConfirmOpen || saving}
               onClick={() => setDeleteConfirmOpen(true)}
             >
-              상위태그 삭제
+              폴더 삭제
             </button>
             <button
               type="button"
@@ -361,8 +361,8 @@ export function EditParentTagModal({
 
       <ConfirmModal
         open={deleteConfirmOpen}
-        title="상위태그 삭제"
-        message={`「${displayTagName(tag.name)}」 상위태그를 삭제할까요? 하위 태그는 삭제되지 않고 미분류(상위 미지정) 태그로 남습니다. 메모는 삭제되지 않고, 이 상위태그와의 연결만 제거됩니다. 삭제 후에는 다시 복구할 수 없습니다.`}
+        title="폴더 삭제"
+        message={`「${displayTagName(tag.name)}」 폴더를 삭제할까요? 하위 태그는 삭제되지 않고 미분류로 남습니다. 메모는 삭제되지 않고, 이 폴더와의 연결만 제거됩니다. 삭제 후에는 다시 복구할 수 없습니다.`}
         cancelLabel="취소"
         confirmLabel={deleteBusy ? '삭제 중…' : '삭제'}
         danger
