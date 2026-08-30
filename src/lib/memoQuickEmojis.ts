@@ -1,4 +1,5 @@
 import arrowrightIcon from '../assets/memo-emojis/arrowright.svg'
+import bookiconIcon from '../assets/memo-emojis/bookicon.png'
 import checkIcon from '../assets/memo-emojis/check.svg'
 import faceIcon from '../assets/memo-emojis/face.svg'
 import musicIcon from '../assets/memo-emojis/music.svg'
@@ -26,6 +27,7 @@ export const MEMO_QUICK_EMOJIS: MemoQuickEmoji[] = [
   { id: 'no', label: '거절', iconSrc: noIcon, legacyUnicode: '❌' },
   { id: 'thinking', label: '생각', iconSrc: thinkingIcon, legacyUnicode: '💭' },
   { id: 'face', label: '얼굴', iconSrc: faceIcon },
+  { id: 'bookicon', label: '책', iconSrc: bookiconIcon },
 ]
 
 export const MEMO_CIRCLED_NUMBERS = [
