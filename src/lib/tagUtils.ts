@@ -235,6 +235,23 @@ export function getParentTags(
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
+/** 폴더 없이 메모를 넣을 기본 폴더 이름 */
+export const DEFAULT_FOLDER_NAME = '메모'
+
+export function isDefaultFolderName(name: string): boolean {
+  return displayTagName(name).toLowerCase() === DEFAULT_FOLDER_NAME.toLowerCase()
+}
+
+export function findDefaultFolder(
+  tags: TagHierarchyRow[],
+  links?: TagParentLink[],
+): TagHierarchyRow | null {
+  return (
+    getParentTags(tags, links).find((folder) => isDefaultFolderName(folder.name)) ??
+    null
+  )
+}
+
 /** 책(폴더) 레일 — is_parent로 지정된 태그만 */
 export function isBooksRailParentTag(
   tag: TagHierarchyRow,
@@ -677,6 +694,7 @@ export function resolveAddNoteComposeState(
   booksRailExpandedParentId: string | null,
   tags: TagHierarchyRow[],
   links?: TagParentLink[],
+  defaultFolderId?: string | null,
 ): AddNoteComposeState {
   const empty: AddNoteComposeState = {
     initialTags: [],
@@ -689,6 +707,19 @@ export function resolveAddNoteComposeState(
     const tag = tags.find((t) => t.id === id)
     if (!tag || !isBooksRailParentTag(tag, tags, links)) return null
     return tag.id
+  }
+
+  if (
+    homeBrowseNav === 'books' &&
+    !booksRailExpandedParentId &&
+    !selectedTagId &&
+    defaultFolderId
+  ) {
+    return {
+      initialTags: [],
+      lockedParentTagId: defaultFolderId,
+      childTagCompose: false,
+    }
   }
 
   if (homeBrowseNav === 'books' && booksRailExpandedParentId) {

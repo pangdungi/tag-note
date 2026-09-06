@@ -14,6 +14,7 @@ type Props = {
   scrollRef: RefObject<HTMLDivElement | null>
   slotRef: (folderId: string, el: HTMLElement | null) => void
   onSelectFolder: (folderId: string) => void
+  emptyHint?: string
 }
 
 const TAB_H = 26
@@ -143,7 +144,7 @@ function FolderFileRidge({
           height={TAB_H}
           aria-hidden
         >
-          <path d={folderTabFill(left, tabWidth)} fill="#ffffff" />
+          <path d={folderTabFill(left, tabWidth)} fill="#fafafa" />
           <path
             d={folderTabPath(left, tabWidth)}
             fill="none"
@@ -177,6 +178,7 @@ export function HomeFolderFileView({
   scrollRef,
   slotRef,
   onSelectFolder,
+  emptyHint = '폴더가 없습니다. 아래 + 로 폴더를 추가하세요.',
 }: Props) {
   useEffect(() => {
     const scroller = scrollRef.current
@@ -218,7 +220,7 @@ export function HomeFolderFileView({
       >
         {folders.length === 0 ? (
           <p className="notes-hint folder-file-empty">
-            폴더가 없습니다. 아래 + 로 폴더를 추가하세요.
+            {emptyHint}
           </p>
         ) : (
           folders.map((folder, index) => {

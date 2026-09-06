@@ -155,14 +155,14 @@ function folderPageTabPath(width: number, tabLeft: number, tabWidth: number) {
   ].join(' ')
 }
 
-function FolderPageTabHead({
+export function FolderPageTabHead({
   title,
-  extraTags,
+  extraTags = [],
   onTagFilter,
   onEditFolder,
 }: {
   title: string
-  extraTags: TagRow[]
+  extraTags?: TagRow[]
   onTagFilter?: (tagId: string) => void
   onEditFolder?: () => void
 }) {
@@ -303,12 +303,8 @@ export function FolderMemosView({
       }
     }
     if (seededOpenKey.current !== openKey) {
-      if (notes.length === 0) {
-        setIndex(0)
-        return
-      }
       seededOpenKey.current = openKey
-      setIndex(notes.length - 1)
+      setIndex(0)
       return
     }
     if (notes.length === 0) {

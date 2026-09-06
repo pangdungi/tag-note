@@ -37,8 +37,8 @@ export default defineConfig(({ mode }) => {
         name: '두들노트',
         short_name: '두들노트',
         description: '태그로 정리하는 메모',
-        theme_color: '#ffffff',
-        background_color: '#ffffff',
+        theme_color: '#fafafa',
+        background_color: '#fafafa',
         display: 'standalone',
         orientation: 'any',
         lang: 'ko',
@@ -67,6 +67,7 @@ export default defineConfig(({ mode }) => {
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         globIgnores: ['**/fonts/**'],
+        navigateFallbackDenylist: [/^\/api\//],
       },
     }),
   ],

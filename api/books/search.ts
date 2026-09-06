@@ -1,51 +1,48 @@
 import { searchYes24Books } from '../../src/lib/bookCatalogServer'
-import { bookApiCorsHeaders, rejectOrigin } from './_cors'
+import {
+  bookApiCorsHeaders,
+  readHeader,
+  rejectOrigin,
+  sendBookApiJson,
+  type BookApiReq,
+  type BookApiRes,
+} from './_cors'
 
-export const runtime = 'edge'
-
-export default async function handler(request: Request): Promise<Response> {
-  const origin = request.headers.get('origin')
+export default async function handler(req: BookApiReq, res: BookApiRes) {
+  const origin = readHeader(req, 'origin')
   const ch = bookApiCorsHeaders(origin)
 
-  if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: ch })
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204
+    for (const [key, value] of Object.entries(ch)) res.setHeader(key, value)
+    res.end()
+    return
   }
 
-  if (request.method !== 'GET') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { ...ch, 'Content-Type': 'application/json' },
-    })
+  if (req.method !== 'GET') {
+    sendBookApiJson(res, 405, { error: 'Method not allowed' }, ch)
+    return
   }
 
   if (rejectOrigin(origin)) {
-    return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
-      status: 403,
-      headers: { ...ch, 'Content-Type': 'application/json' },
-    })
+    sendBookApiJson(res, 403, { error: 'Origin not allowed' }, ch)
+    return
   }
 
-  const url = new URL(request.url)
+  const host = readHeader(req, 'host') ?? 'localhost'
+  const url = new URL(req.url ?? '/', `https://${host}`)
   const q = url.searchParams.get('q')?.trim() ?? ''
   if (q.length < 2) {
-    return new Response(JSON.stringify({ hits: [] }), {
-      status: 200,
-      headers: { ...ch, 'Content-Type': 'application/json' },
-    })
+    sendBookApiJson(res, 200, { hits: [] }, ch)
+    return
   }
 
   try {
     const hits = await searchYes24Books(q)
-    return new Response(JSON.stringify({ hits }), {
-      status: 200,
-      headers: { ...ch, 'Content-Type': 'application/json' },
-    })
+    sendBookApiJson(res, 200, { hits }, ch)
   } catch (e) {
     const message =
       e instanceof Error ? e.message : '도서 검색에 실패했습니다.'
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500,
-      headers: { ...ch, 'Content-Type': 'application/json' },
-    })
+    sendBookApiJson(res, 500, { error: message }, ch)
   }
 }

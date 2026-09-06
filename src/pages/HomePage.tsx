@@ -12,7 +12,7 @@ import type { HomeBrowseNavId } from '../components/HomeBrowseNav'
 import { HomeHubScreen } from '../components/HomeHubScreen'
 import { PinnedNotesBoard } from '../components/PinnedNotesBoard'
 import { HomeFolderFileView } from '../components/HomeFolderFileView'
-import { FolderMemosView } from '../components/FolderMemosView'
+import { FolderMemosView, FolderPageTabHead } from '../components/FolderMemosView'
 import { HomeTagSpiralRail } from '../components/HomeTagSpiralRail'
 import { HomeSearchResultsRail } from '../components/HomeSearchResultsRail'
 import { EditNoteModal } from '../components/EditNoteModal'
@@ -23,6 +23,7 @@ import { TagNotesPullStatus } from '../components/TagNotesPullStatus'
 import { useAuth } from '../contexts/useAuth'
 import {
   createNoteWithTags,
+  createParentTag,
   fetchNoteWithTagsById,
   fetchPinnedNotes,
   noteIsPinned,
@@ -67,6 +68,8 @@ import {
   buildParentTreeMemoCounts,
   displayTagName,
   formatHashtagLabel,
+  DEFAULT_FOLDER_NAME,
+  findDefaultFolder,
   getParentTags,
   getTagsForTagViewRail,
   isBooksRailParentTag,
@@ -1011,6 +1014,9 @@ type HomeQuickActionButtonsProps = {
   mobileBrowseFab?: ReactNode
   showAccount?: boolean
   showSearch?: boolean
+  hideAddButton?: boolean
+  /** 폴더 목록 — 폴더 추가와 기본 폴더에 메모 추가를 같이 */
+  showFolderListAdds?: boolean
 }
 
 type RailEditContext =
@@ -1097,6 +1103,8 @@ function HomeQuickActionButtons({
   mobileBrowseFab,
   showAccount = true,
   showSearch = true,
+  hideAddButton = false,
+  showFolderListAdds = false,
 }: HomeQuickActionButtonsProps) {
   const addLabel = showAddBookCompose
     ? '책 추가'
@@ -1146,6 +1154,32 @@ function HomeQuickActionButtons({
         />
       </button>
       ) : null}
+      {hideAddButton ? null : showFolderListAdds ? (
+        <>
+          <button
+            type="button"
+            className="home-add-text-btn"
+            disabled={!canUseCompose}
+            aria-label="폴더 추가"
+            title="폴더 추가"
+            onClick={onAddParentTag}
+          >
+            폴더 추가
+          </button>
+          <button
+            type="button"
+            className={`home-add-text-btn${
+              addNoteOpen ? ' home-add-text-btn--active' : ''
+            }`}
+            disabled={!canUseCompose}
+            aria-label="메모 추가"
+            title="메모 추가"
+            onClick={onToggleAddNote}
+          >
+            메모 추가
+          </button>
+        </>
+      ) : (
       <button
         type="button"
         className={`home-add-text-btn${
@@ -1166,6 +1200,7 @@ function HomeQuickActionButtons({
       >
         {addLabel}
       </button>
+      )}
       {mobileBrowseFab}
       {showAccount ? (
         <button
@@ -1346,6 +1381,9 @@ export function HomePage() {
 
   const [addNoteOpen, setAddNoteOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [folderListSearchOpen, setFolderListSearchOpen] = useState(false)
+  const [folderListQuery, setFolderListQuery] = useState('')
+  const folderListSearchRef = useRef<HTMLInputElement>(null)
   const [homeBrowseNav, setHomeBrowseNav] = useState<HomeBrowseNavId>('links')
   const [homeHubOpen, setHomeHubOpen] = useState(true)
   const [pinnedBoardOpen, setPinnedBoardOpen] = useState(false)
@@ -1395,6 +1433,7 @@ export function HomePage() {
   const notesRef = useRef(notes)
   const allTagsRef = useRef(allTags)
   const tagParentLinksRef = useRef(tagParentLinks)
+  const ensuringDefaultFolderRef = useRef(false)
   const allSourcesRef = useRef(allSources)
   useEffect(() => {
     notesRef.current = notes
@@ -1906,6 +1945,43 @@ export function HomePage() {
       })
     }
   }, [])
+
+  const ensureDefaultFolder = useCallback(async (): Promise<TagRow | null> => {
+    const existing = findDefaultFolder(
+      allTagsRef.current,
+      tagParentLinksRef.current,
+    )
+    if (existing) return existing
+    if (!user?.id || allTagsRef.current.length === 0) return null
+    const row = await createParentTag(DEFAULT_FOLDER_NAME, user.id, {
+      existingTags: allTagsRef.current,
+    })
+    applyTagUpdated(row)
+    return row
+  }, [user?.id, applyTagUpdated])
+
+  useEffect(() => {
+    if (!user?.id || !homeDataReady || loading || loadError) return
+    if (allTags.length === 0) return
+    if (findDefaultFolder(allTags, tagParentLinks)) {
+      ensuringDefaultFolderRef.current = false
+      return
+    }
+    if (ensuringDefaultFolderRef.current) return
+    ensuringDefaultFolderRef.current = true
+    void ensureDefaultFolder().catch((e) => {
+      ensuringDefaultFolderRef.current = false
+      console.error('[태그노트] 기본 폴더 생성 실패', e)
+    })
+  }, [
+    user?.id,
+    homeDataReady,
+    loading,
+    loadError,
+    allTags,
+    tagParentLinks,
+    ensureDefaultFolder,
+  ])
 
   const applyTagParentSynced = useCallback(
     (tagId: string, parentId: string | null, row: TagRow) => {
@@ -2572,6 +2648,9 @@ export function HomePage() {
   }, [notes, selectedSourceId, selectedSource])
 
   const viewingNoteQueue = useMemo(() => {
+    if (pinnedBoardOpen) {
+      return pinnedNotes
+    }
     if (hasActiveSearch && !selectedTagId && !selectedSourceId) {
       return notesMatchingSearch
     }
@@ -2587,6 +2666,8 @@ export function HomePage() {
     }
     return viewingNote ? [viewingNote] : []
   }, [
+    pinnedBoardOpen,
+    pinnedNotes,
     hasActiveSearch,
     selectedTagId,
     selectedSourceId,
@@ -3110,6 +3191,11 @@ export function HomePage() {
     return allTags.find((x) => x.id === selectedTagId) ?? null
   }, [allTags, selectedTagId])
 
+  const defaultFolder = useMemo(
+    () => findDefaultFolder(allTags, tagParentLinks),
+    [allTags, tagParentLinks],
+  )
+
   const addNoteCompose = useMemo(
     () =>
       resolveAddNoteComposeState(
@@ -3118,6 +3204,7 @@ export function HomePage() {
         booksRailExpandedParentId,
         allTags,
         tagParentLinks,
+        defaultFolder?.id ?? null,
       ),
     [
       homeBrowseNav,
@@ -3125,6 +3212,7 @@ export function HomePage() {
       booksRailExpandedParentId,
       allTags,
       tagParentLinks,
+      defaultFolder?.id,
     ],
   )
 
@@ -3334,6 +3422,17 @@ export function HomePage() {
     () => getParentTags(allTags, tagParentLinks),
     [allTags, tagParentLinks],
   )
+
+  const showFolderListSearch =
+    homeBrowseNav === 'books' && !booksRailExpandedParentId && !showBootstrap
+
+  const foldersForFileView = useMemo(() => {
+    const q = folderListQuery.trim().toLowerCase()
+    if (!q) return parentTagsForRail
+    return parentTagsForRail.filter((folder) =>
+      displayTagName(folder.name).toLowerCase().includes(q),
+    )
+  }, [parentTagsForRail, folderListQuery])
 
   const booksParentRailLocked = Boolean(
     homeBrowseNav === 'books' && booksRailExpandedParentId,
@@ -3617,6 +3716,11 @@ export function HomePage() {
       (showHomeSourceGrid && !loading && allSources.length > 0 && !selectedTagId),
   )
 
+  const showFolderListAdds =
+    homeBrowseNav === 'books' &&
+    !booksRailExpandedParentId &&
+    !hasActiveSearch
+
   /** 책(상위태그) 뷰에서 상위 미선택 시 + → 북스파인(상위태그 추가) */
   const showAddParentTagCompose =
     homeBrowseNav === 'books' &&
@@ -3810,8 +3914,19 @@ export function HomePage() {
     setAddParentTagRailOpen(true)
   }
 
-  function openAddNote() {
+  async function openAddNote() {
     if (!canUseCompose) return
+    if (showFolderListAdds) {
+      try {
+        const folder = await ensureDefaultFolder()
+        if (!folder) return
+      } catch (e) {
+        setSaveError(
+          supabaseErrorMessage(e, '기본 폴더를 만들지 못했습니다.'),
+        )
+        return
+      }
+    }
     setAddNoteOpen(true)
   }
 
@@ -3838,6 +3953,18 @@ export function HomePage() {
     const timer = window.setTimeout(() => searchInputRef.current?.focus(), 0)
     return () => window.clearTimeout(timer)
   }, [searchOpen])
+
+  useEffect(() => {
+    if (showFolderListSearch) return
+    setFolderListSearchOpen(false)
+    setFolderListQuery('')
+  }, [showFolderListSearch])
+
+  useEffect(() => {
+    if (!folderListSearchOpen) return
+    const timer = window.setTimeout(() => folderListSearchRef.current?.focus(), 0)
+    return () => window.clearTimeout(timer)
+  }, [folderListSearchOpen])
 
   function handleSearchChange(v: string) {
     if (normalizeTagInput(v).length > 0) {
@@ -3927,14 +4054,28 @@ export function HomePage() {
 
       {pinnedBoardOpen ? (
         <PinnedNotesBoard
-          notes={pinnedNotes}
-          loading={pinnedNotesLoading}
           error={pinnedNotesError}
-          allTags={allTags}
-          allSources={allSources}
           onBack={closePinnedBoard}
-          onOpenNote={openEditNote}
-        />
+        >
+          <InlineRailNotesPanel
+            tagLabel="고정된 메모"
+            tagId=""
+            tagCatalog={tagCatalogMap}
+            sourceCatalog={sourceCatalogMap}
+            notes={pinnedNotes}
+            loading={pinnedNotesLoading}
+            onView={openViewNote}
+            onTagFilter={(tagId) => {
+              setPinnedBoardOpen(false)
+              setPinnedNotesError(null)
+              setHomeHubOpen(false)
+              openTagViewFromNote(tagId)
+            }}
+            sheetLayout
+            sheetFolderMode
+            emptyHint="고정한 메모가 없어요. 메모를 연 뒤 수정에서 고정하기를 켜 주세요."
+          />
+        </PinnedNotesBoard>
       ) : homeHubOpen ? (
         <HomeHubScreen
           onSelectView={enterBrowseFromHub}
@@ -3982,6 +4123,46 @@ export function HomePage() {
                   ? '뒤로'
                   : '메뉴'}
               </button>
+              {showFolderListSearch ? (
+                <div className="home-folder-list-search">
+                  <button
+                    type="button"
+                    className="btn btn--icon home-search-toggle-btn"
+                    aria-label={
+                      folderListSearchOpen ? '폴더 검색 닫기' : '폴더 검색 열기'
+                    }
+                    title={folderListSearchOpen ? '검색 닫기' : '검색'}
+                    onClick={() => {
+                      setFolderListSearchOpen((open) => {
+                        if (open) setFolderListQuery('')
+                        return !open
+                      })
+                    }}
+                  >
+                    <img
+                      src={searchDoodleIconUrl}
+                      alt=""
+                      className="btn--icon-img"
+                      width={20}
+                      height={20}
+                      decoding="async"
+                    />
+                  </button>
+                  {folderListSearchOpen ? (
+                    <input
+                      ref={folderListSearchRef}
+                      type="search"
+                      className="home-folder-list-search-input"
+                      value={folderListQuery}
+                      onChange={(e) => setFolderListQuery(e.target.value)}
+                      placeholder="폴더 이름"
+                      autoComplete="off"
+                      spellCheck={false}
+                      aria-label="폴더 이름 검색"
+                    />
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             {showLinksViewModeTabs ? (
               <div className="home-top-chrome-center">
@@ -4030,6 +4211,8 @@ export function HomePage() {
                 onAddParentTag={() => openAddParentTag()}
                 onAddBook={() => setAddBookModalOpen(true)}
                 onOpenAccount={() => setAccountModalOpen(true)}
+                hideAddButton={showFolderListSearch && folderListSearchOpen}
+                showFolderListAdds={showFolderListAdds}
               />
             </div>
           </header>
@@ -4037,14 +4220,8 @@ export function HomePage() {
 
         {showBooksMemoViewTabs &&
         booksMemoViewMode === 'scroll' &&
-        homeBrowseNav === 'books' &&
-        selectedTag ? (
-          <h2 className="home-folder-open-title">
-            {displayTagName(selectedTag.name)}
-          </h2>
-        ) : showBooksMemoViewTabs &&
-          booksMemoViewMode === 'scroll' &&
-          selectedSource ? (
+        homeBrowseNav === 'links' &&
+        selectedSource ? (
           <h2 className="home-folder-open-title">
             {displaySourceTitle(selectedSource.title)}
           </h2>
@@ -4656,6 +4833,20 @@ export function HomePage() {
               ) : booksRailExpandedParentId &&
                 booksMemoViewMode === 'scroll' ? (
                 <div className="folder-memos-view folder-memos-view--scroll">
+                  <FolderPageTabHead
+                    title={
+                      selectedTag ? displayTagName(selectedTag.name) : '폴더'
+                    }
+                    onEditFolder={
+                      canUseCompose && selectedTag
+                        ? () => {
+                            setRailEditingSource(null)
+                            setRailEditingTag(null)
+                            setRailEditingParentTag(selectedTag)
+                          }
+                        : undefined
+                    }
+                  />
                   <div className="folder-memos-scroll folder-memos-scroll--sheet">
                     <InlineRailNotesPanel
                       tagLabel={
@@ -4707,7 +4898,12 @@ export function HomePage() {
                 />
               ) : (
                 <HomeFolderFileView
-                  folders={parentTagsForRail}
+                  folders={foldersForFileView}
+                  emptyHint={
+                    folderListQuery.trim()
+                      ? '맞는 폴더가 없습니다.'
+                      : undefined
+                  }
                   memoCounts={parentTreeMemoCounts}
                   scrollRef={parentTagRailScrollRef}
                   slotRef={(folderId, el) => {

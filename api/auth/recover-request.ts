@@ -5,7 +5,7 @@
  * 환경 변수: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY (Vercel에 이미 있을 것)
  */
 
-export const runtime = 'edge'
+export const config = { runtime: 'edge' }
 
 const ALLOWED_ORIGINS = new Set([
   'https://www.tagtagnote.com',
