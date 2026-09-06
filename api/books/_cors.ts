@@ -27,36 +27,3 @@ export function bookApiCorsHeaders(
 export function rejectOrigin(requestOrigin: string | null): boolean {
   return Boolean(requestOrigin) && !ALLOWED_ORIGINS.has(requestOrigin)
 }
-
-export type BookApiReq = {
-  method?: string
-  url?: string
-  headers: Record<string, string | string[] | undefined>
-}
-
-export type BookApiRes = {
-  statusCode: number
-  setHeader: (name: string, value: string) => void
-  end: (body?: string) => void
-}
-
-export function readHeader(req: BookApiReq, name: string): string | null {
-  const value = req.headers[name.toLowerCase()]
-  if (typeof value === 'string') return value
-  if (Array.isArray(value)) return value[0] ?? null
-  return null
-}
-
-export function sendBookApiJson(
-  res: BookApiRes,
-  status: number,
-  body: unknown,
-  headers: Record<string, string>,
-) {
-  res.statusCode = status
-  for (const [key, value] of Object.entries(headers)) {
-    res.setHeader(key, value)
-  }
-  res.setHeader('Content-Type', 'application/json')
-  res.end(JSON.stringify(body))
-}

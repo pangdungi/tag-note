@@ -1,49 +1,52 @@
-import { fetchYes24BookPhysicalSize } from '../../src/lib/bookCatalogServer'
-import {
-  bookApiCorsHeaders,
-  readHeader,
-  rejectOrigin,
-  sendBookApiJson,
-  type BookApiReq,
-  type BookApiRes,
-} from './_cors'
+import { fetchYes24BookPhysicalSize } from '../lib/yes24'
+import { bookApiCorsHeaders, rejectOrigin } from './_cors'
 
-export default async function handler(req: BookApiReq, res: BookApiRes) {
-  const origin = readHeader(req, 'origin')
+export const config = { runtime: 'edge' }
+
+export default async function handler(request: Request): Promise<Response> {
+  const origin = request.headers.get('origin')
   const ch = bookApiCorsHeaders(origin)
 
-  if (req.method === 'OPTIONS') {
-    res.statusCode = 204
-    for (const [key, value] of Object.entries(ch)) res.setHeader(key, value)
-    res.end()
-    return
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: ch })
   }
 
-  if (req.method !== 'GET') {
-    sendBookApiJson(res, 405, { error: 'Method not allowed' }, ch)
-    return
+  if (request.method !== 'GET') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { ...ch, 'Content-Type': 'application/json' },
+    })
   }
 
   if (rejectOrigin(origin)) {
-    sendBookApiJson(res, 403, { error: 'Origin not allowed' }, ch)
-    return
+    return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
+      status: 403,
+      headers: { ...ch, 'Content-Type': 'application/json' },
+    })
   }
 
-  const host = readHeader(req, 'host') ?? 'localhost'
-  const url = new URL(req.url ?? '/', `https://${host}`)
+  const url = new URL(request.url)
   const goodsNo = url.searchParams.get('goodsNo')?.trim() ?? ''
   const isbn = url.searchParams.get('isbn')?.trim() ?? ''
   if (!goodsNo && !isbn) {
-    sendBookApiJson(res, 200, { size: null }, ch)
-    return
+    return new Response(JSON.stringify({ size: null }), {
+      status: 200,
+      headers: { ...ch, 'Content-Type': 'application/json' },
+    })
   }
 
   try {
     const size = await fetchYes24BookPhysicalSize({ goodsNo, isbn })
-    sendBookApiJson(res, 200, { size }, ch)
+    return new Response(JSON.stringify({ size }), {
+      status: 200,
+      headers: { ...ch, 'Content-Type': 'application/json' },
+    })
   } catch (e) {
     const message =
       e instanceof Error ? e.message : '책 크기를 불러오지 못했습니다.'
-    sendBookApiJson(res, 500, { error: message }, ch)
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
+      headers: { ...ch, 'Content-Type': 'application/json' },
+    })
   }
 }
