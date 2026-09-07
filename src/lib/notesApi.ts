@@ -1,5 +1,11 @@
 import { supabase } from './supabase'
-import { normalizeSourceCategory, normalizeSourceTitle, sourceTitleKey } from './sourceUtils'
+import {
+  normalizeSourceCategory,
+  normalizeSourceTitle,
+  SOURCE_VIEW_NONE_ID,
+  sourceTitleKey,
+} from './sourceUtils'
+import { dateKeyLocalRange } from './noteDateUtils'
 import {
   normalizeTagInput,
   pickColorIndex,
@@ -126,6 +132,13 @@ export function noteIsPinned(note: Pick<NoteWithTags, 'is_pinned'>): boolean {
 
 export function noteSourceLabel(note: NoteWithTags): string {
   return (note.sources?.title ?? note.source ?? '').trim()
+}
+
+/** 책 뷰 「출처없음」 — source_id·출처 텍스트가 모두 없는 메모 */
+export function noteHasNoSource(note: NoteWithTags): boolean {
+  const sid = note.source_id ?? note.sources?.id
+  if (sid) return false
+  return !noteSourceLabel(note)
 }
 
 export function buildSourceCatalogMap(
@@ -297,25 +310,26 @@ export async function fetchTagMemoCounts(): Promise<Record<string, number>> {
   return buildTagMemoCountsFromLinks(links)
 }
 
-/** 출처별 연결된 태그 종류 수 (source_id 있는 메모만) */
+/** 출처별 연결된 태그 종류 수. 출처 없는 메모는 SOURCE_VIEW_NONE_ID */
 export async function fetchSourceDistinctTagCounts(): Promise<
   Record<string, number>
 > {
   const { data, error } = await supabase
     .from('notes')
-    .select('source_id, note_tags ( tag_id )')
-    .not('source_id', 'is', null)
+    .select('source_id, source, note_tags ( tag_id )')
   if (error) throw error
   const bySource = new Map<string, Set<string>>()
   for (const row of data ?? []) {
     const sid = (row as { source_id: string | null }).source_id
-    if (!sid) continue
+    const sourceText = ((row as { source?: string | null }).source ?? '').trim()
+    const bucket = sid || (!sourceText ? SOURCE_VIEW_NONE_ID : null)
+    if (!bucket) continue
     const nts =
       (row as { note_tags?: { tag_id: string }[] }).note_tags ?? []
-    let set = bySource.get(sid)
+    let set = bySource.get(bucket)
     if (!set) {
       set = new Set()
-      bySource.set(sid, set)
+      bySource.set(bucket, set)
     }
     for (const nt of nts) {
       if (nt.tag_id) set.add(nt.tag_id)
@@ -363,8 +377,22 @@ export async function fetchSourcesInUse(): Promise<SourceRow[]> {
   return (data ?? []) as SourceRow[]
 }
 
+export async function countNotesForSource(sourceId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('notes')
+    .select('id', { count: 'exact', head: true })
+    .eq('source_id', sourceId)
+  if (error) throw error
+  return count ?? 0
+}
+
 /** notes.source_id가 없는 sources 행 삭제 */
-export async function deleteSourceIfOrphan(sourceId: string): Promise<boolean> {
+export async function deleteSourceIfOrphan(
+  sourceId: string,
+  opts?: { neverDeleteId?: string },
+): Promise<boolean> {
+  if (opts?.neverDeleteId && sourceId === opts.neverDeleteId) return false
+
   const { count, error: cErr } = await supabase
     .from('notes')
     .select('id', { count: 'exact', head: true })
@@ -535,10 +563,7 @@ export async function createBookSource(
   }
 
   if (existing) {
-    return updateSource(existing.id, {
-      rawTitle: title,
-      ...payload,
-    })
+    throw new Error('같은 이름 또는 ISBN의 출처가 이미 있습니다.')
   }
 
   const { data, error } = await supabase
@@ -581,11 +606,7 @@ export async function createManualSource(
   if (findErr) throw findErr
 
   if (existing) {
-    return updateSource(existing.id, {
-      rawTitle: title,
-      category,
-      metadata_source: existing.metadata_source ?? 'manual',
-    })
+    throw new Error('같은 이름의 출처가 이미 있습니다.')
   }
 
   const { data, error } = await supabase
@@ -708,7 +729,7 @@ export function mapNotesWithMovedSource(
   })
 }
 
-/** 해당 출처의 모든 메모를 다른 출처로 옮김. 비면 원래 출처는 삭제 */
+/** 해당 출처의 모든 메모를 다른 출처로 옮김. 출처 행은 지우지 않음 */
 export async function moveNotesToSource(
   fromSourceId: string,
   toSource: Pick<SourceRow, 'id' | 'title'>,
@@ -751,8 +772,6 @@ export async function moveNotesToSource(
       .in('id', legacyIds)
     if (moveLegacyErr) throw moveLegacyErr
   }
-
-  await deleteSourceIfOrphan(fromSourceId)
 }
 
 /** 출처 이름 변경 시 연결된 메모 카드에 반영 */
@@ -800,6 +819,17 @@ export function filterSourcesByQuery(all: SourceRow[], q: string): SourceRow[] {
       return aStarts - bStarts || a.title.localeCompare(b.title, 'ko')
     })
     .slice(0, 8)
+}
+
+export function mergeSourceRows(
+  prev: SourceRow[],
+  incoming: SourceRow[],
+): SourceRow[] {
+  const byId = new Map(incoming.map((s) => [s.id, s]))
+  for (const row of prev) {
+    if (!byId.has(row.id)) byId.set(row.id, row)
+  }
+  return [...byId.values()].sort((a, b) => a.title.localeCompare(b.title, 'ko'))
 }
 
 export function mergeSourcesFromNoteIntoAllSources(
@@ -1074,6 +1104,9 @@ export async function fetchNotesPageForSource(
   sourceId: string,
   opts?: { limit?: number; before?: string },
 ): Promise<NotesPageResult> {
+  if (sourceId === SOURCE_VIEW_NONE_ID) {
+    return fetchNotesPageWithNoSource(opts)
+  }
   const limit = opts?.limit ?? NOTES_LIST_PAGE_SIZE
   let q = supabase
     .from('notes')
@@ -1095,6 +1128,35 @@ export async function fetchNotesPageForSource(
   }
 }
 
+/** 출처가 전혀 없는 메모 — source_id·출처 텍스트가 모두 비어 있음 */
+export async function fetchNotesPageWithNoSource(opts?: {
+  limit?: number
+  before?: string
+}): Promise<NotesPageResult> {
+  const limit = opts?.limit ?? NOTES_LIST_PAGE_SIZE
+  let q = supabase
+    .from('notes')
+    .select(NOTE_WITH_TAGS_SELECT)
+    .is('source_id', null)
+    .or('source.is.null,source.eq.')
+    .order('created_at', { ascending: false })
+    .limit(limit + 1)
+  if (opts?.before) {
+    q = q.lt('created_at', opts.before)
+  }
+  const { data, error } = await q
+  if (error) throw error
+  const rows = (data ?? []) as unknown as NoteRowDb[]
+  const hasMore = rows.length > limit
+  const slice = hasMore ? rows.slice(0, limit) : rows
+  return {
+    notes: slice
+      .map((r) => toListPreviewNote(mapNoteRowFromDb(r)))
+      .filter(noteHasNoSource),
+    hasMore,
+  }
+}
+
 export type SourceNotesSyncResult = {
   notes: NoteWithTags[]
   hasMore: boolean
@@ -1107,6 +1169,10 @@ export async function syncNotesStateAfterSourceSelectionPull(
 ): Promise<SourceNotesSyncResult> {
   const page = await fetchNotesPageForSource(sourceId, { before: opts?.before })
   const fresh = page.notes
+  const matchesSource = (n: NoteWithTags) =>
+    sourceId === SOURCE_VIEW_NONE_ID
+      ? noteHasNoSource(n)
+      : noteHasSourceId(n, sourceId)
 
   if (opts?.before) {
     return {
@@ -1124,7 +1190,7 @@ export async function syncNotesStateAfterSourceSelectionPull(
 
   const freshIds = new Set(fresh.map((n) => n.id))
   const staleIds = prev
-    .filter((n) => noteHasSourceId(n, sourceId) && !freshIds.has(n.id))
+    .filter((n) => matchesSource(n) && !freshIds.has(n.id))
     .map((n) => n.id)
 
   const map = new Map(prev.map((n) => [n.id, n]))
@@ -2523,6 +2589,25 @@ export function filterNotesByMainSearch(
   const raw = normalizeTagInput(q)
   if (!raw) return []
   return notes.filter((n) => noteMatchesMainSearch(n, raw))
+}
+
+/** 로컬 날짜에 작성된 메모 */
+export async function fetchNotesForDateKey(
+  dateKey: string,
+): Promise<NoteWithTags[]> {
+  const range = dateKeyLocalRange(dateKey)
+  if (!range) return []
+  const { data, error } = await supabase
+    .from('notes')
+    .select(NOTE_WITH_TAGS_SELECT)
+    .gte('created_at', range.start)
+    .lt('created_at', range.end)
+    .order('created_at', { ascending: true })
+    .limit(500)
+  if (error) throw error
+  return ((data ?? []) as unknown as NoteRowDb[]).map((row) =>
+    mapNoteRowFromDb(row),
+  )
 }
 
 /** 메인 검색: 서버에서 본문·출처 ilike + 검색에 걸린 태그가 붙은 메모 (상한 있음) */

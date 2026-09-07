@@ -13,6 +13,8 @@ type Props = {
   selectedId: string | null
   memoCounts: Map<string, number>
   noneCount: number
+  hideNone?: boolean
+  emptyHint?: string
   scrollRef: RefObject<HTMLDivElement | null>
   slotRef: (id: string, el: HTMLElement | null) => void
   onSelect: (id: string) => void
@@ -23,21 +25,24 @@ export function HomeTagSpiralRail({
   selectedId,
   memoCounts,
   noneCount,
+  hideNone = false,
+  emptyHint,
   scrollRef,
   slotRef,
   onSelect,
 }: Props) {
-  const items = useMemo<ListItem[]>(
-    () => [
+  const items = useMemo<ListItem[]>(() => {
+    const rows = tags.map((t) => ({
+      id: t.id,
+      label: formatHashtagLabel(t.name),
+      count: memoCounts.get(t.id) ?? 0,
+    }))
+    if (hideNone) return rows
+    return [
       { id: TAG_VIEW_NONE_ID, label: '태그 없음', count: noneCount },
-      ...tags.map((t) => ({
-        id: t.id,
-        label: formatHashtagLabel(t.name),
-        count: memoCounts.get(t.id) ?? 0,
-      })),
-    ],
-    [tags, memoCounts, noneCount],
-  )
+      ...rows,
+    ]
+  }, [tags, memoCounts, noneCount, hideNone])
 
   return (
     <div
@@ -45,6 +50,12 @@ export function HomeTagSpiralRail({
       className="tag-view-spiral tag-view-list"
       aria-label="태그 목록"
     >
+      {items.length === 0 ? (
+        <p className="notes-hint tag-view-list-empty">
+          {emptyHint ?? '태그가 없습니다.'}
+        </p>
+      ) : null}
+      {items.length > 0 ? (
       <ul className="tag-view-list-items">
         {items.map((item) => {
           const isSelected = selectedId === item.id
@@ -71,6 +82,7 @@ export function HomeTagSpiralRail({
           )
         })}
       </ul>
+      ) : null}
     </div>
   )
 }

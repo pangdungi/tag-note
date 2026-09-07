@@ -3,6 +3,7 @@ import { TagComposer, type SelectedTag } from '../components/TagComposer'
 import { SourceComposer, type SelectedSource } from '../components/SourceComposer'
 import { AddParentTagModal } from '../components/AddParentTagModal'
 import { AddBookModal } from '../components/AddBookModal'
+import { AlertModal } from '../components/AlertModal'
 import { SourceSpineCard } from '../components/SourceSpineCard'
 import { SourceCoverPreview } from '../components/SourceCoverPreview'
 import { EditParentTagModal } from '../components/EditParentTagModal'
@@ -29,6 +30,7 @@ import {
   noteIsPinned,
   fetchNotesPage,
   fetchNotesForMainSearch,
+  fetchNotesForDateKey,
   fetchSources,
   updateSource,
   fetchSourceDistinctTagCounts,
@@ -41,6 +43,7 @@ import {
   mapNotesWithRenamedTag,
   mapNotesWithBulkAddedTag,
   mergeSourcesFromNoteIntoAllSources,
+  mergeSourceRows,
   mergeTagsFromNoteIntoAllTags,
   buildTagCatalogMap,
   resolveNoteTagChips,
@@ -52,6 +55,7 @@ import {
   mapNotesWithMovedSource,
   mapNotesWithRenamedSource,
   noteBodyMatchesMainSearch,
+  noteHasNoSource,
   noteSourceLabel,
   NOTES_LIST_PAGE_SIZE,
   pullAllTagNotesForTagIds,
@@ -90,14 +94,19 @@ import {
 import {
   compareNotesOldestFirst,
   groupNotesByDate,
+  noteDateKey,
+  parseSearchDateKey,
   sortNotesOldestFirst,
 } from '../lib/noteDateUtils'
 import {
   bookStandingHeightMm,
+  createSourceViewNoneRow,
   displaySourceTitle,
   groupSourcesByCategory,
+  isSourceViewNoneId,
   sortSourcesForAllLinksView,
   SOURCE_CATEGORY_UNCategorized,
+  SOURCE_VIEW_NONE_ID,
   sourceTitleKey,
   type LinksViewMode,
 } from '../lib/sourceUtils'
@@ -1053,10 +1062,14 @@ function HomeInlineSearchField({
   inputRef,
   value,
   onChange,
+  placeholder = '태그·메모 검색 (이름, 본문, 출처)',
+  ariaLabel = '태그·메모 검색',
 }: {
   inputRef: React.RefObject<HTMLInputElement | null>
   value: string
   onChange: (value: string) => void
+  placeholder?: string
+  ariaLabel?: string
 }) {
   return (
     <div className="home-header-search-field">
@@ -1075,10 +1088,10 @@ function HomeInlineSearchField({
           className="home-search-input"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="태그·메모 검색 (이름, 본문, 출처)"
+          placeholder={placeholder}
           autoComplete="off"
           spellCheck={false}
-          aria-label="태그·메모 검색"
+          aria-label={ariaLabel}
         />
       </div>
     </div>
@@ -1304,6 +1317,7 @@ function filterLocalNotesForSourcePull(
 ): NoteWithTags[] {
   return prev
     .filter((n) => {
+      if (isSourceViewNoneId(sourceId)) return noteHasNoSource(n)
       const sid = n.source_id ?? n.sources?.id
       if (sid === sourceId) return true
       if (!sourceTitle || sid) return false
@@ -1393,6 +1407,7 @@ export function HomePage() {
   /** 태그 필터·pull에 쓰는 뷰 맥락 (browse nav와 다를 수 있음) */
   const [tagFilterNav, setTagFilterNav] = useState<HomeBrowseNavId>('links')
   const [linksViewMode, setLinksViewMode] = useState<LinksViewMode>('all')
+  const [justAddedSourceId, setJustAddedSourceId] = useState<string | null>(null)
   const [booksMemoViewMode, setBooksMemoViewMode] =
     useState<BooksMemoViewMode>('page')
   const [measuredSpineSizeById, setMeasuredSpineSizeById] = useState<
@@ -1503,12 +1518,16 @@ export function HomePage() {
   /** 삭제·저장 후 늦게 도착한 태그 pull 응답 무시 */
   const tagPullGenerationRef = useRef(0)
   const selectedTagIdRef = useRef(selectedTagId)
+  const selectedSourceIdRef = useRef(selectedSourceId)
   const homeBrowseNavRef = useRef(homeBrowseNav)
   const tagFilterNavRef = useRef(tagFilterNav)
   const tagDetailReturnRef = useRef<TagDetailReturnSnapshot | null>(null)
   useEffect(() => {
     selectedTagIdRef.current = selectedTagId
   }, [selectedTagId])
+  useEffect(() => {
+    selectedSourceIdRef.current = selectedSourceId
+  }, [selectedSourceId])
   useEffect(() => {
     homeBrowseNavRef.current = homeBrowseNav
   }, [homeBrowseNav])
@@ -1657,7 +1676,9 @@ export function HomePage() {
         } = await fetchHomeSnapshotEssential()
         setAllTags(tags)
         setTagParentLinks(links)
-        setAllSources(sources)
+        const mergedSources = mergeSourceRows(allSourcesRef.current, sources)
+        allSourcesRef.current = mergedSources
+        setAllSources(mergedSources)
         if (opts?.background) {
           setNotes((prev) => mergeNotesById(prev, noteRows))
         } else {
@@ -1679,7 +1700,7 @@ export function HomePage() {
         writeHomeSnapshotCache(uid, {
           tags,
           tagParentLinks: links,
-          sources,
+          sources: mergedSources,
           notes: mergedNotes,
           tagMemoCounts: tagMemoCountByIdRef.current,
           parentTreeMemoCounts: parentTreeMemoCountByIdRef.current,
@@ -1728,10 +1749,17 @@ export function HomePage() {
   const refreshSourcesInUse = useCallback(async () => {
     try {
       const sources = await fetchSources()
-      setAllSources(sources)
-      setSelectedSourceId((cur) =>
-        cur && sources.some((s) => s.id === cur) ? cur : null,
-      )
+      setAllSources((prev) => mergeSourceRows(prev, sources))
+      setSelectedSourceId((cur) => {
+        if (!cur || isSourceViewNoneId(cur)) return cur
+        if (
+          sources.some((s) => s.id === cur) ||
+          allSourcesRef.current.some((s) => s.id === cur)
+        ) {
+          return cur
+        }
+        return null
+      })
     } catch (e) {
       console.warn('[태그노트] 출처 목록 갱신 실패', e)
     }
@@ -1843,6 +1871,19 @@ export function HomePage() {
         return exists
           ? prev.map((n) => (n.id === note.id ? note : n))
           : [note, ...prev]
+      })
+      sourcePullCacheRef.current.delete(SOURCE_VIEW_NONE_ID)
+      const nextSourceId = note.source_id ?? note.sources?.id
+      if (nextSourceId) sourcePullCacheRef.current.delete(nextSourceId)
+      setViewingNote((cur) => {
+        if (!cur || cur.id !== note.id) return cur
+        const filterId = selectedSourceIdRef.current
+        if (isSourceViewNoneId(filterId) && !noteHasNoSource(note)) return null
+        if (filterId && !isSourceViewNoneId(filterId)) {
+          const sid = note.source_id ?? note.sources?.id
+          if (sid !== filterId) return null
+        }
+        return note
       })
       setSaveError(null)
       void refreshHomeTagCounts()
@@ -2216,22 +2257,33 @@ export function HomePage() {
     setSaveError(null)
   }, [])
 
-  const applySourceCreated = useCallback(
-    (row: SourceRow, options?: { needsSpinePaste?: boolean }) => {
-      setAllSources((prev) =>
-        [...prev.filter((s) => s.id !== row.id), row].sort((a, b) =>
-          a.title.localeCompare(b.title, 'ko'),
-        ),
-      )
-      setSelectedSourceId(row.id)
-      setHomeBrowseNav('links')
-      setSaveError(null)
-      if (options?.needsSpinePaste) {
-        setRailEditingSource(row)
-      }
-    },
-    [],
-  )
+  const applySourceCreated = useCallback((row: SourceRow) => {
+    setAllSources((prev) => {
+      const next = [row, ...prev.filter((s) => s.id !== row.id)]
+      allSourcesRef.current = next
+      return next
+    })
+    setJustAddedSourceId(row.id)
+    setHomeBrowseNav('links')
+    setHomeHubOpen(false)
+    setSelectedSourceId(null)
+    setRailEditingSource(null)
+    setTagSearch('')
+    setSearchOpen(false)
+    setSaveError(null)
+    const uid = user?.id
+    if (uid) {
+      writeHomeSnapshotCache(uid, {
+        tags: allTagsRef.current,
+        tagParentLinks: tagParentLinksRef.current,
+        sources: allSourcesRef.current,
+        notes: notesRef.current,
+        tagMemoCounts: tagMemoCountByIdRef.current,
+        parentTreeMemoCounts: parentTreeMemoCountByIdRef.current,
+        sourceTagCounts: sourceTagCountByIdRef.current,
+      })
+    }
+  }, [user?.id])
 
   const applySourceDeleted = useCallback(
     (sourceId: string) => {
@@ -2268,9 +2320,16 @@ export function HomePage() {
           notes: move(entry.notes),
         })
       }
-      setSelectedSourceId((cur) => (cur === fromSourceId ? toSource.id : cur))
-      setPreviewSourceId((cur) => (cur === fromSourceId ? null : cur))
-      setAllSources((prev) => prev.filter((s) => s.id !== fromSourceId))
+      setSelectedSourceId((cur) =>
+        cur === fromSourceId || cur === toSource.id ? null : cur,
+      )
+      setPreviewSourceId(null)
+      setAllSources((prev) => {
+        if (prev.some((s) => s.id === toSource.id)) return prev
+        return [...prev, toSource].sort((a, b) =>
+          a.title.localeCompare(b.title, 'ko'),
+        )
+      })
       sourcePullCacheRef.current.clear()
       setSaveError(null)
       void refreshHomeTagCounts()
@@ -2535,6 +2594,11 @@ export function HomePage() {
 
   const hasActiveSearch = searchNormalized.length > 0
 
+  const tagViewSearchDateKey = useMemo(() => {
+    if (homeBrowseNav !== 'tags' || !hasActiveSearch) return null
+    return parseSearchDateKey(tagSearch)
+  }, [homeBrowseNav, hasActiveSearch, tagSearch])
+
   const visibleSources = useMemo(() => {
     if (!hasActiveSearch) return allSources
     return filterSourcesByQuery(allSources, tagSearch)
@@ -2554,21 +2618,69 @@ export function HomePage() {
     searchNotesResult,
   ])
 
+  const tagViewDateNotes = useMemo(() => {
+    if (!tagViewSearchDateKey) return []
+    const fromSearch =
+      searchNotesResult?.q === searchNormalized ? searchNotesResult.notes : []
+    return mergeNotesById(notes, fromSearch).filter(
+      (note) => noteDateKey(note.created_at) === tagViewSearchDateKey,
+    )
+  }, [tagViewSearchDateKey, searchNotesResult, searchNormalized, notes])
+
+  const tagViewDateTags = useMemo(() => {
+    if (!tagViewSearchDateKey) return []
+    const byId = new Map<string, TagRow>()
+    for (const note of tagViewDateNotes) {
+      for (const chip of resolveNoteTagChips(note, tagCatalogMap)) {
+        const row = tagCatalogMap.get(chip.id) ?? allTags.find((t) => t.id === chip.id)
+        if (row) byId.set(row.id, row)
+      }
+    }
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  }, [
+    tagViewSearchDateKey,
+    tagViewDateNotes,
+    tagCatalogMap,
+    allTags,
+  ])
+
   const searchParentTagSpines = useMemo(() => {
     if (!hasActiveSearch) return []
+    if (tagViewSearchDateKey) {
+      return tagViewDateTags.filter((t) =>
+        isBooksRailParentTag(t, allTags, tagParentLinks),
+      )
+    }
     return getParentTags(allTags, tagParentLinks)
       .filter((t) => tagMainSearchScore(t.name, tagSearch) >= 0)
       .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-  }, [hasActiveSearch, allTags, tagParentLinks, tagSearch])
+  }, [
+    hasActiveSearch,
+    tagViewSearchDateKey,
+    tagViewDateTags,
+    allTags,
+    tagParentLinks,
+    tagSearch,
+  ])
 
   const searchTagSpines = useMemo(() => {
     if (!hasActiveSearch) return []
     const parentIds = new Set(searchParentTagSpines.map((t) => t.id))
+    if (tagViewSearchDateKey) {
+      return tagViewDateTags.filter((t) => !parentIds.has(t.id))
+    }
     return visibleTags.filter((t) => !parentIds.has(t.id))
-  }, [hasActiveSearch, visibleTags, searchParentTagSpines])
+  }, [
+    hasActiveSearch,
+    tagViewSearchDateKey,
+    tagViewDateTags,
+    visibleTags,
+    searchParentTagSpines,
+  ])
 
   const searchBodyNotes = useMemo(() => {
     if (!hasActiveSearch || selectedTagId || selectedSourceId) return []
+    if (tagViewSearchDateKey) return []
     if (searchNotesResult?.q !== searchNormalized) return []
     return notesMatchingSearch.filter((n) =>
       noteBodyMatchesMainSearch(n, tagSearch),
@@ -2577,6 +2689,7 @@ export function HomePage() {
     hasActiveSearch,
     selectedTagId,
     selectedSourceId,
+    tagViewSearchDateKey,
     searchNormalized,
     searchNotesResult?.q,
     notesMatchingSearch,
@@ -2628,11 +2741,20 @@ export function HomePage() {
 
   const selectedSource = useMemo(() => {
     if (!selectedSourceId) return null
+    if (isSourceViewNoneId(selectedSourceId)) return createSourceViewNoneRow()
     return allSources.find((x) => x.id === selectedSourceId) ?? null
   }, [allSources, selectedSourceId])
 
   const notesForSelectedSource = useMemo(() => {
     if (!selectedSourceId) return []
+    if (isSourceViewNoneId(selectedSourceId)) {
+      return notes
+        .filter((n) => noteHasNoSource(n))
+        .sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        )
+    }
     const sourceTitle = selectedSource?.title
     return notes
       .filter((n) => {
@@ -2977,6 +3099,10 @@ export function HomePage() {
     sourceId: string,
     event: { currentTarget: EventTarget & HTMLElement },
   ) {
+    if (isSourceViewNoneId(sourceId)) {
+      openSourceMemosFlip(sourceId)
+      return
+    }
     if (coverOpeningId) return
     if (previewSourceId === sourceId) {
       setPreviewSourceId(null)
@@ -3219,6 +3345,7 @@ export function HomePage() {
   /** 출처 뷰에서 출처 선택 후 + — 메모 추가 출처 칸에 미리 넣음 */
   const addNoteInitialSource = useMemo(() => {
     if (homeBrowseNav !== 'links' || !selectedSourceId) return null
+    if (isSourceViewNoneId(selectedSourceId)) return null
     const source = allSources.find((s) => s.id === selectedSourceId)
     if (!source) return null
     return { id: source.id, title: source.title }
@@ -3228,6 +3355,11 @@ export function HomePage() {
     () => notes.filter((n) => noteHasNoTagViewTags(n)).length,
     [notes, allTags],
   )
+
+  const tagViewRailNoneCount = useMemo(() => {
+    if (!tagViewSearchDateKey) return tagViewNoneMemoCount
+    return tagViewDateNotes.filter((n) => noteHasNoTagViewTags(n)).length
+  }, [tagViewSearchDateKey, tagViewNoneMemoCount, tagViewDateNotes])
 
   const selectedTagIsParent = Boolean(
     selectedTagId &&
@@ -3297,7 +3429,14 @@ export function HomePage() {
   }, [selectedSourceId, sourcesForGridScrollKey])
 
   useEffect(() => {
-    if (!hasActiveSearch || selectedTagId || selectedSourceId || !user?.id) {
+    if (
+      !hasActiveSearch ||
+      selectedTagId ||
+      selectedSourceId ||
+      !user?.id ||
+      homeBrowseNav === 'links' ||
+      (homeBrowseNav === 'tags' && !tagViewSearchDateKey)
+    ) {
       setSearchNotesResult(null)
       setSearchNotesLoading(false)
       setSearchError(null)
@@ -3305,13 +3444,19 @@ export function HomePage() {
     }
     const qKey = searchNormalized
     const qRaw = tagSearch
+    const dateKey = tagViewSearchDateKey
     const tagIds = visibleTags.map((t) => t.id)
     let cancelled = false
     setSearchNotesLoading(true)
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
-          const result = await fetchNotesForMainSearch(qRaw, tagIds)
+          const result = dateKey
+            ? {
+                notes: await fetchNotesForDateKey(dateKey),
+                hasMore: false,
+              }
+            : await fetchNotesForMainSearch(qRaw, tagIds)
           if (cancelled) return
           setSearchNotesResult({
             q: qKey,
@@ -3344,8 +3489,10 @@ export function HomePage() {
     selectedSourceId,
     searchNormalized,
     tagSearch,
+    tagViewSearchDateKey,
     visibleTagIdsKey,
     user?.id,
+    homeBrowseNav,
   ])
 
   useEffect(() => {
@@ -3356,7 +3503,7 @@ export function HomePage() {
   }, [selectedTagId, allTags])
 
   useEffect(() => {
-    if (!selectedSourceId) return
+    if (!selectedSourceId || isSourceViewNoneId(selectedSourceId)) return
     if (!allSources.some((s) => s.id === selectedSourceId)) {
       setSelectedSourceId(null)
     }
@@ -3410,6 +3557,8 @@ export function HomePage() {
     homeDataReady &&
     !loadError &&
     hasActiveSearch &&
+    homeBrowseNav !== 'links' &&
+    homeBrowseNav !== 'tags' &&
     !selectedTagId &&
     !selectedSourceId
 
@@ -3438,18 +3587,63 @@ export function HomePage() {
     homeBrowseNav === 'books' && booksRailExpandedParentId,
   )
 
-  const tagsForTagModeRail = useMemo(
-    () => getTagsForTagViewRail(allTags, tagParentLinks),
-    [allTags, tagParentLinks],
-  )
+  const tagsForTagModeRail = useMemo(() => {
+    const all = getTagsForTagViewRail(allTags, tagParentLinks)
+    if (homeBrowseNav !== 'tags' || !hasActiveSearch) return all
+    if (tagViewSearchDateKey) {
+      return getTagsForTagViewRail(tagViewDateTags, tagParentLinks)
+    }
+    return all
+      .filter((t) => tagMainSearchScore(t.name, tagSearch) >= 0)
+      .sort((a, b) => {
+        const sa = tagMainSearchScore(a.name, tagSearch)
+        const sb = tagMainSearchScore(b.name, tagSearch)
+        return sb - sa || a.name.localeCompare(b.name, 'ko')
+      })
+  }, [
+    allTags,
+    tagParentLinks,
+    homeBrowseNav,
+    hasActiveSearch,
+    tagViewSearchDateKey,
+    tagViewDateTags,
+    tagSearch,
+  ])
 
-  const sourcesForLinkModeRail = useMemo(
-    () =>
-      [...allSources].sort((a, b) =>
-        a.title.localeCompare(b.title, 'ko'),
-      ),
-    [allSources],
-  )
+  const sourcesForLinkModeRail = useMemo(() => {
+    const none = createSourceViewNoneRow()
+    const sorted = [none, ...allSources].sort((a, b) => {
+      if (isSourceViewNoneId(a.id) !== isSourceViewNoneId(b.id)) {
+        return isSourceViewNoneId(a.id) ? -1 : 1
+      }
+      return a.title.localeCompare(b.title, 'ko')
+    })
+    const filtered =
+      homeBrowseNav === 'links' && hasActiveSearch
+        ? (() => {
+            const key = sourceTitleKey(tagSearch)
+            if (!key) return sorted
+            const compact = key.replace(/\s+/g, '')
+            return sorted.filter((s) => {
+              const title = sourceTitleKey(s.title)
+              return (
+                title.includes(key) ||
+                title.replace(/\s+/g, '').includes(compact)
+              )
+            })
+          })()
+        : sorted
+    if (!justAddedSourceId) return filtered
+    const added = filtered.find((s) => s.id === justAddedSourceId)
+    if (!added) return filtered
+    return [added, ...filtered.filter((s) => s.id !== justAddedSourceId)]
+  }, [
+    allSources,
+    homeBrowseNav,
+    hasActiveSearch,
+    tagSearch,
+    justAddedSourceId,
+  ])
 
   const sourceCategoryShelves = useMemo(
     () => groupSourcesByCategory(sourcesForLinkModeRail),
@@ -3530,14 +3724,18 @@ export function HomePage() {
     !showBootstrap &&
     homeDataReady &&
     !loadError &&
-    !hasActiveSearch &&
-    (homeBrowseNav === 'books'
-      ? true
+    (homeBrowseNav === 'links'
+      ? hasActiveSearch || sourcesForLinkModeRail.length > 0
       : homeBrowseNav === 'tags'
-        ? tagsForTagModeRail.length > 0 || tagViewNoneMemoCount > 0
-        : homeBrowseNav === 'dates'
-          ? notes.length > 0
-          : sourcesForLinkModeRail.length > 0)
+        ? hasActiveSearch ||
+          tagsForTagModeRail.length > 0 ||
+          tagViewNoneMemoCount > 0
+        : !hasActiveSearch &&
+          (homeBrowseNav === 'books'
+            ? true
+            : homeBrowseNav === 'dates'
+              ? notes.length > 0
+              : false))
 
   const effectiveShowBrowseRail =
     showBrowseRail &&
@@ -3787,6 +3985,7 @@ export function HomePage() {
         if (tag) return { kind: 'tag', tag }
       }
       if (selectedSourceId) {
+        if (isSourceViewNoneId(selectedSourceId)) return null
         const source = allSources.find((s) => s.id === selectedSourceId)
         if (source) return { kind: 'source', source }
       }
@@ -3844,6 +4043,12 @@ export function HomePage() {
   const tagSpineSlotRefs = useRef(new Map<string, HTMLElement>())
   const openTracksRef = useRef<HTMLDivElement>(null)
   const openParentSpineRef = useRef<HTMLLIElement>(null)
+
+  useLayoutEffect(() => {
+    if (!justAddedSourceId) return
+    const slot = tagSpineSlotRefs.current.get(justAddedSourceId)
+    slot?.scrollIntoView({ inline: 'start', block: 'nearest', behavior: 'smooth' })
+  }, [justAddedSourceId, sourcesForAllLinksView, sourceCategoryShelves])
 
   useLayoutEffect(() => {
     const section = parentTagRailSectionRef.current
@@ -4038,19 +4243,12 @@ export function HomePage() {
         </div>
       ) : null}
 
-      {saveError && !showBootstrap ? (
-        <div className="setup-banner" role="alert">
-          <p className="setup-banner-title">저장하지 못했습니다</p>
-          <p className="setup-banner-text">{saveError}</p>
-          <button
-            type="button"
-            className="setup-retry"
-            onClick={() => setSaveError(null)}
-          >
-            닫기
-          </button>
-        </div>
-      ) : null}
+      <AlertModal
+        open={Boolean(saveError && !showBootstrap)}
+        title="저장하지 못했습니다"
+        message={saveError ?? ''}
+        onClose={() => setSaveError(null)}
+      />
 
       {pinnedBoardOpen ? (
         <PinnedNotesBoard
@@ -4248,6 +4446,20 @@ export function HomePage() {
                       inputRef={searchInputRef}
                       value={tagSearch}
                       onChange={handleSearchChange}
+                      placeholder={
+                        homeBrowseNav === 'links'
+                          ? '책 이름 검색'
+                          : homeBrowseNav === 'tags'
+                            ? '태그 이름 또는 날짜'
+                            : '태그·메모 검색 (이름, 본문, 출처)'
+                      }
+                      ariaLabel={
+                        homeBrowseNav === 'links'
+                          ? '책 이름 검색'
+                          : homeBrowseNav === 'tags'
+                            ? '태그 이름 또는 날짜 검색'
+                            : '태그·메모 검색'
+                      }
                     />
                   </div>
                 </div>
@@ -4611,7 +4823,15 @@ export function HomePage() {
                       tags={tagsForTagModeRail}
                       selectedId={selectedTagId}
                       memoCounts={tagMemoCounts}
-                      noneCount={tagViewNoneMemoCount}
+                      noneCount={tagViewRailNoneCount}
+                      hideNone={hasActiveSearch && !tagViewSearchDateKey}
+                      emptyHint={
+                        tagViewSearchDateKey
+                          ? '그날 작성한 태그가 없습니다.'
+                          : hasActiveSearch
+                            ? '검색한 태그가 없습니다.'
+                            : undefined
+                      }
                       scrollRef={parentTagRailScrollRef}
                       slotRef={(id, el) => {
                         if (el) tagSpineSlotRefs.current.set(id, el)
@@ -4658,7 +4878,11 @@ export function HomePage() {
                         onTagFilter={openTagViewFromNote}
                         sheetLayout
                         sheetSourceMode
-                        emptyHint="이 책의 메모가 아직 없습니다."
+                        emptyHint={
+                          isSourceViewNoneId(selectedSourceId)
+                            ? '출처가 없는 메모가 아직 없습니다.'
+                            : '이 책의 메모가 아직 없습니다.'
+                        }
                       />
                     </div>
                   </div>
@@ -4674,7 +4898,11 @@ export function HomePage() {
                         ? displaySourceTitle(selectedSource.title)
                         : '도서'
                     }
-                    emptyHint="이 책의 메모가 아직 없습니다."
+                    emptyHint={
+                      isSourceViewNoneId(selectedSourceId)
+                        ? '출처가 없는 메모가 아직 없습니다.'
+                        : '이 책의 메모가 아직 없습니다.'
+                    }
                     tagCatalog={tagCatalogMap}
                     sourceCatalog={sourceCatalogMap}
                     onEdit={canUseCompose ? openEditNote : undefined}
@@ -4691,7 +4919,9 @@ export function HomePage() {
                       >
                         {sourcesForAllLinksView.length === 0 ? (
                           <p className="notes-hint links-all-empty">
-                            등록된 도서가 없습니다.
+                            {hasActiveSearch
+                              ? '검색한 책이 없습니다.'
+                              : '등록된 도서가 없습니다.'}
                           </p>
                         ) : (
                           <div className="links-all-shelf">
@@ -4721,7 +4951,8 @@ export function HomePage() {
                                           rememberSpineSize(s.id, size)
                                         }
                                       />
-                                      {previewSourceId === s.id ? (
+                                      {previewSourceId === s.id &&
+                                      !isSourceViewNoneId(s.id) ? (
                                         <SourceCoverPreview
                                           source={s}
                                           spineHeight={previewSpineHeight}
@@ -4752,6 +4983,13 @@ export function HomePage() {
                         className="links-category-scroll"
                         aria-label="분류"
                       >
+                        {sourceCategoryShelves.length === 0 ? (
+                          <p className="notes-hint links-all-empty">
+                            {hasActiveSearch
+                              ? '검색한 책이 없습니다.'
+                              : '등록된 도서가 없습니다.'}
+                          </p>
+                        ) : null}
                         {sourceCategoryShelves.map((shelf, shelfIndex) => (
                           <section
                             key={shelf.categoryKey}
@@ -4765,6 +5003,10 @@ export function HomePage() {
                             className={`links-category-shelf${
                               shelf.category === SOURCE_CATEGORY_UNCategorized
                                 ? ' links-category-shelf--uncategorized'
+                                : ''
+                            }${
+                              isSourceViewNoneId(shelf.categoryKey)
+                                ? ' links-category-shelf--source-none'
                                 : ''
                             }`}
                             aria-label={`${shelf.category} 분야`}
@@ -4799,7 +5041,8 @@ export function HomePage() {
                                             rememberSpineSize(s.id, size)
                                           }
                                         />
-                                        {previewSourceId === s.id ? (
+                                        {previewSourceId === s.id &&
+                                        !isSourceViewNoneId(s.id) ? (
                                           <SourceCoverPreview
                                             source={s}
                                             spineHeight={previewSpineHeight}

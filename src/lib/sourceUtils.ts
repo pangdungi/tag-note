@@ -28,6 +28,23 @@ export function bookStandingHeightMm(source: {
   return null
 }
 
+/** 책 뷰 북스파인 — 출처 없는 메모를 모은 가상 항목 id */
+export const SOURCE_VIEW_NONE_ID = '__source_view_none__'
+
+/** 책등·시트 제목. 메모 메타의 「출처 없음」과 맞춤 */
+export const SOURCE_VIEW_NONE_TITLE = '출처없음'
+
+export function isSourceViewNoneId(id: string | null | undefined): boolean {
+  return id === SOURCE_VIEW_NONE_ID
+}
+
+export function createSourceViewNoneRow(): SourceRow {
+  return {
+    id: SOURCE_VIEW_NONE_ID,
+    title: SOURCE_VIEW_NONE_TITLE,
+  }
+}
+
 export const SOURCE_CATEGORY_UNCategorized = '분류 없음'
 
 /** 예스24 국내도서 분야 (수동 등록·분류 선택) */
@@ -80,20 +97,29 @@ export type SourceCategoryShelf = {
 
 export type LinksViewMode = 'all' | 'category'
 
-/** 출처 전체 보기 — 북스파인 이미지가 있는 도서를 먼저, 같은 그룹은 제목순 */
+/** 출처 전체 보기 — 「출처없음」을 맨 앞, 그다음 북스파인 이미지가 있는 도서, 같은 그룹은 제목순 */
 export function sortSourcesForAllLinksView(sources: SourceRow[]): SourceRow[] {
-  return [...sources].sort((a, b) => {
+  const none: SourceRow[] = []
+  const rest: SourceRow[] = []
+  for (const source of sources) {
+    if (isSourceViewNoneId(source.id)) none.push(source)
+    else rest.push(source)
+  }
+  rest.sort((a, b) => {
     const aHasSpine = Boolean(resolveSourceSpineUrl(a))
     const bHasSpine = Boolean(resolveSourceSpineUrl(b))
     if (aHasSpine !== bHasSpine) return aHasSpine ? -1 : 1
     return a.title.localeCompare(b.title, 'ko')
   })
+  return [...none, ...rest]
 }
 
 /** 출처 목록을 예스24 분야(category)별 책장으로 묶는다 */
 export function groupSourcesByCategory(sources: SourceRow[]): SourceCategoryShelf[] {
+  const none = sources.filter((source) => isSourceViewNoneId(source.id))
   const map = new Map<string, SourceCategoryShelf['sources']>()
   for (const source of sources) {
+    if (isSourceViewNoneId(source.id)) continue
     const category = source.category?.trim() || SOURCE_CATEGORY_UNCategorized
     const list = map.get(category) ?? []
     list.push(source)
@@ -113,6 +139,14 @@ export function groupSourcesByCategory(sources: SourceRow[]): SourceCategoryShel
     if (b.category === SOURCE_CATEGORY_UNCategorized) return -1
     return a.category.localeCompare(b.category, 'ko')
   })
+
+  if (none.length > 0) {
+    shelves.unshift({
+      categoryKey: SOURCE_VIEW_NONE_ID,
+      category: SOURCE_VIEW_NONE_TITLE,
+      sources: none,
+    })
+  }
 
   return shelves
 }

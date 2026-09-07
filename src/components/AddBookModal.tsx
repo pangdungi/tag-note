@@ -366,7 +366,7 @@ export function AddBookModal({
             </form>
           )}
 
-          {error ? <p className="composer-error">{error}</p> : null}
+          {error && !onError ? <p className="composer-error">{error}</p> : null}
         </div>
 
         {tab === 'manual' ? (

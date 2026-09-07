@@ -34,6 +34,19 @@ export function yes24SpineImageUrl(goodsNo: string | number): string {
   return `https://image.yes24.com/goods/${goodsNo}/SIDE/XL`
 }
 
+/**
+ * 예스24 SIDE가 없으면 표지와 같은 「이미지 준비중」이 내려온다.
+ * 실제 북스파인은 세로로 길고, 준비중 이미지는 정사각·가로형에 가깝다.
+ */
+export function isYes24MissingSpineImage(
+  width: number,
+  height: number,
+): boolean {
+  if (width < 1 || height < 1) return true
+  if (height < 80) return true
+  return width / height > 0.42
+}
+
 export function yes24CoverImageUrl(goodsNo: string | number): string {
   return `https://image.yes24.com/goods/${goodsNo}/XL`
 }

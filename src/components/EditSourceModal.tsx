@@ -12,6 +12,7 @@ import { ModalFooter } from './ModalFooter'
 import { ModalSelect } from './ModalSelect'
 import { ConfirmModal } from './ConfirmModal'
 import {
+  countNotesForSource,
   deleteSourceKeepNotes,
   moveNotesToSource,
   updateSource,
@@ -92,6 +93,7 @@ export function EditSourceModal({
   const [moving, setMoving] = useState(false)
   const [saving, setSaving] = useState(false)
   const [pasteBusy, setPasteBusy] = useState(false)
+  const [noteCount, setNoteCount] = useState<number | null>(null)
 
   const categoryOptions = useMemo(() => {
     const base = SOURCE_CATEGORY_OPTIONS.filter(
@@ -146,7 +148,23 @@ export function EditSourceModal({
       setMoving(false)
       setSaving(false)
       setPasteBusy(false)
+      setNoteCount(null)
     })
+  }, [open, source])
+
+  useEffect(() => {
+    if (!open || !source) return
+    let cancelled = false
+    void countNotesForSource(source.id)
+      .then((count) => {
+        if (!cancelled) setNoteCount(count)
+      })
+      .catch(() => {
+        if (!cancelled) setNoteCount(null)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [open, source])
 
   const applySpineImage = useCallback((next: SourceSpineImageData) => {
@@ -363,14 +381,20 @@ export function EditSourceModal({
                 <label className="composer-label" htmlFor="edit-source-move">
                   다른 출처로 옮기기
                 </label>
-                {moveTargetOptions.length === 0 ? (
+                {noteCount === 0 ? (
+                  <p className="composer-field-hint">
+                    이 출처에 옮길 메모가 없습니다. 메모가 있는 출처를 연 다음
+                    이곳으로 옮기세요.
+                  </p>
+                ) : moveTargetOptions.length === 0 ? (
                   <p className="composer-field-hint">
                     옮길 다른 출처가 없습니다.
                   </p>
                 ) : (
                   <>
                     <p className="composer-field-hint">
-                      이 출처의 모든 메모를 선택한 출처로 옮깁니다.
+                      이 출처의 모든 메모만 선택한 출처로 옮깁니다. 출처는
+                      그대로 남습니다.
                     </p>
                     <div className="source-move-row">
                       <ModalSelect
@@ -494,7 +518,7 @@ export function EditSourceModal({
         title="다른 출처로 옮기기"
         message={
           moveTarget
-            ? `「${displaySourceTitle(source.title)}」의 모든 메모를 「${displaySourceTitle(moveTarget.title)}」로 옮길까요? 옮긴 뒤 이 출처는 목록에서 삭제됩니다.`
+            ? `「${displaySourceTitle(source.title)}」의 모든 메모를 「${displaySourceTitle(moveTarget.title)}」로 옮길까요? 출처는 삭제되지 않습니다.`
             : ''
         }
         cancelLabel="취소"
@@ -510,13 +534,12 @@ export function EditSourceModal({
           const toSource = moveTarget
           setMoving(true)
           setError(null)
-          void onNotesMovedToSource?.(fromId, toSource)
-          setMoveConfirmOpen(false)
-          onClose()
           void (async () => {
             try {
               await moveNotesToSource(fromId, toSource)
               void onNotesMovedToSource?.(fromId, toSource)
+              setMoveConfirmOpen(false)
+              onClose()
             } catch (e) {
               console.error('[태그노트] EditSourceModal 출처 옮기기 실패', {
                 fromId,

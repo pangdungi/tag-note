@@ -1,7 +1,14 @@
 import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react'
 import type { SourceRow } from '../lib/notesApi'
-import { resolveSourceSpineUrl } from '../lib/bookCatalogServer'
-import { bookStandingHeightMm, displaySourceTitle } from '../lib/sourceUtils'
+import {
+  isYes24MissingSpineImage,
+  resolveSourceSpineUrl,
+} from '../lib/bookCatalogServer'
+import {
+  bookStandingHeightMm,
+  displaySourceTitle,
+  isSourceViewNoneId,
+} from '../lib/sourceUtils'
 import { formatSpineText } from '../lib/tagUtils'
 
 type SourceSpineCardProps = {
@@ -82,6 +89,8 @@ export function SourceSpineCard({
         useImage && !useProportionalScale
           ? ' parent-tag-card--source-spine-remote'
           : ''
+      }${
+        isSourceViewNoneId(source.id) ? ' parent-tag-card--source-none' : ''
       }`}
       style={cardStyle}
     >
@@ -108,7 +117,14 @@ export function SourceSpineCard({
             referrerPolicy="no-referrer"
             onLoad={(e) => {
               const img = e.currentTarget
-              if (img.naturalWidth < 1 || img.naturalHeight < 1) return
+              if (
+                img.naturalWidth < 1 ||
+                img.naturalHeight < 1 ||
+                isYes24MissingSpineImage(img.naturalWidth, img.naturalHeight)
+              ) {
+                setImageBroken(true)
+                return
+              }
               const size = {
                 width: img.naturalWidth,
                 height: img.naturalHeight,
