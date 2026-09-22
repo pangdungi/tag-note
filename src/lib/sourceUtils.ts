@@ -11,30 +11,6 @@ export function sourceTitleKey(raw: string): string {
   return normalizeSourceTitle(raw).toLowerCase()
 }
 
-export function sourceHasIsbn(source: { isbn?: string | null }): boolean {
-  return Boolean(source.isbn?.trim())
-}
-
-/** 제목만 있고 ISBN이 없는 출처 — 검색 추가로 표지를 입힐 대상 */
-export function findTitleOnlySourceByTitle<
-  T extends { title: string; isbn?: string | null },
->(sources: T[], title: string): T | null {
-  const key = sourceTitleKey(title)
-  return (
-    sources.find((s) => sourceTitleKey(s.title) === key && !sourceHasIsbn(s)) ??
-    null
-  )
-}
-
-export function findSourceByIsbn<T extends { isbn?: string | null }>(
-  sources: T[],
-  isbn: string,
-): T | null {
-  const id = isbn.trim()
-  if (!id) return null
-  return sources.find((s) => (s.isbn ?? '').trim() === id) ?? null
-}
-
 /** 카드·필터에 표시할 출처 문자열 */
 export function displaySourceTitle(title: string): string {
   return normalizeSourceTitle(title)

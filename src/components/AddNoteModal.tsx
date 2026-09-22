@@ -60,8 +60,22 @@ function buildSeedTags(
   return seed
 }
 
-function resolveSaveTagNames(tags: SelectedTag[]): string[] {
-  return tags.map((t) => normalizeTagInput(t.name)).filter(Boolean)
+function resolveSaveTagNames(
+  tags: SelectedTag[],
+  lockedParentTagId: string | null | undefined,
+  allTags: TagRow[],
+): string[] {
+  const names = tags.map((t) => normalizeTagInput(t.name)).filter(Boolean)
+  if (!lockedParentTagId) return names
+  const parent = allTags.find((t) => t.id === lockedParentTagId)
+  const parentName = normalizeTagInput(parent?.name ?? '')
+  if (
+    parentName &&
+    !names.some((n) => n.toLowerCase() === parentName.toLowerCase())
+  ) {
+    names.unshift(parentName)
+  }
+  return names
 }
 
 function buildLocalPreviewNote(
@@ -173,7 +187,9 @@ export function AddNoteModal({
 
   if (!open) return null
 
-  const composerSaveReady = body.trim().length > 0 && tags.length > 0
+  const composerSaveReady =
+    body.trim().length > 0 &&
+    (tags.length > 0 || Boolean(lockedParentTagId && lockedParentName))
 
   const modalTitle = lockedParentName || '메모 추가'
 
@@ -270,7 +286,11 @@ export function AddNoteModal({
                   bodyId,
                 ) as HTMLDivElement | null
                 const saveBody = readMemoEditorBody(editorEl) || body
-                const saveTags = resolveSaveTagNames(tags)
+                const saveTags = resolveSaveTagNames(
+                  tags,
+                  lockedParentTagId,
+                  allTags,
+                )
                 if (saveTags.length === 0) {
                   setFieldHint('tags')
                   return

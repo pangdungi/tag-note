@@ -563,7 +563,7 @@ export async function createBookSource(
   }
 
   if (existing) {
-    throw new Error('같은 ISBN의 출처가 이미 있습니다.')
+    throw new Error('같은 이름 또는 ISBN의 출처가 이미 있습니다.')
   }
 
   const { data, error } = await supabase
@@ -574,37 +574,12 @@ export async function createBookSource(
 
   if (error) {
     if (error.code === '23505') {
-      throw new Error('같은 ISBN의 출처가 이미 있습니다.')
+      throw new Error('같은 이름 또는 ISBN의 출처가 이미 있습니다.')
     }
     throw error
   }
 
   return data as SourceRow
-}
-
-/** 제목만 있는 출처에 검색한 책 표지·ISBN·책등을 입힌다. 메모는 그대로 */
-export async function applyBookCatalogToSource(
-  sourceId: string,
-  input: CreateBookSourceInput,
-): Promise<SourceRow> {
-  return updateSource(sourceId, {
-    rawTitle: input.title,
-    isbn: input.isbn,
-    author: input.author ?? null,
-    publisher: input.publisher ?? null,
-    published_year: input.published_year ?? null,
-    category: input.category ?? null,
-    cover_image_url: input.cover_image_url ?? null,
-    kyobo_product_id: input.kyobo_product_id ?? null,
-    yes24_goods_no: input.yes24_goods_no ?? null,
-    metadata_source: input.metadata_source ?? 'yes24',
-    spine_image_url: input.spine_image_url ?? null,
-    spine_image_width: input.spine_image_width ?? null,
-    spine_image_height: input.spine_image_height ?? null,
-    book_width_mm: input.book_width_mm ?? null,
-    book_length_mm: input.book_length_mm ?? null,
-    book_height_mm: input.book_height_mm ?? null,
-  })
 }
 
 export type CreateManualSourceInput = {
