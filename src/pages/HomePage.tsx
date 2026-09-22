@@ -2258,11 +2258,18 @@ export function HomePage() {
   }, [])
 
   const applySourceCreated = useCallback((row: SourceRow) => {
+    const existed = allSourcesRef.current.some((s) => s.id === row.id)
     setAllSources((prev) => {
       const next = [row, ...prev.filter((s) => s.id !== row.id)]
       allSourcesRef.current = next
       return next
     })
+    if (existed) {
+      setNotes((prev) => mapNotesWithRenamedSource(prev, row.id, row.title))
+      setPinnedNotes((prev) =>
+        mapNotesWithRenamedSource(prev, row.id, row.title),
+      )
+    }
     setJustAddedSourceId(row.id)
     setHomeBrowseNav('links')
     setHomeHubOpen(false)
@@ -5409,6 +5416,7 @@ export function HomePage() {
         <AddBookModal
           open={addBookModalOpen}
           userId={user.id}
+          allSources={allSources}
           onClose={() => setAddBookModalOpen(false)}
           onCreated={applySourceCreated}
           onError={(message) => setSaveError(message)}

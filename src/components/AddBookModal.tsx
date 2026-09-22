@@ -7,7 +7,12 @@ import {
   startTransition,
   type FormEvent,
 } from 'react'
-import { createBookSource, createManualSource, type SourceRow } from '../lib/notesApi'
+import {
+  applyBookCatalogToSource,
+  createBookSource,
+  createManualSource,
+  type SourceRow,
+} from '../lib/notesApi'
 import {
   fetchBookPhysicalSize,
   searchBooks,
@@ -15,9 +20,12 @@ import {
 } from '../lib/bookSearchApi'
 import {
   displaySourceTitle,
+  findSourceByIsbn,
+  findTitleOnlySourceByTitle,
   SOURCE_CATEGORY_OPTIONS,
   SOURCE_CATEGORY_UNCategorized,
 } from '../lib/sourceUtils'
+import { ConfirmModal } from './ConfirmModal'
 import { ModalFooter } from './ModalFooter'
 import { ModalSelect } from './ModalSelect'
 import { ModalSegmentTabs } from './ModalSegmentTabs'
@@ -32,6 +40,7 @@ const ADD_BOOK_TABS = [
 type Props = {
   open: boolean
   userId: string | null
+  allSources: SourceRow[]
   onClose: () => void
   onCreated: (
     row: SourceRow,
@@ -43,6 +52,7 @@ type Props = {
 export function AddBookModal({
   open,
   userId,
+  allSources,
   onClose,
   onCreated,
   onError,
@@ -62,8 +72,13 @@ export function AddBookModal({
   )
   const [manualSaving, setManualSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [titleConflict, setTitleConflict] = useState<{
+    hit: BookSearchHit
+    existing: SourceRow
+  } | null>(null)
+  const [resolvingConflict, setResolvingConflict] = useState(false)
 
-  const busy = Boolean(importingIsbn || manualSaving)
+  const busy = Boolean(importingIsbn || manualSaving || resolvingConflict)
 
   const manualCategoryOptions = useMemo(
     () =>
@@ -88,6 +103,8 @@ export function AddBookModal({
       setManualCategory(SOURCE_CATEGORY_UNCategorized)
       setManualSaving(false)
       setError(null)
+      setTitleConflict(null)
+      setResolvingConflict(false)
     })
   }, [open])
 
@@ -121,35 +138,63 @@ export function AddBookModal({
     return () => window.clearTimeout(timer)
   }, [open, tab, query])
 
+  const importCatalogHit = useCallback(
+    async (
+      hit: BookSearchHit,
+      mode: 'create' | 'upgrade',
+      existingId?: string,
+    ) => {
+      if (!userId) return
+      const size = await fetchBookPhysicalSize({
+        goodsNo: hit.yes24GoodsNo,
+        isbn: hit.isbn,
+      }).catch(() => null)
+      const input = {
+        title: hit.title,
+        isbn: hit.isbn,
+        author: hit.author || null,
+        publisher: hit.publisher || null,
+        published_year: hit.publishedYear,
+        category: hit.category || null,
+        cover_image_url: hit.coverUrl || null,
+        yes24_goods_no: hit.yes24GoodsNo,
+        metadata_source: hit.source,
+        spine_image_url: hit.spineUrl || null,
+        book_width_mm: size?.widthMm ?? null,
+        book_length_mm: size?.lengthMm ?? null,
+        book_height_mm: size?.heightMm ?? null,
+      }
+      const row =
+        mode === 'upgrade' && existingId
+          ? await applyBookCatalogToSource(existingId, input)
+          : await createBookSource(userId, input)
+      onCreated(row, {
+        needsSpinePaste: !hit.spineUrl,
+      })
+      onClose()
+    },
+    [userId, onCreated, onClose],
+  )
+
   const handlePick = useCallback(
     async (hit: BookSearchHit) => {
       if (!userId || busy) return
       setError(null)
+      const isbnMatch = findSourceByIsbn(allSources, hit.isbn)
+      if (isbnMatch) {
+        const message = '같은 ISBN의 책이 이미 있습니다.'
+        setError(message)
+        onError?.(message)
+        return
+      }
+      const titleOnly = findTitleOnlySourceByTitle(allSources, hit.title)
+      if (titleOnly) {
+        setTitleConflict({ hit, existing: titleOnly })
+        return
+      }
       setImportingIsbn(hit.isbn)
       try {
-        const size = await fetchBookPhysicalSize({
-          goodsNo: hit.yes24GoodsNo,
-          isbn: hit.isbn,
-        }).catch(() => null)
-        const row = await createBookSource(userId, {
-          title: hit.title,
-          isbn: hit.isbn,
-          author: hit.author || null,
-          publisher: hit.publisher || null,
-          published_year: hit.publishedYear,
-          category: hit.category || null,
-          cover_image_url: hit.coverUrl || null,
-          yes24_goods_no: hit.yes24GoodsNo,
-          metadata_source: hit.source,
-          spine_image_url: hit.spineUrl || null,
-          book_width_mm: size?.widthMm ?? null,
-          book_length_mm: size?.lengthMm ?? null,
-          book_height_mm: size?.heightMm ?? null,
-        })
-        onCreated(row, {
-          needsSpinePaste: !hit.spineUrl,
-        })
-        onClose()
+        await importCatalogHit(hit, 'create')
       } catch (e) {
         const message =
           e instanceof Error ? e.message : '책을 등록하지 못했습니다.'
@@ -159,8 +204,28 @@ export function AddBookModal({
         setImportingIsbn(null)
       }
     },
-    [userId, busy, onCreated, onClose, onError],
+    [userId, busy, allSources, importCatalogHit, onError],
   )
+
+  const handleConflictUpgrade = useCallback(async () => {
+    if (!titleConflict || resolvingConflict) return
+    setResolvingConflict(true)
+    setError(null)
+    try {
+      await importCatalogHit(
+        titleConflict.hit,
+        'upgrade',
+        titleConflict.existing.id,
+      )
+    } catch (e) {
+      const message =
+        e instanceof Error ? e.message : '책을 바꾸지 못했습니다.'
+      setError(message)
+      onError?.(message)
+    } finally {
+      setResolvingConflict(false)
+    }
+  }, [titleConflict, resolvingConflict, importCatalogHit, onError])
 
   const handleManualSubmit = useCallback(
     async (e?: FormEvent) => {
@@ -382,6 +447,24 @@ export function AddBookModal({
           </ModalFooter>
         ) : null}
       </div>
+
+      <ConfirmModal
+        open={titleConflict !== null}
+        title="같은 제목의 책이 있습니다"
+        message={
+          titleConflict
+            ? `「${displaySourceTitle(titleConflict.existing.title)}」은 제목만 있는 책입니다. 지금 검색한 표지·책등으로 바꿀까요? 메모는 그대로 둡니다.`
+            : ''
+        }
+        cancelLabel="취소"
+        confirmLabel={resolvingConflict ? '바꾸는 중…' : '바꾸기'}
+        busy={resolvingConflict}
+        onCancel={() => {
+          if (resolvingConflict) return
+          setTitleConflict(null)
+        }}
+        onConfirm={() => void handleConflictUpgrade()}
+      />
     </div>
   )
 }
