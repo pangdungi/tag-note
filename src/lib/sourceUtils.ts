@@ -28,6 +28,24 @@ export function bookStandingHeightMm(source: {
   return null
 }
 
+/** 이미지 없는 텍스트 북스파인 — 짧은 제목도 신국판(188mm) 정도로 맞춤 */
+export const DEFAULT_TEXT_SPINE_FILL = 0.78
+export const MIN_TEXT_SPINE_FILL = 0.62
+
+export function textSpineFillRatio(
+  source: {
+    book_length_mm?: number | null
+    book_width_mm?: number | null
+  },
+  maxStandingMm?: number | null,
+): number {
+  const mm = bookStandingHeightMm(source)
+  if (mm && maxStandingMm && maxStandingMm > 0) {
+    return Math.min(1, Math.max(MIN_TEXT_SPINE_FILL, mm / maxStandingMm))
+  }
+  return DEFAULT_TEXT_SPINE_FILL
+}
+
 /** 책 뷰 북스파인 — 출처 없는 메모를 모은 가상 항목 id */
 export const SOURCE_VIEW_NONE_ID = '__source_view_none__'
 

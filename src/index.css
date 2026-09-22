@@ -3313,6 +3313,19 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
 .home-main--parent-rail-hero
   .parent-tag-rail-section--links-all
   .links-all-rail
+  .parent-tag-card:not(
+    .parent-tag-card--source-spine-image
+  ).parent-tag-card--source-spine-text {
+  height: calc(
+    var(--links-all-spine-max-h) * var(--source-spine-text-fill, 0.78)
+  );
+  min-height: 11.5rem;
+  max-height: var(--links-all-spine-max-h);
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-all
+  .links-all-rail
   .parent-tag-card--source-spine-image {
   width: max-content;
   height: calc(
@@ -3666,6 +3679,64 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
       var(--source-spine-max-h, 1)
   );
   max-height: var(--uncat-spine-max-h);
+}
+
+/* 텍스트 북스파인 — 제목 글자 수가 아니라 책장 높이의 고정 비율 */
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .links-category-shelf-rail
+  .parent-tag-spine-slot
+  .parent-tag-card:not(
+    .parent-tag-card--source-spine-image
+  ).parent-tag-card--source-spine-text {
+  height: calc(min(560px, 42vh) * var(--source-spine-text-fill, 0.78));
+  min-height: 12rem;
+  max-height: min(560px, 42vh);
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .links-category-shelf--uncategorized
+  .parent-tag-card:not(
+    .parent-tag-card--source-spine-image
+  ).parent-tag-card--source-spine-text {
+  height: calc(var(--uncat-spine-max-h) * var(--source-spine-text-fill, 0.78));
+  max-height: var(--uncat-spine-max-h);
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .links-category-shelf-rail
+  .parent-tag-card:not(
+    .parent-tag-card--source-spine-image
+  ).parent-tag-card--source-spine-text
+  .parent-tag-card-body,
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-all
+  .links-all-rail
+  .parent-tag-card:not(
+    .parent-tag-card--source-spine-image
+  ).parent-tag-card--source-spine-text
+  .parent-tag-card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-view
+  .links-category-shelf-rail
+  .parent-tag-card--source-spine-text
+  .parent-tag-card-label,
+.home-main--parent-rail-hero
+  .parent-tag-rail-section--links-all
+  .links-all-rail
+  .parent-tag-card--source-spine-text
+  .parent-tag-card-label {
+  max-height: 100%;
+  overflow: hidden;
 }
 
 .parent-tag-rail-section--links-view.parent-tag-rail-section--open

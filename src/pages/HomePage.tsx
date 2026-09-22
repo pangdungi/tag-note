@@ -135,8 +135,8 @@ const LINKS_VIEW_TABS = [
 ] as const
 
 const BOOKS_MEMO_VIEW_TABS = [
-  { id: 'page', label: '페이지' },
   { id: 'scroll', label: '스크롤' },
+  { id: 'page', label: '페이지' },
 ] as const
 
 type BooksMemoViewMode = 'page' | 'scroll'

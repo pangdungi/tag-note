@@ -8,6 +8,7 @@ import {
   bookStandingHeightMm,
   displaySourceTitle,
   isSourceViewNoneId,
+  textSpineFillRatio,
 } from '../lib/sourceUtils'
 import { formatSpineText } from '../lib/tagUtils'
 
@@ -69,6 +70,9 @@ export function SourceSpineCard({
   const naturalH =
     standingMm ?? spineHeight ?? loadedSpineSize?.height ?? 560
   const naturalW = spineWidth ?? loadedSpineSize?.width ?? 80
+  const textFill = useImage
+    ? undefined
+    : textSpineFillRatio(source, standingMm ? maxSpineHeight : null)
   const cardStyle: CSSProperties = useImage
     ? {
         ['--source-spine-natural-w' as string]: String(naturalW),
@@ -77,7 +81,9 @@ export function SourceSpineCard({
           maxSpineHeight || naturalH,
         ),
       }
-    : {}
+    : {
+        ['--source-spine-text-fill' as string]: String(textFill),
+      }
 
   return (
     <div
@@ -85,6 +91,8 @@ export function SourceSpineCard({
         selected ? ' parent-tag-card--selected' : ''
       }${expanded ? ' parent-tag-card--expanded' : ''}${
         useImage ? ' parent-tag-card--source-spine-image' : ''
+      }${
+        !useImage ? ' parent-tag-card--source-spine-text' : ''
       }${
         useImage && !useProportionalScale
           ? ' parent-tag-card--source-spine-remote'
