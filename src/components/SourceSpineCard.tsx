@@ -1,9 +1,16 @@
 import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react'
 import type { SourceRow } from '../lib/notesApi'
 import {
+  hasStoredSourceSpine,
   isYes24MissingSpineImage,
+  knownYes24SpinePresence,
+  rememberYes24SpinePresence,
   resolveSourceSpineUrl,
 } from '../lib/bookCatalogServer'
+import {
+  normalizeSourceBookColor,
+  sourceBookColorStyle,
+} from '../lib/sourceBookColor'
 import {
   bookStandingHeightMm,
   displaySourceTitle,
@@ -32,18 +39,28 @@ export function SourceSpineCard({
   onSpineSize,
 }: SourceSpineCardProps) {
   const label = displaySourceTitle(source.title)
+  const goodsNo = source.yes24_goods_no?.trim() ?? ''
+  const storedSpine = hasStoredSourceSpine(source)
+  const cachedYes24 = goodsNo ? knownYes24SpinePresence(goodsNo) : undefined
   const spineUrl = resolveSourceSpineUrl(source)
-  const [imageBroken, setImageBroken] = useState(false)
-  const useImage = Boolean(spineUrl) && !imageBroken
+  const [imageBroken, setImageBroken] = useState(cachedYes24 === false)
+  const [remoteSpineReady, setRemoteSpineReady] = useState(
+    storedSpine || cachedYes24 === true,
+  )
+  const useImage = Boolean(spineUrl) && !imageBroken && remoteSpineReady
+  const bookColor = !useImage
+    ? normalizeSourceBookColor(source.spine_color)
+    : null
   const [loadedSpineSize, setLoadedSpineSize] = useState<{
     width: number
     height: number
   } | null>(null)
 
   useEffect(() => {
-    setImageBroken(false)
+    setImageBroken(cachedYes24 === false)
     setLoadedSpineSize(null)
-  }, [spineUrl])
+    setRemoteSpineReady(storedSpine || cachedYes24 === true)
+  }, [spineUrl, storedSpine, cachedYes24])
   const spineHeight =
     loadedSpineSize?.height && loadedSpineSize.height > 0
       ? loadedSpineSize.height
@@ -83,6 +100,7 @@ export function SourceSpineCard({
       }
     : {
         ['--source-spine-text-fill' as string]: String(textFill),
+        ...(bookColor ? sourceBookColorStyle(bookColor) : null),
       }
 
   return (
@@ -93,6 +111,8 @@ export function SourceSpineCard({
         useImage ? ' parent-tag-card--source-spine-image' : ''
       }${
         !useImage ? ' parent-tag-card--source-spine-text' : ''
+      }${
+        !useImage && bookColor ? ' parent-tag-card--book-color' : ''
       }${
         useImage && !useProportionalScale
           ? ' parent-tag-card--source-spine-remote'
@@ -114,13 +134,15 @@ export function SourceSpineCard({
         title={label}
         onClick={(event) => onSelect(event)}
       >
-        {useImage && spineUrl ? (
+        {spineUrl && !imageBroken ? (
           <img
-            className="parent-tag-card-spine-image"
+            className={`parent-tag-card-spine-image${
+              useImage ? '' : ' parent-tag-card-spine-image--probe'
+            }`}
             src={spineUrl}
             alt=""
-            width={spineWidth}
-            height={spineHeight}
+            width={useImage ? spineWidth : undefined}
+            height={useImage ? spineHeight : undefined}
             draggable={false}
             referrerPolicy="no-referrer"
             onLoad={(e) => {
@@ -130,23 +152,36 @@ export function SourceSpineCard({
                 img.naturalHeight < 1 ||
                 isYes24MissingSpineImage(img.naturalWidth, img.naturalHeight)
               ) {
+                if (goodsNo && !storedSpine) {
+                  rememberYes24SpinePresence(goodsNo, false)
+                }
                 setImageBroken(true)
                 return
+              }
+              if (goodsNo && !storedSpine) {
+                rememberYes24SpinePresence(goodsNo, true)
               }
               const size = {
                 width: img.naturalWidth,
                 height: img.naturalHeight,
               }
               setLoadedSpineSize(size)
+              setRemoteSpineReady(true)
               onSpineSize?.(size)
             }}
-            onError={() => setImageBroken(true)}
+            onError={() => {
+              if (goodsNo && !storedSpine) {
+                rememberYes24SpinePresence(goodsNo, false)
+              }
+              setImageBroken(true)
+            }}
           />
-        ) : (
+        ) : null}
+        {!useImage ? (
           <span className="parent-tag-card-label">
             {formatSpineText(label)}
           </span>
-        )}
+        ) : null}
       </button>
       {!useImage ? (
         <span className="parent-tag-spine-stat" aria-label={`태그 ${tagCount}개`}>

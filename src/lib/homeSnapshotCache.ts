@@ -5,7 +5,7 @@ import type {
   TagRow,
 } from './notesApi'
 
-const CACHE_VERSION = 3
+const CACHE_VERSION = 5
 const KEY_PREFIX = 'tag-note-home-snapshot-v'
 
 export type HomeSnapshotCache = {
@@ -18,6 +18,7 @@ export type HomeSnapshotCache = {
   tagMemoCounts: Record<string, number>
   parentTreeMemoCounts?: Record<string, number>
   sourceTagCounts: Record<string, number>
+  untaggedMemoCount?: number
 }
 
 function cacheKey(userId: string): string {
@@ -38,13 +39,15 @@ export function readHomeSnapshotCache(userId: string): HomeSnapshotCache | null 
       !Array.isArray(parsed.tags) ||
       !Array.isArray(parsed.tagParentLinks) ||
       !Array.isArray(parsed.sources) ||
-      !Array.isArray(parsed.notes) ||
       !isCountMap(parsed.tagMemoCounts) ||
       !isCountMap(parsed.sourceTagCounts)
     ) {
       return null
     }
-    return parsed
+    return {
+      ...parsed,
+      notes: [],
+    }
   } catch {
     return null
   }

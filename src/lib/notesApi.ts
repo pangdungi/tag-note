@@ -1,10 +1,17 @@
 import { supabase } from './supabase'
 import {
+  isInlineSpineDataUrl,
+  signSpinePath,
+  signSpinePaths,
+  uploadSourceSpinePath,
+} from './sourceSpineStorage'
+import {
   normalizeSourceCategory,
   normalizeSourceTitle,
   SOURCE_VIEW_NONE_ID,
   sourceTitleKey,
 } from './sourceUtils'
+import { normalizeSourceBookColor } from './sourceBookColor'
 import { dateKeyLocalRange } from './noteDateUtils'
 import {
   normalizeTagInput,
@@ -14,6 +21,7 @@ import {
   noteHasNoTagViewTags,
   tagHasChildren,
   TAG_VIEW_NONE_ID,
+  isUuidTagLabel,
 } from './tagUtils'
 
 /** Supabase/PostgREST 오류에서 사람이 읽을 메시지 추출 */
@@ -25,11 +33,6 @@ export function supabaseErrorMessage(error: unknown, fallback: string): string {
     if (parts.length > 0) return parts.join(' — ')
   }
   return fallback
-}
-
-function ilikePattern(raw: string): string {
-  const escaped = raw.replace(/[%_,\\]/g, (c) => `\\${c}`)
-  return `%${escaped}%`
 }
 
 /** 메모 저장/수정 실패 원인 추적용 (개발자 도구 콘솔) */
@@ -95,19 +98,115 @@ export type SourceRow = {
   yes24_goods_no?: string | null
   metadata_source?: string | null
   spine_image_url?: string | null
+  spine_image_path?: string | null
+  spine_signed_url?: string | null
   spine_image_width?: number | null
   spine_image_height?: number | null
   book_width_mm?: number | null
   book_length_mm?: number | null
   book_height_mm?: number | null
+  bookshelf_id?: string | null
+  spine_color?: string | null
 }
 
-const SOURCE_SELECT =
-  'id, title, created_at, isbn, author, publisher, published_year, category, cover_image_url, kyobo_product_id, yes24_goods_no, metadata_source, spine_image_url, spine_image_width, spine_image_height, book_width_mm, book_length_mm, book_height_mm'
+export type BookshelfRow = {
+  id: string
+  name: string
+  created_at?: string
+}
+
+/** 목록용 — data URL 스파인 컬럼 제외, path만 */
+const SOURCE_LIST_SELECT_CORE =
+  'id, title, created_at, isbn, author, publisher, published_year, category, cover_image_url, kyobo_product_id, yes24_goods_no, metadata_source, spine_image_path, spine_image_width, spine_image_height, book_width_mm, book_length_mm, book_height_mm, spine_color'
+
+const SOURCE_SELECT_CORE = SOURCE_LIST_SELECT_CORE
+
+const SOURCE_SELECT = `${SOURCE_LIST_SELECT_CORE}, bookshelf_id`
+
+const SOURCE_SELECT_LEGACY_CORE =
+  'id, title, created_at, isbn, author, publisher, published_year, category, cover_image_url, kyobo_product_id, yes24_goods_no, metadata_source, spine_image_width, spine_image_height, book_width_mm, book_length_mm, book_height_mm'
+
+function isMissingColumn(
+  error: { message?: string; code?: string },
+  column: string,
+) {
+  return (
+    error.code === '42703' || Boolean(error.message?.includes(column))
+  )
+}
+
+function isMissingBookshelfColumn(error: { message?: string; code?: string }) {
+  return isMissingColumn(error, 'bookshelf_id')
+}
+
+function isMissingSpinePathColumn(error: { message?: string; code?: string }) {
+  return isMissingColumn(error, 'spine_image_path')
+}
+
+function isMissingSpineColorColumn(error: { message?: string; code?: string }) {
+  return isMissingColumn(error, 'spine_color')
+}
+
+function isMissingBodyPreviewColumn(error: { message?: string; code?: string }) {
+  return isMissingColumn(error, 'body_preview')
+}
+
+function scaleMigrationRequired(
+  error: { message?: string; code?: string },
+  name: string,
+) {
+  return (
+    error.code === 'PGRST202' ||
+    error.code === '42883' ||
+    Boolean(error.message?.includes(name))
+  )
+}
+
+function scaleMigrationError(what: string) {
+  return new Error(
+    `${what} 기능을 쓰려면 Supabase에 029_scale_hardening.sql을 실행하세요.`,
+  )
+}
+
+async function selectSourceRows(
+  apply: (
+    select: string,
+  ) => PromiseLike<{ data: unknown; error: { message?: string; code?: string } | null }>,
+): Promise<SourceRow[]> {
+  const attempts = [
+    SOURCE_SELECT,
+    SOURCE_SELECT_CORE,
+    `${SOURCE_SELECT_LEGACY_CORE}, bookshelf_id`,
+    SOURCE_SELECT_LEGACY_CORE,
+  ]
+  let lastError: { message?: string; code?: string } | null = null
+  for (const select of attempts) {
+    const { data, error } = await apply(select)
+    if (!error) return (data ?? []) as SourceRow[]
+    lastError = error
+    const retryable =
+      isMissingBookshelfColumn(error) ||
+      isMissingSpinePathColumn(error) ||
+      isMissingSpineColorColumn(error)
+    if (!retryable) throw error
+  }
+  if (lastError) throw lastError
+  return []
+}
+
+async function selectSourceById(sourceId: string): Promise<SourceRow> {
+  const rows = await selectSourceRows((select) =>
+    supabase.from('sources').select(select).eq('id', sourceId),
+  )
+  if (!rows[0]) throw new Error('출처를 찾지 못했습니다.')
+  return rows[0]
+}
 
 export type NoteWithTags = {
   id: string
   body: string
+  /** 목록은 미리보기만. 수정·상세는 전체 본문을 다시 받음 */
+  body_complete?: boolean
   /** denormalized 표시용 (sources.title과 동기) */
   source: string
   source_id: string | null
@@ -128,6 +227,58 @@ export type NoteWithTags = {
 
 export function noteIsPinned(note: Pick<NoteWithTags, 'is_pinned'>): boolean {
   return Boolean(note.is_pinned)
+}
+
+export async function setNotePinned(
+  noteId: string,
+  isPinned: boolean,
+): Promise<void> {
+  const { error } = await supabase
+    .from('notes')
+    .update({ is_pinned: isPinned })
+    .eq('id', noteId)
+  if (error) throw error
+}
+
+export type NoteContextPinKind = 'folder' | 'source'
+
+export async function fetchNoteContextPinnedIds(
+  kind: NoteContextPinKind,
+  contextId: string,
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('note_context_pins')
+    .select('note_id')
+    .eq('context_kind', kind)
+    .eq('context_id', contextId)
+  if (error) throw error
+  return (data ?? []).map((row) => (row as { note_id: string }).note_id)
+}
+
+export async function setNoteContextPinned(
+  noteId: string,
+  kind: NoteContextPinKind,
+  contextId: string,
+  pinned: boolean,
+  userId: string,
+): Promise<void> {
+  if (pinned) {
+    const { error } = await supabase.from('note_context_pins').upsert({
+      user_id: userId,
+      note_id: noteId,
+      context_kind: kind,
+      context_id: contextId,
+    })
+    if (error) throw error
+    return
+  }
+  const { error } = await supabase
+    .from('note_context_pins')
+    .delete()
+    .eq('note_id', noteId)
+    .eq('context_kind', kind)
+    .eq('context_id', contextId)
+  if (error) throw error
 }
 
 export function noteSourceLabel(note: NoteWithTags): string {
@@ -180,14 +331,15 @@ export type NotesSearchResult = {
 
 /** 목록·검색 응답 — DB row를 앱 메모 형태로 매핑 */
 export function toListPreviewNote(
-  row: NoteWithTags & { body?: string },
+  row: NoteWithTags & { body?: string; body_preview?: string | null },
 ): NoteWithTags {
-  return mapNoteRowFromDb(row as NoteRowDb)
+  return mapNoteRowFromDb(row as NoteRowDb, { complete: false })
 }
 
 type NoteRowDb = {
   id: string
-  body: string
+  body?: string | null
+  body_preview?: string | null
   source: string
   source_id?: string | null
   created_at: string
@@ -196,18 +348,59 @@ type NoteRowDb = {
   note_tags?: NoteWithTags['note_tags']
 }
 
-function mapNoteRowFromDb(row: NoteRowDb): NoteWithTags {
+function readJoinedTag(nt: NoteWithTags['note_tags'][number]): {
+  id: string
+  name: string
+  color_index: number
+  parent_id?: string | null
+} | null {
+  const raw = nt.tags as unknown
+  const tag = (Array.isArray(raw) ? raw[0] : raw) as {
+    id?: string
+    name?: string
+    color_index?: number
+    parent_id?: string | null
+  } | null
+  const id = (tag?.id ?? nt.tag_id ?? '').trim()
+  if (!id) return null
+  const name = (tag?.name ?? '').trim()
+  return {
+    id,
+    name: name && !isUuidTagLabel(name) ? name : '',
+    color_index: tag?.color_index ?? 0,
+    parent_id: tag?.parent_id ?? null,
+  }
+}
+
+function mapNoteRowFromDb(
+  row: NoteRowDb,
+  opts?: { complete?: boolean },
+): NoteWithTags {
   const joined = Array.isArray(row.sources) ? row.sources[0] : row.sources
   const sourceTitle = joined?.title ?? row.source ?? ''
+  const hasFullBody = typeof row.body === 'string'
+  const complete = opts?.complete ?? hasFullBody
   return {
     id: row.id,
-    body: row.body ?? '',
+    body: complete
+      ? (row.body ?? '')
+      : (row.body_preview ?? row.body ?? ''),
+    body_complete: complete,
     source: sourceTitle,
     source_id: row.source_id ?? joined?.id ?? null,
     sources: joined ? { id: joined.id, title: joined.title } : null,
     created_at: row.created_at,
     is_pinned: Boolean(row.is_pinned),
-    note_tags: row.note_tags ?? [],
+    note_tags: (row.note_tags ?? []).flatMap((nt) => {
+      const tag = readJoinedTag(nt)
+      if (!tag) return []
+      return [
+        {
+          tag_id: tag.id,
+          tags: tag,
+        },
+      ]
+    }),
   }
 }
 
@@ -234,12 +427,48 @@ function sortNotesNewestFirst(rows: NoteWithTags[]): NoteWithTags[] {
 }
 
 export async function fetchTags(): Promise<TagRow[]> {
-  const { data, error } = await supabase
-    .from('tags')
-    .select('id, name, color_index, parent_id, is_parent, created_at')
-    .order('name')
-  if (error) throw error
-  return (data ?? []) as TagRow[]
+  const pageSize = 1000
+  const all: TagRow[] = []
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from('tags')
+      .select('id, name, color_index, parent_id, is_parent, created_at')
+      .order('name')
+      .range(from, from + pageSize - 1)
+    if (error) throw error
+    const rows = (data ?? []) as TagRow[]
+    all.push(...rows)
+    if (rows.length < pageSize) break
+  }
+  return all
+}
+
+export async function fetchTagsByIds(ids: string[]): Promise<TagRow[]> {
+  const unique = [...new Set(ids.filter((id) => isPersistedTagId(id)))]
+  if (unique.length === 0) return []
+  const pageSize = 200
+  const all: TagRow[] = []
+  for (let i = 0; i < unique.length; i += pageSize) {
+    const chunk = unique.slice(i, i + pageSize)
+    const { data, error } = await supabase
+      .from('tags')
+      .select('id, name, color_index, parent_id, is_parent, created_at')
+      .in('id', chunk)
+    if (error) throw error
+    all.push(...((data ?? []) as TagRow[]))
+  }
+  return all
+}
+
+export function collectNoteTagIds(notes: NoteWithTags[]): string[] {
+  const ids = new Set<string>()
+  for (const note of notes) {
+    for (const nt of note.note_tags) {
+      const id = nt.tags?.id ?? nt.tag_id
+      if (id && isPersistedTagId(id)) ids.add(id)
+    }
+  }
+  return [...ids]
 }
 
 export type TagParentLink = {
@@ -270,6 +499,21 @@ export async function fetchTagParentLinks(): Promise<TagParentLink[]> {
 export type NoteTagLinkRow = {
   note_id: string
   tag_id: string
+}
+
+async function insertNoteTagRows(
+  rows: { note_id: string; tag_id: string; user_id: string }[],
+): Promise<void> {
+  if (rows.length === 0) return
+  const { error } = await supabase.from('note_tags').insert(rows)
+  if (error && isMissingColumn(error, 'user_id')) {
+    const { error: retry } = await supabase.from('note_tags').insert(
+      rows.map(({ note_id, tag_id }) => ({ note_id, tag_id })),
+    )
+    if (retry) throw retry
+    return
+  }
+  if (error) throw error
 }
 
 /** note_tags 연결 행 전체 (Supabase 기본 1000행 제한 우회) */
@@ -304,51 +548,184 @@ export function buildTagMemoCountsFromLinks(
   return counts
 }
 
-/** 태그별 메모 개수 (note_tags 전체 집계) */
+function recordsFromCountRows(
+  rows: { tag_id?: string; source_id?: string; memo_count?: number | string; tag_count?: number | string }[] | null,
+  key: 'tag_id' | 'source_id',
+  valueKey: 'memo_count' | 'tag_count',
+): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const row of rows ?? []) {
+    const id = row[key]
+    if (!id) continue
+    counts[id] = Number(row[valueKey] ?? 0)
+  }
+  return counts
+}
+
+/** 태그별 메모 개수 — SQL 집계 RPC. note_tags 전량 다운로드 없음 */
 export async function fetchTagMemoCounts(): Promise<Record<string, number>> {
-  const links = await fetchNoteTagLinks()
-  return buildTagMemoCountsFromLinks(links)
+  const { data, error } = await supabase.rpc('tag_memo_counts')
+  if (error) {
+    if (scaleMigrationRequired(error, 'tag_memo_counts')) {
+      throw scaleMigrationError('태그 개수')
+    }
+    throw error
+  }
+  return recordsFromCountRows(
+    data as { tag_id?: string; memo_count?: number | string }[] | null,
+    'tag_id',
+    'memo_count',
+  )
+}
+
+/** 상위 태그 트리(상위+하위) 메모 수 — SQL 집계 */
+export async function fetchParentTreeMemoCounts(): Promise<Record<string, number>> {
+  const { data, error } = await supabase.rpc('parent_tree_memo_counts')
+  if (error) {
+    if (scaleMigrationRequired(error, 'parent_tree_memo_counts')) {
+      throw scaleMigrationError('폴더 개수')
+    }
+    throw error
+  }
+  return recordsFromCountRows(
+    data as { tag_id?: string; memo_count?: number | string }[] | null,
+    'tag_id',
+    'memo_count',
+  )
+}
+
+export async function fetchUntaggedMemoCount(): Promise<number> {
+  const { data, error } = await supabase.rpc('untagged_memo_count')
+  if (error) {
+    if (scaleMigrationRequired(error, 'untagged_memo_count')) {
+      throw scaleMigrationError('태그 없음 개수')
+    }
+    throw error
+  }
+  return Number(data ?? 0)
 }
 
 /** 출처별 연결된 태그 종류 수. 출처 없는 메모는 SOURCE_VIEW_NONE_ID */
 export async function fetchSourceDistinctTagCounts(): Promise<
   Record<string, number>
 > {
-  const { data, error } = await supabase
-    .from('notes')
-    .select('source_id, source, note_tags ( tag_id )')
-  if (error) throw error
-  const bySource = new Map<string, Set<string>>()
-  for (const row of data ?? []) {
-    const sid = (row as { source_id: string | null }).source_id
-    const sourceText = ((row as { source?: string | null }).source ?? '').trim()
-    const bucket = sid || (!sourceText ? SOURCE_VIEW_NONE_ID : null)
-    if (!bucket) continue
-    const nts =
-      (row as { note_tags?: { tag_id: string }[] }).note_tags ?? []
-    let set = bySource.get(bucket)
-    if (!set) {
-      set = new Set()
-      bySource.set(bucket, set)
+  const { data, error } = await supabase.rpc('source_distinct_tag_counts')
+  if (error) {
+    if (scaleMigrationRequired(error, 'source_distinct_tag_counts')) {
+      throw scaleMigrationError('출처 개수')
     }
-    for (const nt of nts) {
-      if (nt.tag_id) set.add(nt.tag_id)
-    }
+    throw error
   }
-  const counts: Record<string, number> = {}
-  for (const [sid, set] of bySource) {
-    counts[sid] = set.size
-  }
-  return counts
+  return recordsFromCountRows(
+    data as { source_id?: string; tag_count?: number | string }[] | null,
+    'source_id',
+    'tag_count',
+  )
+}
+
+async function withSignedSpineUrls(rows: SourceRow[]): Promise<SourceRow[]> {
+  const paths = rows
+    .map((row) => row.spine_image_path?.trim() ?? '')
+    .filter(Boolean)
+  if (paths.length === 0) return rows
+  const signed = await signSpinePaths(paths)
+  return rows.map((row) => {
+    const path = row.spine_image_path?.trim() ?? ''
+    if (!path) return row
+    return { ...row, spine_signed_url: signed.get(path) ?? row.spine_signed_url }
+  })
 }
 
 export async function fetchSources(): Promise<SourceRow[]> {
+  const rows = await selectSourceRows((select) =>
+    supabase.from('sources').select(select).order('title'),
+  )
+  return withSignedSpineUrls(rows)
+}
+
+/** data URL 스파인이 남은 출처만 id 조회 후 한 권씩 Storage로 옮김 */
+export async function migrateLegacySourceSpines(
+  userId: string,
+): Promise<SourceRow[]> {
+  const { data: idRows, error } = await supabase.rpc('legacy_spine_source_ids')
+  if (error) {
+    if (scaleMigrationRequired(error, 'legacy_spine_source_ids')) return []
+    throw error
+  }
+  const ids = (idRows ?? []).map((row: { id: string }) => row.id)
+  const migrated: SourceRow[] = []
+  for (const sourceId of ids) {
+    const { data, error: rowErr } = await supabase
+      .from('sources')
+      .select('id, spine_image_url, spine_image_width, spine_image_height')
+      .eq('id', sourceId)
+      .maybeSingle()
+    if (rowErr || !data) continue
+    const raw = (data as { spine_image_url?: string | null }).spine_image_url
+    if (!isInlineSpineDataUrl(raw)) continue
+    try {
+      const path = await uploadSourceSpinePath(userId, sourceId, raw!)
+      const signed = await signSpinePath(path)
+      const { data: saved, error: saveErr } = await supabase
+        .from('sources')
+        .update({
+          spine_image_path: path,
+          spine_image_url: null,
+        })
+        .eq('id', sourceId)
+        .select(SOURCE_SELECT)
+        .single()
+      if (saveErr || !saved) continue
+      migrated.push({
+        ...(saved as SourceRow),
+        spine_signed_url: signed,
+      })
+    } catch (e) {
+      console.warn('[태그노트] 레거시 책등 이전 실패', sourceId, e)
+    }
+  }
+  return migrated
+}
+
+export async function fetchBookshelves(): Promise<BookshelfRow[]> {
   const { data, error } = await supabase
-    .from('sources')
-    .select(SOURCE_SELECT)
-    .order('title')
-  if (error) throw error
-  return (data ?? []) as SourceRow[]
+    .from('bookshelves')
+    .select('id, name, created_at')
+    .order('name')
+  if (error) {
+    if (
+      error.code === 'PGRST205' ||
+      error.code === '42P01' ||
+      error.message.includes('bookshelves')
+    ) {
+      console.warn('[태그노트] bookshelves 테이블 없음 — 책장을 건너뜁니다.')
+      return []
+    }
+    throw error
+  }
+  return (data ?? []) as BookshelfRow[]
+}
+
+export async function createBookshelf(
+  userId: string,
+  rawName: string,
+): Promise<BookshelfRow> {
+  const name = normalizeSourceTitle(rawName)
+  if (!name) throw new Error('책장 이름을 입력하세요.')
+
+  const { data, error } = await supabase
+    .from('bookshelves')
+    .insert({ user_id: userId, name })
+    .select('id, name, created_at')
+    .single()
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error('같은 이름의 책장이 이미 있습니다.')
+    }
+    throw error
+  }
+  return data as BookshelfRow
 }
 
 /** 메모가 1개 이상 연결된 출처만 (고아 출처 제외) */
@@ -368,13 +745,9 @@ export async function fetchSourcesInUse(): Promise<SourceRow[]> {
   ]
   if (ids.length === 0) return []
 
-  const { data, error } = await supabase
-    .from('sources')
-    .select(SOURCE_SELECT)
-    .in('id', ids)
-    .order('title')
-  if (error) throw error
-  return (data ?? []) as SourceRow[]
+  return selectSourceRows((select) =>
+    supabase.from('sources').select(select).in('id', ids).order('title'),
+  )
 }
 
 export async function countNotesForSource(sourceId: string): Promise<number> {
@@ -420,11 +793,14 @@ export async function updateSource(
     yes24_goods_no?: string | null
     metadata_source?: string | null
     spine_image_url?: string | null
+    spine_image_path?: string | null
     spine_image_width?: number | null
     spine_image_height?: number | null
     book_width_mm?: number | null
     book_length_mm?: number | null
     book_height_mm?: number | null
+    bookshelf_id?: string | null
+    spine_color?: string | null
   },
 ): Promise<SourceRow> {
   const updates: Record<string, unknown> = {}
@@ -456,6 +832,9 @@ export async function updateSource(
   if (patch.spine_image_url !== undefined) {
     updates.spine_image_url = patch.spine_image_url
   }
+  if (patch.spine_image_path !== undefined) {
+    updates.spine_image_path = patch.spine_image_path
+  }
   if (patch.spine_image_width !== undefined) {
     updates.spine_image_width = patch.spine_image_width
   }
@@ -471,26 +850,35 @@ export async function updateSource(
   if (patch.book_height_mm !== undefined) {
     updates.book_height_mm = patch.book_height_mm
   }
-
-  if (Object.keys(updates).length === 0) {
-    const { data, error } = await supabase
-      .from('sources')
-      .select(SOURCE_SELECT)
-      .eq('id', sourceId)
-      .single()
-    if (error) throw error
-    return data as SourceRow
+  if (patch.bookshelf_id !== undefined) {
+    updates.bookshelf_id = patch.bookshelf_id
+  }
+  if (patch.spine_color !== undefined) {
+    updates.spine_color = patch.spine_color
   }
 
-  const { data, error } = await supabase
+  if (Object.keys(updates).length === 0) {
+    return (await withSignedSpineUrls([await selectSourceById(sourceId)]))[0]!
+  }
+
+  const { error } = await supabase
     .from('sources')
     .update(updates)
     .eq('id', sourceId)
-    .select(SOURCE_SELECT)
-    .single()
   if (error) {
     if (error.code === '23505') {
       throw new Error('같은 이름의 출처가 이미 있습니다.')
+    }
+    if (isMissingBookshelfColumn(error)) {
+      throw new Error('책장 기능을 쓰려면 데이터베이스를 업데이트하세요.')
+    }
+    if (isMissingSpinePathColumn(error)) {
+      throw scaleMigrationError('책등 이미지')
+    }
+    if (isMissingSpineColorColumn(error)) {
+      throw new Error(
+        '책 색 기능을 쓰려면 Supabase에 033_source_spine_color.sql을 실행하세요.',
+      )
     }
     throw error
   }
@@ -503,7 +891,28 @@ export async function updateSource(
     if (noteErr) throw noteErr
   }
 
-  return data as SourceRow
+  return (await withSignedSpineUrls([await selectSourceById(sourceId)]))[0]!
+}
+
+export async function persistSourceSpineColors(
+  rows: { id: string; spine_color: string | null }[],
+): Promise<void> {
+  const list = rows.filter((row) => normalizeSourceBookColor(row.spine_color))
+  if (list.length === 0) return
+  for (let i = 0; i < list.length; i += 6) {
+    const chunk = list.slice(i, i + 6)
+    await Promise.all(
+      chunk.map(async (row) => {
+        const { error } = await supabase
+          .from('sources')
+          .update({ spine_color: row.spine_color })
+          .eq('id', row.id)
+        if (error && !isMissingSpineColorColumn(error)) {
+          console.warn('[태그노트] 책 색 저장 실패', row.id, error)
+        }
+      }),
+    )
+  }
 }
 
 export type CreateBookSourceInput = {
@@ -516,8 +925,10 @@ export type CreateBookSourceInput = {
   cover_image_url?: string | null
   kyobo_product_id?: string | null
   yes24_goods_no?: string | null
+  spine_color?: string | null
   metadata_source?: string | null
   spine_image_url?: string | null
+  spine_image_path?: string | null
   spine_image_width?: number | null
   spine_image_height?: number | null
   book_width_mm?: number | null
@@ -535,13 +946,15 @@ export async function createBookSource(
   const isbn = input.isbn.trim()
   if (!isbn) throw new Error('ISBN이 필요합니다.')
 
-  const { data: existing, error: findErr } = await supabase
-    .from('sources')
-    .select(SOURCE_SELECT)
-    .eq('user_id', userId)
-    .eq('isbn', isbn)
-    .maybeSingle()
-  if (findErr) throw findErr
+  const existing = (
+    await selectSourceRows((select) =>
+      supabase
+        .from('sources')
+        .select(select)
+        .eq('user_id', userId)
+        .eq('isbn', isbn),
+    )
+  )[0]
 
   const payload = {
     title,
@@ -554,7 +967,7 @@ export async function createBookSource(
     kyobo_product_id: input.kyobo_product_id ?? null,
     yes24_goods_no: input.yes24_goods_no ?? null,
     metadata_source: input.metadata_source ?? 'yes24',
-    spine_image_url: input.spine_image_url ?? null,
+    spine_image_path: input.spine_image_path ?? null,
     spine_image_width: input.spine_image_width ?? null,
     spine_image_height: input.spine_image_height ?? null,
     book_width_mm: input.book_width_mm ?? null,
@@ -566,25 +979,49 @@ export async function createBookSource(
     throw new Error('같은 이름 또는 ISBN의 출처가 이미 있습니다.')
   }
 
+  const insertPayload: Record<string, unknown> = {
+    user_id: userId,
+    ...payload,
+  }
+  if (input.spine_color) insertPayload.spine_color = input.spine_color
+
   const { data, error } = await supabase
     .from('sources')
-    .insert({ user_id: userId, ...payload })
-    .select(SOURCE_SELECT)
+    .insert(insertPayload)
+    .select('id')
     .single()
 
   if (error) {
     if (error.code === '23505') {
       throw new Error('같은 이름 또는 ISBN의 출처가 이미 있습니다.')
     }
+    if (isMissingSpineColorColumn(error) && insertPayload.spine_color) {
+      delete insertPayload.spine_color
+      const retry = await supabase
+        .from('sources')
+        .insert(insertPayload)
+        .select('id')
+        .single()
+      if (retry.error) {
+        if (retry.error.code === '23505') {
+          throw new Error('같은 이름 또는 ISBN의 출처가 이미 있습니다.')
+        }
+        throw retry.error
+      }
+      return (await withSignedSpineUrls([
+        await selectSourceById(retry.data.id as string),
+      ]))[0]!
+    }
     throw error
   }
 
-  return data as SourceRow
+  return (await withSignedSpineUrls([await selectSourceById(data.id as string)]))[0]!
 }
 
 export type CreateManualSourceInput = {
   title: string
   category?: string | null
+  spine_color?: string | null
 }
 
 /** 제목·분야로 출처 직접 등록 (ISBN 없음) */
@@ -597,37 +1034,46 @@ export async function createManualSource(
   const category = normalizeSourceCategory(input.category)
   const key = sourceTitleKey(title)
 
-  const { data: existing, error: findErr } = await supabase
-    .from('sources')
-    .select(SOURCE_SELECT)
-    .eq('user_id', userId)
-    .eq('title_normalized', key)
-    .maybeSingle()
-  if (findErr) throw findErr
-
+  const existing = (
+    await selectSourceRows((select) =>
+      supabase
+        .from('sources')
+        .select(select)
+        .eq('user_id', userId)
+        .eq('title_normalized', key),
+    )
+  )[0]
   if (existing) {
     throw new Error('같은 이름의 출처가 이미 있습니다.')
   }
 
+  const insertPayload: Record<string, unknown> = {
+    user_id: userId,
+    title,
+    category,
+    metadata_source: 'manual',
+  }
+  if (input.spine_color) insertPayload.spine_color = input.spine_color
+
   const { data, error } = await supabase
     .from('sources')
-    .insert({
-      user_id: userId,
-      title,
-      category,
-      metadata_source: 'manual',
-    })
-    .select(SOURCE_SELECT)
+    .insert(insertPayload)
+    .select('id')
     .single()
 
   if (error) {
     if (error.code === '23505') {
       throw new Error('같은 이름의 출처가 이미 있습니다.')
     }
+    if (isMissingSpineColorColumn(error)) {
+      throw new Error(
+        '책 색 기능을 쓰려면 Supabase에 033_source_spine_color.sql을 실행하세요.',
+      )
+    }
     throw error
   }
 
-  return data as SourceRow
+  return (await withSignedSpineUrls([await selectSourceById(data.id as string)]))[0]!
 }
 
 /** @deprecated updateSource 사용 */
@@ -642,45 +1088,15 @@ export async function updateSourceTitle(
  * 출처만 삭제 — 태그·메모는 유지하고 연결된 메모에서 출처 정보만 제거.
  */
 export async function deleteSourceKeepNotes(sourceId: string): Promise<void> {
-  const { data: src, error: srcErr } = await supabase
-    .from('sources')
-    .select('title')
-    .eq('id', sourceId)
-    .single()
-  if (srcErr) throw srcErr
-
-  const key = sourceTitleKey((src as { title: string }).title)
-
-  const { error: linkedErr } = await supabase
-    .from('notes')
-    .update({ source: '', source_id: null })
-    .eq('source_id', sourceId)
-  if (linkedErr) throw linkedErr
-
-  const { data: legacyRows, error: legacyErr } = await supabase
-    .from('notes')
-    .select('id, source')
-    .is('source_id', null)
-    .not('source', 'eq', '')
-  if (legacyErr) throw legacyErr
-
-  const legacyIds = (legacyRows ?? [])
-    .filter((row) => sourceTitleKey((row as { source: string }).source) === key)
-    .map((row) => (row as { id: string }).id)
-
-  if (legacyIds.length > 0) {
-    const { error: clearLegacyErr } = await supabase
-      .from('notes')
-      .update({ source: '' })
-      .in('id', legacyIds)
-    if (clearLegacyErr) throw clearLegacyErr
+  const { error } = await supabase.rpc('clear_source_from_own_notes', {
+    p_source_id: sourceId,
+  })
+  if (error) {
+    if (scaleMigrationRequired(error, 'clear_source_from_own_notes')) {
+      throw scaleMigrationError('출처 삭제')
+    }
+    throw error
   }
-
-  const { error: deleteErr } = await supabase
-    .from('sources')
-    .delete()
-    .eq('id', sourceId)
-  if (deleteErr) throw deleteErr
 }
 
 /** 출처 삭제 시 로컬 메모 목록에서 출처 정보만 제거 */
@@ -740,37 +1156,15 @@ export async function moveNotesToSource(
   const title = normalizeSourceTitle(toSource.title)
   if (!title) throw new Error('옮길 출처 이름이 비었습니다.')
 
-  const { data: src, error: srcErr } = await supabase
-    .from('sources')
-    .select('title')
-    .eq('id', fromSourceId)
-    .single()
-  if (srcErr) throw srcErr
-  const fromKey = sourceTitleKey((src as { title: string }).title)
-
-  const { error: linkedErr } = await supabase
-    .from('notes')
-    .update({ source: title, source_id: toSource.id })
-    .eq('source_id', fromSourceId)
-  if (linkedErr) throw linkedErr
-
-  const { data: legacyRows, error: legacyErr } = await supabase
-    .from('notes')
-    .select('id, source')
-    .is('source_id', null)
-    .not('source', 'eq', '')
-  if (legacyErr) throw legacyErr
-
-  const legacyIds = (legacyRows ?? [])
-    .filter((row) => sourceTitleKey((row as { source: string }).source) === fromKey)
-    .map((row) => (row as { id: string }).id)
-
-  if (legacyIds.length > 0) {
-    const { error: moveLegacyErr } = await supabase
-      .from('notes')
-      .update({ source: title, source_id: toSource.id })
-      .in('id', legacyIds)
-    if (moveLegacyErr) throw moveLegacyErr
+  const { error } = await supabase.rpc('move_own_notes_to_source', {
+    p_from_id: fromSourceId,
+    p_to_id: toSource.id,
+  })
+  if (error) {
+    if (scaleMigrationRequired(error, 'move_own_notes_to_source')) {
+      throw scaleMigrationError('출처 이동')
+    }
+    throw new Error(supabaseErrorMessage(error, '메모를 옮기지 못했습니다.'))
   }
 }
 
@@ -846,34 +1240,88 @@ export function mergeSourcesFromNoteIntoAllSources(
   return [...byId.values()].sort((a, b) => a.title.localeCompare(b.title, 'ko'))
 }
 
-const NOTE_WITH_TAGS_SELECT = `
-      id,
-      body,
+const NOTE_TAG_JOIN = `tag_id, tags ( id, name, color_index )`
+
+const NOTE_LIST_EMBED = `
       source,
       source_id,
       created_at,
       is_pinned,
       sources ( id, title ),
-      note_tags (
-        tag_id,
-        tags ( id, name, color_index )
-      )
+      note_tags ( ${NOTE_TAG_JOIN} )
     `
+
+const NOTE_DETAIL_EMBED = `
+      source,
+      source_id,
+      created_at,
+      is_pinned,
+      sources ( id, title ),
+      note_tags ( ${NOTE_TAG_JOIN} )
+    `
+
+const NOTE_LIST_SELECT = `id, body_preview, ${NOTE_LIST_EMBED}`
+const NOTE_DETAIL_SELECT = `id, body, ${NOTE_DETAIL_EMBED}`
 
 /** 태그 필터 조회 — 해당 태그가 붙은 메모만 (inner join) */
 const NOTE_WITH_TAG_FILTER_SELECT = `
       id,
+      body_preview,
+      source,
+      source_id,
+      created_at,
+      is_pinned,
+      sources ( id, title ),
+      note_tags!inner ( ${NOTE_TAG_JOIN} )
+    `
+
+const NOTE_WITH_TAG_FILTER_DETAIL_SELECT = `
+      id,
       body,
       source,
       source_id,
       created_at,
       is_pinned,
       sources ( id, title ),
-      note_tags!inner (
-        tag_id,
-        tags ( id, name, color_index )
-      )
+      note_tags!inner ( ${NOTE_TAG_JOIN} )
     `
+
+export const FOLDER_NOTES_PAGE_SIZE = 50
+
+async function queryNoteRows(
+  apply: (
+    select: string,
+  ) => PromiseLike<{
+    data: unknown
+    error: { message?: string; code?: string } | null
+  }>,
+  opts?: { complete?: boolean; filter?: boolean },
+): Promise<NoteRowDb[]> {
+  const complete = Boolean(opts?.complete)
+  const filter = Boolean(opts?.filter)
+  const primary = complete
+    ? filter
+      ? NOTE_WITH_TAG_FILTER_DETAIL_SELECT
+      : NOTE_DETAIL_SELECT
+    : filter
+      ? NOTE_WITH_TAG_FILTER_SELECT
+      : NOTE_LIST_SELECT
+  const { data, error } = await apply(primary)
+  if (error && !complete && isMissingBodyPreviewColumn(error)) {
+    const fallback = filter
+      ? NOTE_WITH_TAG_FILTER_DETAIL_SELECT
+      : NOTE_DETAIL_SELECT
+    const retry = await apply(fallback)
+    if (retry.error) throw retry.error
+    return (retry.data ?? []) as unknown as NoteRowDb[]
+  }
+  if (error) throw error
+  return (data ?? []) as unknown as NoteRowDb[]
+}
+
+function mapListNotes(rows: NoteRowDb[]): NoteWithTags[] {
+  return rows.map((r) => mapNoteRowFromDb(r, { complete: false }))
+}
 
 /** @deprecated 초기 전체 로드 대신 fetchNotesPage 사용 */
 export async function fetchNotesWithTags(): Promise<NoteWithTags[]> {
@@ -887,23 +1335,18 @@ export async function fetchNotesPage(opts?: {
   before?: string
 }): Promise<NotesPageResult> {
   const limit = opts?.limit ?? NOTES_LIST_PAGE_SIZE
-  let q = supabase
-    .from('notes')
-    .select(NOTE_WITH_TAGS_SELECT)
-    .order('created_at', { ascending: false })
-    .limit(limit + 1)
-  if (opts?.before) {
-    q = q.lt('created_at', opts.before)
-  }
-  const { data, error } = await q
-  if (error) throw error
-  const rows = (data ?? []) as unknown as NoteRowDb[]
+  const rows = await queryNoteRows((select) => {
+    let q = supabase
+      .from('notes')
+      .select(select)
+      .order('created_at', { ascending: false })
+      .limit(limit + 1)
+    if (opts?.before) q = q.lt('created_at', opts.before)
+    return q
+  })
   const hasMore = rows.length > limit
   const slice = hasMore ? rows.slice(0, limit) : rows
-  return {
-    notes: slice.map((r) => toListPreviewNote(mapNoteRowFromDb(r))),
-    hasMore,
-  }
+  return { notes: mapListNotes(slice), hasMore }
 }
 
 /** 태그가 전혀 없는 메모 — note_tags 행이 없는 notes만 (1회 조회) */
@@ -912,24 +1355,19 @@ export async function fetchNotesPageWithNoTags(opts?: {
   before?: string
 }): Promise<NotesPageResult> {
   const limit = opts?.limit ?? NOTES_LIST_PAGE_SIZE
-  let q = supabase
-    .from('notes')
-    .select(NOTE_WITH_TAGS_SELECT)
-    .is('note_tags', null)
-    .order('created_at', { ascending: false })
-    .limit(limit + 1)
-  if (opts?.before) {
-    q = q.lt('created_at', opts.before)
-  }
-  const { data, error } = await q
-  if (error) throw error
-  const rows = (data ?? []) as unknown as NoteRowDb[]
+  const rows = await queryNoteRows((select) => {
+    let q = supabase
+      .from('notes')
+      .select(select)
+      .is('note_tags', null)
+      .order('created_at', { ascending: false })
+      .limit(limit + 1)
+    if (opts?.before) q = q.lt('created_at', opts.before)
+    return q
+  })
   const hasMore = rows.length > limit
   const slice = hasMore ? rows.slice(0, limit) : rows
-  return {
-    notes: slice.map((r) => toListPreviewNote(mapNoteRowFromDb(r))),
-    hasMore,
-  }
+  return { notes: mapListNotes(slice), hasMore }
 }
 
 /** 서버에 반영된 한 건만 조회(전체 목록 갈아끼우기 대신 국소 갱신용). */
@@ -938,23 +1376,23 @@ export async function fetchNoteWithTagsById(
 ): Promise<NoteWithTags> {
   const { data, error } = await supabase
     .from('notes')
-    .select(NOTE_WITH_TAGS_SELECT)
+    .select(NOTE_DETAIL_SELECT)
     .eq('id', noteId)
     .single()
   if (error) throw error
-  return mapNoteRowFromDb(data as unknown as NoteRowDb)
+  return mapNoteRowFromDb(data as unknown as NoteRowDb, { complete: true })
 }
 
 /** 로그인한 계정의 고정 메모만 (RLS + user_id) */
 export async function fetchPinnedNotes(): Promise<NoteWithTags[]> {
-  const { data, error } = await supabase
-    .from('notes')
-    .select(NOTE_WITH_TAGS_SELECT)
-    .eq('is_pinned', true)
-    .order('created_at', { ascending: false })
-  if (error) throw error
-  const rows = (data ?? []) as unknown as NoteRowDb[]
-  return rows.map((r) => mapNoteRowFromDb(r))
+  const rows = await queryNoteRows((select) =>
+    supabase
+      .from('notes')
+      .select(select)
+      .eq('is_pinned', true)
+      .order('created_at', { ascending: false }),
+  )
+  return mapListNotes(rows)
 }
 
 /** 특정 태그 메모 — 최신순 페이지 (전체 note_tags 포함, 1회 조회) */
@@ -962,25 +1400,23 @@ export async function fetchNotesPageForTag(
   tagId: string,
   opts?: { limit?: number; before?: string },
 ): Promise<NotesPageResult> {
-  const limit = opts?.limit ?? NOTES_LIST_PAGE_SIZE
-  let q = supabase
-    .from('notes')
-    .select(NOTE_WITH_TAG_FILTER_SELECT)
-    .eq('note_tags.tag_id', tagId)
-    .order('created_at', { ascending: false })
-    .limit(limit + 1)
-  if (opts?.before) {
-    q = q.lt('created_at', opts.before)
+  if (tagId === TAG_VIEW_NONE_ID) {
+    return fetchNotesPageWithNoTags(opts)
   }
-  const { data, error } = await q
-  if (error) throw error
-  const rows = (data ?? []) as unknown as NoteRowDb[]
+  const limit = opts?.limit ?? FOLDER_NOTES_PAGE_SIZE
+  const rows = await queryNoteRows((select) => {
+    let q = supabase
+      .from('notes')
+      .select(select)
+      .eq('note_tags.tag_id', tagId)
+      .order('created_at', { ascending: false })
+      .limit(limit + 1)
+    if (opts?.before) q = q.lt('created_at', opts.before)
+    return q
+  }, { filter: true })
   const hasMore = rows.length > limit
   const slice = hasMore ? rows.slice(0, limit) : rows
-  return {
-    notes: slice.map((r) => toListPreviewNote(mapNoteRowFromDb(r))),
-    hasMore,
-  }
+  return { notes: mapListNotes(slice), hasMore }
 }
 
 /** 태그(또는 태그 없음) 클릭 시 — 해당 목록 1페이지만 조회 */
@@ -1078,25 +1514,22 @@ export async function fetchNotesPageForTagIds(
     return fetchNotesPageForTag(ids[0]!, opts)
   }
 
-  const limit = opts?.limit ?? NOTES_LIST_PAGE_SIZE
-  let q = supabase
-    .from('notes')
-    .select(NOTE_WITH_TAG_FILTER_SELECT)
-    .in('note_tags.tag_id', ids)
-    .order('created_at', { ascending: false })
-    .limit(limit + 1)
-  if (opts?.before) {
-    q = q.lt('created_at', opts.before)
-  }
-  const { data, error } = await q
-  if (error) throw error
-  const rows = dedupeNoteRows((data ?? []) as unknown as NoteRowDb[])
+  const limit = opts?.limit ?? FOLDER_NOTES_PAGE_SIZE
+  const rows = dedupeNoteRows(
+    await queryNoteRows((select) => {
+      let q = supabase
+        .from('notes')
+        .select(select)
+        .in('note_tags.tag_id', ids)
+        .order('created_at', { ascending: false })
+        .limit(limit + 1)
+      if (opts?.before) q = q.lt('created_at', opts.before)
+      return q
+    }, { filter: true }),
+  )
   const hasMore = rows.length > limit
   const slice = hasMore ? rows.slice(0, limit) : rows
-  return {
-    notes: slice.map((r) => toListPreviewNote(mapNoteRowFromDb(r))),
-    hasMore,
-  }
+  return { notes: mapListNotes(slice), hasMore }
 }
 
 /** 특정 출처 메모 — 최신순 페이지 */
@@ -1107,25 +1540,20 @@ export async function fetchNotesPageForSource(
   if (sourceId === SOURCE_VIEW_NONE_ID) {
     return fetchNotesPageWithNoSource(opts)
   }
-  const limit = opts?.limit ?? NOTES_LIST_PAGE_SIZE
-  let q = supabase
-    .from('notes')
-    .select(NOTE_WITH_TAGS_SELECT)
-    .eq('source_id', sourceId)
-    .order('created_at', { ascending: false })
-    .limit(limit + 1)
-  if (opts?.before) {
-    q = q.lt('created_at', opts.before)
-  }
-  const { data, error } = await q
-  if (error) throw error
-  const rows = (data ?? []) as unknown as NoteRowDb[]
+  const limit = opts?.limit ?? FOLDER_NOTES_PAGE_SIZE
+  const rows = await queryNoteRows((select) => {
+    let q = supabase
+      .from('notes')
+      .select(select)
+      .eq('source_id', sourceId)
+      .order('created_at', { ascending: false })
+      .limit(limit + 1)
+    if (opts?.before) q = q.lt('created_at', opts.before)
+    return q
+  })
   const hasMore = rows.length > limit
   const slice = hasMore ? rows.slice(0, limit) : rows
-  return {
-    notes: slice.map((r) => toListPreviewNote(mapNoteRowFromDb(r))),
-    hasMore,
-  }
+  return { notes: mapListNotes(slice), hasMore }
 }
 
 /** 출처가 전혀 없는 메모 — source_id·출처 텍스트가 모두 비어 있음 */
@@ -1133,26 +1561,22 @@ export async function fetchNotesPageWithNoSource(opts?: {
   limit?: number
   before?: string
 }): Promise<NotesPageResult> {
-  const limit = opts?.limit ?? NOTES_LIST_PAGE_SIZE
-  let q = supabase
-    .from('notes')
-    .select(NOTE_WITH_TAGS_SELECT)
-    .is('source_id', null)
-    .or('source.is.null,source.eq.')
-    .order('created_at', { ascending: false })
-    .limit(limit + 1)
-  if (opts?.before) {
-    q = q.lt('created_at', opts.before)
-  }
-  const { data, error } = await q
-  if (error) throw error
-  const rows = (data ?? []) as unknown as NoteRowDb[]
+  const limit = opts?.limit ?? FOLDER_NOTES_PAGE_SIZE
+  const rows = await queryNoteRows((select) => {
+    let q = supabase
+      .from('notes')
+      .select(select)
+      .is('source_id', null)
+      .or('source.is.null,source.eq.')
+      .order('created_at', { ascending: false })
+      .limit(limit + 1)
+    if (opts?.before) q = q.lt('created_at', opts.before)
+    return q
+  })
   const hasMore = rows.length > limit
   const slice = hasMore ? rows.slice(0, limit) : rows
   return {
-    notes: slice
-      .map((r) => toListPreviewNote(mapNoteRowFromDb(r)))
-      .filter(noteHasNoSource),
+    notes: mapListNotes(slice).filter(noteHasNoSource),
     hasMore,
   }
 }
@@ -1914,42 +2338,19 @@ export async function bulkAddMainTagToNotesWithTag(
     throw new Error('같은 메인 태그는 선택할 수 없습니다.')
   }
 
-  const { data: sourceLinks, error: sourceErr } = await supabase
-    .from('note_tags')
-    .select('note_id')
-    .eq('tag_id', sourceTagId)
-  if (sourceErr) throw sourceErr
-
-  const noteIds = [
-    ...new Set(
-      (sourceLinks ?? []).map((row) => (row as { note_id: string }).note_id),
-    ),
-  ]
-  if (noteIds.length === 0) {
-    return { updatedNoteIds: [], targetTag: target }
-  }
-
-  const { data: existingLinks, error: existingErr } = await supabase
-    .from('note_tags')
-    .select('note_id')
-    .eq('tag_id', targetMainTagId)
-    .in('note_id', noteIds)
-  if (existingErr) throw existingErr
-
-  const alreadyHas = new Set(
-    (existingLinks ?? []).map((row) => (row as { note_id: string }).note_id),
-  )
-  const rows = noteIds
-    .filter((noteId) => !alreadyHas.has(noteId))
-    .map((noteId) => ({ note_id: noteId, tag_id: targetMainTagId }))
-
-  if (rows.length > 0) {
-    const { error: insertErr } = await supabase.from('note_tags').insert(rows)
-    if (insertErr) throw insertErr
+  const { data, error } = await supabase.rpc('bulk_add_tag_to_tagged_notes', {
+    source_tag: sourceTagId,
+    target_tag: targetMainTagId,
+  })
+  if (error) {
+    if (scaleMigrationRequired(error, 'bulk_add_tag_to_tagged_notes')) {
+      throw scaleMigrationError('일괄 태그')
+    }
+    throw error
   }
 
   return {
-    updatedNoteIds: rows.map((row) => row.note_id),
+    updatedNoteIds: (data ?? []).map((row: { note_id: string }) => row.note_id),
     targetTag: target,
   }
 }
@@ -2110,9 +2511,14 @@ export async function createNoteWithTags(
   }
   const noteRow = note as NoteRowCore
 
-  const rows = tagLinks.map(({ tag_id }) => ({ note_id: noteRow.id, tag_id }))
-  const { error: jErr } = await supabase.from('note_tags').insert(rows)
-  if (jErr) {
+  const rows = tagLinks.map(({ tag_id }) => ({
+    note_id: noteRow.id,
+    tag_id,
+    user_id: userId,
+  }))
+  try {
+    await insertNoteTagRows(rows)
+  } catch (jErr) {
     logNoteSaveError('create', 'note_tags insert', {
       userId,
       noteId: noteRow.id,
@@ -2233,10 +2639,15 @@ export async function updateNoteWithTags(
 
   const toAdd = tagLinks.filter((t) => !currentTagIds.has(t.tag_id))
   if (toAdd.length > 0) {
-    const { error: jErr } = await supabase.from('note_tags').insert(
-      toAdd.map(({ tag_id }) => ({ note_id: noteId, tag_id })),
-    )
-    if (jErr) {
+    try {
+      await insertNoteTagRows(
+        toAdd.map(({ tag_id }) => ({
+          note_id: noteId,
+          tag_id,
+          user_id: userId,
+        })),
+      )
+    } catch (jErr) {
       logNoteSaveError('update', 'note_tags insert', {
         ...meta,
         tagIds: toAdd.map((t) => t.tag_id),
@@ -2376,7 +2787,7 @@ export function mergeTagsFromNoteIntoAllTags(
           ...cur,
           parent_id: tg.parent_id ?? cur.parent_id ?? null,
         })
-      } else {
+      } else if (tg.name && !isUuidTagLabel(tg.name)) {
         byId.set(tg.id, {
           id: tg.id,
           name: tg.name,
@@ -2428,9 +2839,11 @@ export function resolveNoteTagChips(
     const id = nt.tags?.id ?? nt.tag_id
     if (!id) continue
     const row = map.get(id)
+    const name = (row?.name ?? nt.tags?.name ?? '').trim()
+    if (!name || isUuidTagLabel(name)) continue
     chips.push({
       id,
-      name: row?.name ?? nt.tags?.name ?? id,
+      name,
       color_index: row?.color_index ?? nt.tags?.color_index ?? 0,
     })
   }
@@ -2441,11 +2854,17 @@ export function refreshTagChipsFromCatalog(
   chips: TagChipDisplay[],
   catalog: Map<string, TagRow>,
 ): TagChipDisplay[] {
-  return chips.map((chip) => {
+  return chips.flatMap((chip) => {
     const row = catalog.get(chip.id)
-    return row
-      ? { id: row.id, name: row.name, color_index: row.color_index }
-      : chip
+    const name = (row?.name ?? chip.name ?? '').trim()
+    if (!name || isUuidTagLabel(name)) return []
+    return [
+      {
+        id: row?.id ?? chip.id,
+        name,
+        color_index: row?.color_index ?? chip.color_index,
+      },
+    ]
   })
 }
 
@@ -2597,86 +3016,88 @@ export async function fetchNotesForDateKey(
 ): Promise<NoteWithTags[]> {
   const range = dateKeyLocalRange(dateKey)
   if (!range) return []
-  const { data, error } = await supabase
-    .from('notes')
-    .select(NOTE_WITH_TAGS_SELECT)
-    .gte('created_at', range.start)
-    .lt('created_at', range.end)
-    .order('created_at', { ascending: true })
-    .limit(500)
-  if (error) throw error
-  return ((data ?? []) as unknown as NoteRowDb[]).map((row) =>
-    mapNoteRowFromDb(row),
+  const rows = await queryNoteRows((select) =>
+    supabase
+      .from('notes')
+      .select(select)
+      .gte('created_at', range.start)
+      .lt('created_at', range.end)
+      .order('created_at', { ascending: true })
+      .limit(500),
   )
+  return mapListNotes(rows)
 }
 
-/** 메인 검색: 서버에서 본문·출처 ilike + 검색에 걸린 태그가 붙은 메모 (상한 있음) */
+async function fetchNotesByIds(ids: string[]): Promise<NoteWithTags[]> {
+  const unique = [...new Set(ids.filter(Boolean))]
+  if (unique.length === 0) return []
+  const rows = await queryNoteRows((select) =>
+    supabase
+      .from('notes')
+      .select(select)
+      .in('id', unique)
+      .order('created_at', { ascending: false }),
+  )
+  return mapListNotes(rows)
+}
+
+/** 메인 검색: FTS/pg_trgm RPC + 검색에 걸린 태그가 붙은 메모 (상한 있음) */
 export async function fetchNotesForMainSearch(
   q: string,
   matchingTagIds: string[],
+  opts?: { before?: string },
 ): Promise<NotesSearchResult> {
   const raw = normalizeTagInput(q)
   if (!raw) return { notes: [], hasMore: false }
 
   const byId = new Map<string, NoteWithTags>()
-  const pattern = ilikePattern(raw)
   const fetchLimit = NOTES_SEARCH_LIMIT + 1
+  const isFirstPage = !opts?.before
 
-  const [bodyRes, sourceRes] = await Promise.all([
-    supabase
-      .from('notes')
-      .select(NOTE_WITH_TAGS_SELECT)
-      .ilike('body', pattern)
-      .order('created_at', { ascending: false })
-      .limit(fetchLimit),
-    supabase
-      .from('notes')
-      .select(NOTE_WITH_TAGS_SELECT)
-      .ilike('source', pattern)
-      .order('created_at', { ascending: false })
-      .limit(fetchLimit),
-  ])
-  if (bodyRes.error) throw bodyRes.error
-  if (sourceRes.error) throw sourceRes.error
-  for (const n of (bodyRes.data ?? []) as unknown as NoteRowDb[]) {
-    byId.set(n.id, mapNoteRowFromDb(n))
+  const rpcArgs: { q: string; lim: number; before?: string } = {
+    q: raw,
+    lim: fetchLimit,
   }
-  for (const n of (sourceRes.data ?? []) as unknown as NoteRowDb[]) {
-    byId.set(n.id, mapNoteRowFromDb(n))
+  if (opts?.before) rpcArgs.before = opts.before
+
+  const { data: idRows, error: searchErr } = await supabase.rpc(
+    'search_own_note_ids',
+    rpcArgs,
+  )
+  if (searchErr) {
+    if (scaleMigrationRequired(searchErr, 'search_own_note_ids')) {
+      throw scaleMigrationError('검색')
+    }
+    throw searchErr
+  }
+  const searchedIds = (idRows ?? []).map((r: { id: string }) => r.id)
+  for (const note of await fetchNotesByIds(searchedIds)) {
+    byId.set(note.id, note)
   }
 
-  if (matchingTagIds.length > 0) {
+  if (isFirstPage && matchingTagIds.length > 0) {
     const persistedTagIds = matchingTagIds.filter(isPersistedTagId)
     if (persistedTagIds.length > 0) {
       const { data: links, error: e2 } = await supabase
         .from('note_tags')
         .select('note_id')
         .in('tag_id', persistedTagIds)
+        .limit(fetchLimit)
       if (e2) throw e2
       const noteIds = [
         ...new Set(
           (links ?? []).map((l) => (l as { note_id: string }).note_id),
         ),
       ].filter((id) => !byId.has(id))
-
-      if (noteIds.length > 0) {
-        const { data: tagRows, error: e3 } = await supabase
-          .from('notes')
-          .select(NOTE_WITH_TAGS_SELECT)
-          .in('id', noteIds)
-          .order('created_at', { ascending: false })
-          .limit(fetchLimit)
-        if (e3) throw e3
-        for (const n of (tagRows ?? []) as unknown as NoteRowDb[]) {
-          byId.set(n.id, mapNoteRowFromDb(n))
-        }
+      for (const note of await fetchNotesByIds(noteIds.slice(0, fetchLimit))) {
+        byId.set(note.id, note)
       }
     }
   }
 
   const sorted = sortNotesNewestFirst([...byId.values()])
   const hasMore = sorted.length > NOTES_SEARCH_LIMIT
-  const slice = sorted.slice(0, NOTES_SEARCH_LIMIT).map((n) => toListPreviewNote(n))
+  const slice = sorted.slice(0, NOTES_SEARCH_LIMIT)
   return { notes: slice, hasMore }
 }
 

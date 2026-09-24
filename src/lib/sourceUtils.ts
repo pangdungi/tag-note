@@ -1,5 +1,8 @@
-import type { SourceRow } from './notesApi'
-import { resolveSourceSpineUrl } from './bookCatalogServer'
+import type { BookshelfRow, SourceRow } from './notesApi'
+import {
+  hasStoredSourceSpine,
+  resolveSourceSpineUrl,
+} from './bookCatalogServer'
 
 /** 출처 제목 정규화 — 앞뒤 공백·연속 공백 정리 */
 export function normalizeSourceTitle(raw: string): string {
@@ -60,6 +63,7 @@ export function createSourceViewNoneRow(): SourceRow {
   return {
     id: SOURCE_VIEW_NONE_ID,
     title: SOURCE_VIEW_NONE_TITLE,
+    bookshelf_id: null,
   }
 }
 
@@ -113,7 +117,10 @@ export type SourceCategoryShelf = {
   sources: SourceRow[]
 }
 
-export type LinksViewMode = 'all' | 'category'
+export type LinksViewMode = 'all' | 'category' | 'shelf'
+
+export const SOURCE_SHELF_NONE = '책장 없음'
+export const SOURCE_SHELF_NONE_KEY = '__shelf_none__'
 
 /** 출처 전체 보기 — 「출처없음」을 맨 앞, 그다음 북스파인 이미지가 있는 도서, 같은 그룹은 제목순 */
 export function sortSourcesForAllLinksView(sources: SourceRow[]): SourceRow[] {
@@ -124,8 +131,10 @@ export function sortSourcesForAllLinksView(sources: SourceRow[]): SourceRow[] {
     else rest.push(source)
   }
   rest.sort((a, b) => {
-    const aHasSpine = Boolean(resolveSourceSpineUrl(a))
-    const bHasSpine = Boolean(resolveSourceSpineUrl(b))
+    const aHasSpine =
+      hasStoredSourceSpine(a) || Boolean(resolveSourceSpineUrl(a))
+    const bHasSpine =
+      hasStoredSourceSpine(b) || Boolean(resolveSourceSpineUrl(b))
     if (aHasSpine !== bHasSpine) return aHasSpine ? -1 : 1
     return a.title.localeCompare(b.title, 'ko')
   })
@@ -167,4 +176,62 @@ export function groupSourcesByCategory(sources: SourceRow[]): SourceCategoryShel
   }
 
   return shelves
+}
+
+/** 출처 목록을 사용자가 만든 책장별로 묶는다. 빈 책장도 유지 */
+export function groupSourcesByBookshelf(
+  sources: SourceRow[],
+  shelves: BookshelfRow[],
+): SourceCategoryShelf[] {
+  const none = sources.filter((source) => isSourceViewNoneId(source.id))
+  const known = new Map(shelves.map((shelf) => [shelf.id, shelf]))
+  const assigned = new Map<string, SourceRow[]>()
+  const unassigned: SourceRow[] = []
+
+  for (const source of sources) {
+    if (isSourceViewNoneId(source.id)) continue
+    const shelfId = source.bookshelf_id?.trim() ?? ''
+    if (shelfId && known.has(shelfId)) {
+      const list = assigned.get(shelfId) ?? []
+      list.push(source)
+      assigned.set(shelfId, list)
+    } else {
+      unassigned.push(source)
+    }
+  }
+
+  const result: SourceCategoryShelf[] = []
+  if (none.length > 0) {
+    result.push({
+      categoryKey: SOURCE_VIEW_NONE_ID,
+      category: SOURCE_VIEW_NONE_TITLE,
+      sources: none,
+    })
+  }
+
+  const ordered = [...shelves].sort((a, b) =>
+    a.name.localeCompare(b.name, 'ko'),
+  )
+  for (const shelf of ordered) {
+    const items = assigned.get(shelf.id) ?? []
+    result.push({
+      categoryKey: shelf.id,
+      category: shelf.name,
+      sources: [...items].sort((a, b) =>
+        a.title.localeCompare(b.title, 'ko'),
+      ),
+    })
+  }
+
+  if (unassigned.length > 0) {
+    result.push({
+      categoryKey: SOURCE_SHELF_NONE_KEY,
+      category: SOURCE_SHELF_NONE,
+      sources: [...unassigned].sort((a, b) =>
+        a.title.localeCompare(b.title, 'ko'),
+      ),
+    })
+  }
+
+  return result
 }

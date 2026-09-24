@@ -136,6 +136,7 @@ export function AddNoteModal({
   const [fieldHint, setFieldHint] = useState<'tags' | 'body' | null>(null)
   const [composeSession, setComposeSession] = useState(0)
   const prevOpenRef = useRef(false)
+  const savingRef = useRef(false)
   const allTagsRef = useRef(allTags)
   const initialTagsRef = useRef(initialTags)
   const initialSourceRef = useRef(initialSource)
@@ -163,6 +164,7 @@ export function AddNoteModal({
 
     const justOpened = !prevOpenRef.current
     prevOpenRef.current = true
+    savingRef.current = false
     if (!justOpened) {
       return
     }
@@ -281,6 +283,8 @@ export function AddNoteModal({
               composerSaveReady ? ' btn--composer-ready' : ''
             }`}
             onClick={() => {
+                if (savingRef.current) return
+                savingRef.current = true
                 setError(null)
                 const editorEl = document.getElementById(
                   bodyId,
@@ -346,6 +350,8 @@ export function AddNoteModal({
                         ? e.message
                         : '저장에 실패했습니다.',
                     )
+                  } finally {
+                    savingRef.current = false
                   }
                 })()
               }}

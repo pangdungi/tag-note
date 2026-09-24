@@ -31,6 +31,8 @@ type Props = {
   titleLabel?: string
   folderTab?: boolean
   emptyHint?: string
+  hasMore?: boolean
+  loadingMore?: boolean
   tagCatalog: Map<string, TagRow>
   sourceCatalog: Map<string, SourceRow>
   onEdit?: (note: NoteWithTags) => void
@@ -38,6 +40,8 @@ type Props = {
   onTagFilter?: (tagId: string) => void
   onSourceFilter?: (sourceId: string) => void
   onFocusNoteConsumed?: () => void
+  onLoadMore?: () => void | Promise<void>
+  onEnsureNoteBody?: (note: NoteWithTags) => void | Promise<unknown>
 }
 
 function PaperSheet({
@@ -285,6 +289,10 @@ export function FolderMemosView({
   onTagFilter,
   onSourceFilter,
   onFocusNoteConsumed,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
+  onEnsureNoteBody,
 }: Props) {
   const [index, setIndex] = useState(0)
   const touchStart = useRef<{ x: number; y: number } | null>(null)
@@ -315,6 +323,23 @@ export function FolderMemosView({
   }, [openKey, notes, focusNoteId, onFocusNoteConsumed])
 
   const note = notes[index] ?? null
+  const pendingNext = useRef(false)
+
+  useEffect(() => {
+    if (!note || !onEnsureNoteBody) return
+    if (note.body_complete === false) {
+      void onEnsureNoteBody(note)
+    }
+  }, [note, onEnsureNoteBody])
+
+  useEffect(() => {
+    if (!pendingNext.current) return
+    if (index < notes.length - 1) {
+      pendingNext.current = false
+      setIndex((cur) => Math.min(cur + 1, notes.length - 1))
+    }
+  }, [notes.length, index])
+
   const extraTags = useMemo(() => {
     if (!note) return []
     return [...resolveNoteTagChips(note, tagCatalog)]
@@ -323,13 +348,20 @@ export function FolderMemosView({
   }, [note, folderTagId, tagCatalog])
   const count = notes.length
   const hasPrev = index > 0
-  const hasNext = index < count - 1
+  const hasNext = index < count - 1 || hasMore
   const showNav = count > 0
 
   function goBy(delta: number) {
     setIndex((cur) => {
       const next = cur + delta
-      if (next < 0 || next >= notes.length) return cur
+      if (next < 0) return cur
+      if (next >= notes.length) {
+        if (hasMore && !loadingMore) {
+          pendingNext.current = true
+          void onLoadMore?.()
+        }
+        return cur
+      }
       return next
     })
   }
@@ -436,10 +468,10 @@ export function FolderMemosView({
             <button
               type="button"
               className="tag-memos-flip-nav-btn"
-              disabled={!hasNext || loading}
+              disabled={!hasNext || loading || loadingMore}
               onClick={() => goBy(1)}
             >
-              다음
+              {loadingMore && index >= count - 1 ? '불러오는 중…' : '다음'}
             </button>
           </div>
         ) : null}

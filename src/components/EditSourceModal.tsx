@@ -13,17 +13,34 @@ import { ModalSelect } from './ModalSelect'
 import { ConfirmModal } from './ConfirmModal'
 import {
   countNotesForSource,
+  createBookshelf,
   deleteSourceKeepNotes,
   moveNotesToSource,
   updateSource,
+  type BookshelfRow,
   type SourceRow,
 } from '../lib/notesApi'
 import {
-  hasSourceSpineImage,
   fileToSpineImage,
   readClipboardSpineImage,
   type SourceSpineImageData,
 } from '../lib/sourceSpineImage'
+import {
+  hasStoredSourceSpine,
+  resolveSourceCoverUrl,
+  resolveSourceSpineUrl,
+} from '../lib/bookCatalogServer'
+import { SourceBookColorField } from './SourceBookColorField'
+import {
+  canEditSourceBookColor,
+  isManualSource,
+  normalizeSourceBookColor,
+  useCoverSampleColor,
+} from '../lib/sourceBookColor'
+import {
+  isInlineSpineDataUrl,
+  uploadSourceSpinePath,
+} from '../lib/sourceSpineStorage'
 import {
   displaySourceTitle,
   normalizeSourceCategory,
@@ -41,6 +58,9 @@ type Props = {
   onClose: () => void
   source: SourceRow | null
   allSources: SourceRow[]
+  userId?: string | null
+  bookshelves: BookshelfRow[]
+  onBookshelvesChange?: (shelves: BookshelfRow[]) => void
   onSourceUpdated: (row: SourceRow) => void
   onSourceDeleted: (sourceId: string) => void
   onNotesMovedToSource?: (
@@ -52,9 +72,10 @@ type Props = {
 }
 
 function spineFromSource(source: SourceRow): SourceSpineImageData | null {
-  if (!hasSourceSpineImage(source)) return null
+  const url = resolveSourceSpineUrl(source)
+  if (!url) return null
   return {
-    url: source.spine_image_url!,
+    url,
     width: source.spine_image_width ?? 0,
     height: source.spine_image_height ?? 0,
   }
@@ -65,6 +86,9 @@ export function EditSourceModal({
   onClose,
   source,
   allSources,
+  userId = null,
+  bookshelves,
+  onBookshelvesChange,
   onSourceUpdated,
   onSourceDeleted,
   onNotesMovedToSource,
@@ -73,12 +97,20 @@ export function EditSourceModal({
 }: Props) {
   const titleId = useId()
   const categoryId = useId()
+  const shelfAddId = useId()
   const spineFileInputRef = useRef<HTMLInputElement>(null)
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState(SOURCE_CATEGORY_UNCategorized)
   const [initialCategory, setInitialCategory] = useState(
     SOURCE_CATEGORY_UNCategorized,
   )
+  const [bookshelfId, setBookshelfId] = useState<string | null>(null)
+  const [initialBookshelfId, setInitialBookshelfId] = useState<string | null>(
+    null,
+  )
+  const [addingShelf, setAddingShelf] = useState(false)
+  const [newShelfName, setNewShelfName] = useState('')
+  const [shelfSaving, setShelfSaving] = useState(false)
   const [spineImage, setSpineImage] = useState<SourceSpineImageData | null>(
     null,
   )
@@ -94,6 +126,10 @@ export function EditSourceModal({
   const [saving, setSaving] = useState(false)
   const [pasteBusy, setPasteBusy] = useState(false)
   const [noteCount, setNoteCount] = useState<number | null>(null)
+  const [spineColor, setSpineColor] = useState<string | null>(null)
+  const [initialSpineColor, setInitialSpineColor] = useState<string | null>(
+    null,
+  )
 
   const categoryOptions = useMemo(() => {
     const base = SOURCE_CATEGORY_OPTIONS.filter(
@@ -138,9 +174,17 @@ export function EditSourceModal({
       setTitle(source.title)
       setCategory(nextCategory)
       setInitialCategory(nextCategory)
+      setBookshelfId(source.bookshelf_id ?? null)
+      setInitialBookshelfId(source.bookshelf_id ?? null)
+      setAddingShelf(false)
+      setNewShelfName('')
+      setShelfSaving(false)
       setSpineImage(existing)
       setInitialSpine(existing)
       setSpineRemoved(false)
+      const nextColor = normalizeSourceBookColor(source.spine_color)
+      setSpineColor(nextColor)
+      setInitialSpineColor(nextColor)
       setError(null)
       setDeleteConfirmOpen(false)
       setMoveTargetId('')
@@ -190,6 +234,40 @@ export function EditSourceModal({
     }
   }, [applySpineImage])
 
+  const handleCreateShelf = useCallback(async () => {
+    if (!userId || shelfSaving) return
+    const name = newShelfName.trim()
+    if (!name) {
+      setError('책장 이름을 입력하세요.')
+      return
+    }
+    setShelfSaving(true)
+    setError(null)
+    try {
+      const row = await createBookshelf(userId, name)
+      onBookshelvesChange?.(
+        [...bookshelves, row].sort((a, b) =>
+          a.name.localeCompare(b.name, 'ko'),
+        ),
+      )
+      setBookshelfId(row.id)
+      setNewShelfName('')
+      setAddingShelf(false)
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : '책장을 만들지 못했습니다.',
+      )
+    } finally {
+      setShelfSaving(false)
+    }
+  }, [
+    userId,
+    shelfSaving,
+    newShelfName,
+    bookshelves,
+    onBookshelvesChange,
+  ])
+
   const handleSpineFile = useCallback(
     async (file: File | null | undefined) => {
       if (!file) return
@@ -208,19 +286,38 @@ export function EditSourceModal({
     [applySpineImage],
   )
 
+  const coverSample = useCoverSampleColor(
+    open && source ? resolveSourceCoverUrl(source) : null,
+  )
+
   if (!open || !source) return null
 
   const titleChanged =
     normalizeSourceTitle(title) !== normalizeSourceTitle(source.title)
   const categoryChanged = category !== initialCategory
+  const bookshelfChanged = (bookshelfId ?? null) !== (initialBookshelfId ?? null)
   const spineChanged =
     spineRemoved ||
     spineImage?.url !== initialSpine?.url ||
     spineImage?.width !== initialSpine?.width ||
     spineImage?.height !== initialSpine?.height
+  const goodsNo = source.yes24_goods_no?.trim() ?? ''
+  const speculativeYes24Spine = Boolean(
+    goodsNo &&
+      spineImage?.url.includes(`/goods/${goodsNo}/`) &&
+      !hasStoredSourceSpine(source),
+  )
+  const hasLocalSpine = Boolean(spineImage) && !speculativeYes24Spine
+  const canEditColor = canEditSourceBookColor(source, { hasLocalSpine })
+  const coverUrl = resolveSourceCoverUrl(source)
+  const colorChanged = (spineColor ?? null) !== (initialSpineColor ?? null)
   const canSave =
     normalizeSourceTitle(title).length > 0 &&
-    (titleChanged || categoryChanged || spineChanged)
+    (titleChanged ||
+      categoryChanged ||
+      bookshelfChanged ||
+      spineChanged ||
+      colorChanged)
 
   const previewStyle = (
     spineImage
@@ -302,6 +399,85 @@ export function EditSourceModal({
                 />
               </div>
 
+              <div className="composer-field">
+                <div className="composer-label-row">
+                  <span className="composer-label">책장</span>
+                  <button
+                    type="button"
+                    className="source-shelf-add-toggle"
+                    disabled={saving || pasteBusy || shelfSaving}
+                    onClick={() => {
+                      setAddingShelf((open) => !open)
+                      setError(null)
+                    }}
+                  >
+                    책장 추가
+                  </button>
+                </div>
+                {addingShelf ? (
+                  <div className="source-shelf-add-row">
+                    <input
+                      id={shelfAddId}
+                      type="text"
+                      className="composer-source"
+                      value={newShelfName}
+                      onChange={(e) => setNewShelfName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          void handleCreateShelf()
+                        }
+                      }}
+                      placeholder="책장 이름"
+                      autoComplete="off"
+                      spellCheck={false}
+                      disabled={saving || pasteBusy || shelfSaving}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn--emphasis"
+                      disabled={
+                        saving ||
+                        pasteBusy ||
+                        shelfSaving ||
+                        !newShelfName.trim()
+                      }
+                      onClick={() => void handleCreateShelf()}
+                    >
+                      {shelfSaving ? '추가 중…' : '추가'}
+                    </button>
+                  </div>
+                ) : null}
+                {bookshelves.length === 0 && !addingShelf ? (
+                  <p className="composer-field-hint">
+                    책장을 추가한 다음 이름을 누르면 이 책이 그 책장에 들어갑니다.
+                  </p>
+                ) : (
+                  <div className="source-shelf-chips" role="list">
+                    {bookshelves.map((shelf) => {
+                      const selected = bookshelfId === shelf.id
+                      return (
+                        <button
+                          key={shelf.id}
+                          type="button"
+                          role="listitem"
+                          className={`source-shelf-chip${
+                            selected ? ' source-shelf-chip--selected' : ''
+                          }`}
+                          disabled={saving || pasteBusy || shelfSaving}
+                          aria-pressed={selected}
+                          onClick={() =>
+                            setBookshelfId(selected ? null : shelf.id)
+                          }
+                        >
+                          {shelf.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div className="composer-field source-spine-edit-field">
                 <div className="composer-label-row">
                   <span className="composer-label">북스파인 이미지</span>
@@ -377,6 +553,22 @@ export function EditSourceModal({
                 )}
               </div>
 
+              {canEditColor ? (
+                <SourceBookColorField
+                  value={spineColor}
+                  fallback={coverSample}
+                  disabled={saving || pasteBusy}
+                  hint={
+                    isManualSource(source)
+                      ? '표지와 북스파인에 같은 색이 들어갑니다.'
+                      : coverUrl
+                        ? '북스파인 색입니다. 기본은 표지 색을 따릅니다.'
+                        : '이미지가 없을 때 북스파인에 쓰는 색입니다.'
+                  }
+                  onChange={setSpineColor}
+                />
+              ) : null}
+
               <div className="composer-field">
                 <label className="composer-label" htmlFor="edit-source-move">
                   다른 출처로 옮기기
@@ -440,24 +632,48 @@ export function EditSourceModal({
                 const saveTitle = title
                 const saveCategory = normalizeSourceCategory(category)
                 const nextSpine = spineRemoved ? null : spineImage
+                const saveBookshelfId = bookshelfId
+                const saveSpineColor = colorChanged
+                  ? spineColor
+                  : source.spine_color
                 const optimistic: SourceRow = {
                   ...source,
                   title: normalizeSourceTitle(saveTitle),
                   category: saveCategory,
-                  spine_image_url: nextSpine?.url ?? null,
+                  bookshelf_id: saveBookshelfId,
                   spine_image_width: nextSpine?.width ?? null,
                   spine_image_height: nextSpine?.height ?? null,
+                  spine_color: saveSpineColor ?? null,
                 }
                 onSourceUpdated(optimistic)
                 onClose()
                 void (async () => {
                   try {
+                    let spinePath = source.spine_image_path ?? null
+                    let spineUrl: string | null = null
+                    if (!nextSpine) {
+                      spinePath = null
+                    } else if (isInlineSpineDataUrl(nextSpine.url)) {
+                      if (!userId) {
+                        throw new Error('로그인이 필요합니다.')
+                      }
+                      spinePath = await uploadSourceSpinePath(
+                        userId,
+                        sourceId,
+                        nextSpine.url,
+                      )
+                    }
                     const row = await updateSource(sourceId, {
                       rawTitle: saveTitle,
                       category: saveCategory,
-                      spine_image_url: nextSpine?.url ?? null,
+                      bookshelf_id: saveBookshelfId,
+                      spine_image_path: spinePath,
+                      spine_image_url: spineUrl,
                       spine_image_width: nextSpine?.width ?? null,
                       spine_image_height: nextSpine?.height ?? null,
+                      ...(colorChanged
+                        ? { spine_color: saveSpineColor ?? null }
+                        : {}),
                     })
                     onSourceUpdated(row)
                   } catch (e) {

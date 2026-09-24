@@ -335,6 +335,8 @@ export async function fileToSpineImage(file: File): Promise<SourceSpineImageData
 import { resolveSourceSpineUrl } from './bookCatalogServer'
 
 export function hasSourceSpineImage(source: {
+  spine_signed_url?: string | null
+  spine_image_path?: string | null
   spine_image_url?: string | null
   yes24_goods_no?: string | null
 }): boolean {

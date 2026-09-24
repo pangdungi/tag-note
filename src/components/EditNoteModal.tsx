@@ -17,6 +17,8 @@ import {
 import { MemoNoteEditor } from './MemoNoteEditor'
 import { readMemoEditorBody } from '../lib/memoQuickEmojis'
 import pinClipUrl from '../assets/home-hub-pin-clip.png'
+import { ListPinIcon } from './ListPinIcon'
+import type { NoteContextPinKind } from '../lib/notesApi'
 
 function noteToSelectedTags(note: NoteWithTags, allTags: TagRow[]): SelectedTag[] {
   return resolveNoteTagChips(note, buildTagCatalogMap(allTags)).map((t) => ({
@@ -80,6 +82,12 @@ type Props = {
   onSyncNoteFromServer?: (noteId: string) => void | Promise<void>
   onNoteDeleted: (noteId: string) => void | Promise<void>
   onSourcesChanged?: () => void | Promise<void>
+  listPin?: {
+    kind: NoteContextPinKind
+    contextId: string
+    pinned: boolean
+  } | null
+  onToggleListPin?: (note: NoteWithTags, nextPinned: boolean) => void
 }
 
 export function EditNoteModal({
@@ -94,6 +102,8 @@ export function EditNoteModal({
   onSyncNoteFromServer,
   onNoteDeleted,
   onSourcesChanged,
+  listPin = null,
+  onToggleListPin,
 }: Props) {
   const titleId = useId()
   const [tags, setTags] = useState<SelectedTag[]>([])
@@ -103,6 +113,7 @@ export function EditNoteModal({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [seededNoteId, setSeededNoteId] = useState<string | null>(null)
   const [isPinned, setIsPinned] = useState(false)
+  const [listPinned, setListPinned] = useState(false)
 
   useLayoutEffect(() => {
     if (!open || !note) {
@@ -113,10 +124,20 @@ export function EditNoteModal({
     setBody(note.body ?? '')
     setSelectedSource(noteToSelectedSource(note, allSources))
     setIsPinned(Boolean(note.is_pinned))
+    setListPinned(Boolean(listPin?.pinned))
     setError(null)
     setDeleteConfirmOpen(false)
     setSeededNoteId(note.id)
-  }, [open, note, note?.id, note?.body, note?.is_pinned, allTags, allSources])
+  }, [
+    open,
+    note,
+    note?.id,
+    note?.body,
+    note?.is_pinned,
+    listPin?.pinned,
+    allTags,
+    allSources,
+  ])
 
   if (!open || !note) return null
 
@@ -138,6 +159,36 @@ export function EditNoteModal({
             메모 수정
           </h2>
           <div className="edit-note-modal-head-actions">
+            {listPin && onToggleListPin ? (
+              <button
+                type="button"
+                className={`edit-note-pin-btn edit-note-list-pin-btn${
+                  listPinned ? ' edit-note-pin-btn--on' : ''
+                }`}
+                aria-pressed={listPinned}
+                aria-label={
+                  listPinned
+                    ? '이 목록에서 고정 해제'
+                    : '이 목록 위에 고정'
+                }
+                title={
+                  listPin.kind === 'source'
+                    ? listPinned
+                      ? '이 책에서 고정 해제'
+                      : '이 책 위에 고정'
+                    : listPinned
+                      ? '이 폴더에서 고정 해제'
+                      : '이 폴더 위에 고정'
+                }
+                onClick={() => {
+                  const next = !listPinned
+                  setListPinned(next)
+                  onToggleListPin(note, next)
+                }}
+              >
+                <ListPinIcon className="edit-note-pin-icon" />
+              </button>
+            ) : null}
             <button
               type="button"
               className={`edit-note-pin-btn${
@@ -145,7 +196,7 @@ export function EditNoteModal({
               }`}
               aria-pressed={isPinned}
               aria-label={isPinned ? '메모 고정 해제' : '메모 고정하기'}
-              title={isPinned ? '고정 해제' : '메모 고정'}
+              title={isPinned ? '고정 보드에서 해제' : '고정 보드에 고정'}
               onClick={() => setIsPinned((cur) => !cur)}
             >
               <img

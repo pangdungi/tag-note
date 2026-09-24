@@ -63,14 +63,63 @@ export function resolveSourceCoverUrl(source: {
   return null
 }
 
-/** DB spine URL → 없으면 yes24_goods_no로 SIDE URL 생성 */
+function isHttpUrl(raw: string | null | undefined): boolean {
+  const value = raw?.trim() ?? ''
+  return value.startsWith('http://') || value.startsWith('https://')
+}
+
+/** 이미 가진 책등만. yes24 SIDE 추정은 넣지 않음 */
+export function resolveStoredSourceSpineUrl(source: {
+  spine_signed_url?: string | null
+  spine_image_path?: string | null
+  spine_image_url?: string | null
+}): string | null {
+  const signed = source.spine_signed_url?.trim()
+  if (signed) return signed
+  const path = source.spine_image_path?.trim()
+  if (isHttpUrl(path)) return path
+  const direct = source.spine_image_url?.trim()
+  if (isHttpUrl(direct)) return direct
+  return null
+}
+
+export function hasStoredSourceSpine(source: {
+  spine_signed_url?: string | null
+  spine_image_path?: string | null
+  spine_image_url?: string | null
+}): boolean {
+  if (resolveStoredSourceSpineUrl(source)) return true
+  const path = source.spine_image_path?.trim() ?? ''
+  return path.length > 0 && !isHttpUrl(path)
+}
+
+const yes24SpinePresence = new Map<string, boolean>()
+
+export function rememberYes24SpinePresence(
+  goodsNo: string,
+  ok: boolean,
+): void {
+  const key = goodsNo.trim()
+  if (key) yes24SpinePresence.set(key, ok)
+}
+
+export function knownYes24SpinePresence(goodsNo: string): boolean | undefined {
+  const key = goodsNo.trim()
+  return key ? yes24SpinePresence.get(key) : undefined
+}
+
+/** signed URL · 원격 URL · yes24 SIDE. data URL·public Storage URL은 쓰지 않음 */
 export function resolveSourceSpineUrl(source: {
+  spine_signed_url?: string | null
+  spine_image_path?: string | null
   spine_image_url?: string | null
   yes24_goods_no?: string | null
 }): string | null {
-  const direct = source.spine_image_url?.trim()
-  if (direct) return direct
+  const stored = resolveStoredSourceSpineUrl(source)
+  if (stored) return stored
+  if (hasStoredSourceSpine(source)) return null
   const goodsNo = source.yes24_goods_no?.trim()
+  if (goodsNo && knownYes24SpinePresence(goodsNo) === false) return null
   if (goodsNo) return yes24SpineImageUrl(goodsNo)
   return null
 }

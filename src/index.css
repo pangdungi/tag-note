@@ -120,6 +120,10 @@
 
   /* rem 기준 — 전체 UI 글자 크기 (기본 16px → 18px) */
   --app-root-font-size: 18px;
+  /* 메모 본문 — 손글씨 글꼴은 이보다 작으면 읽기 어려움 */
+  --memo-body-font-size: 1.15rem;
+  --memo-body-line-height: 1.75;
+  --tag-label-font-size: 0.95rem;
 
   font-family: var(--app-font-family);
   line-height: 1.5;
@@ -131,6 +135,14 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+
+@media (min-width: 641px) {
+  :root {
+    --app-root-font-size: 17px;
+    --memo-body-font-size: 1.05rem;
+    --tag-label-font-size: 0.88rem;
+  }
 }
 
 html {
@@ -3301,12 +3313,12 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
   .parent-tag-rail-section--links-all
   .links-all-rail
   .parent-tag-card:not(.parent-tag-card--source-spine-image) {
-  width: clamp(1.85rem, 4.8vw, 2.65rem);
+  width: clamp(2.2rem, 5.4vw, 2.95rem);
   height: auto;
   min-height: 3.2rem;
   max-height: var(--links-all-spine-max-h);
   justify-content: flex-end;
-  padding: 0.5rem 0.14rem 0.4rem;
+  padding: 0.55rem 0.18rem 0.44rem;
   border: 1.5px solid #c4c9d0;
 }
 
@@ -3359,7 +3371,7 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
   .parent-tag-rail-section--links-all
   .links-all-rail
   .parent-tag-card-label {
-  font-size: 0.72rem;
+  font-size: 0.86rem;
   line-height: 1.16;
   letter-spacing: 0.03em;
   max-height: calc(var(--links-all-spine-max-h) - 1.45rem);
@@ -3371,8 +3383,8 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
   .parent-tag-rail-section--links-all
   .links-all-rail
   .parent-tag-spine-stat {
-  padding: 0.1rem 0.1rem 0.26rem;
-  font-size: 0.48rem;
+  padding: 0.12rem 0.1rem 0.28rem;
+  font-size: 0.58rem;
   line-height: 1;
 }
 
@@ -3535,6 +3547,11 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
 .links-category-shelf--open {
   min-height: 100%;
   flex: 1 1 auto;
+}
+
+.links-shelf-empty {
+  margin: 0 1rem 0.45rem;
+  font-size: 0.86rem;
 }
 
 .links-category-shelf-heading {
@@ -4059,8 +4076,8 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
 }
 
 .tag-view-rail-layout--split .tag-memos-flip-text {
-  font-size: 1.12rem;
-  line-height: 1.75;
+  font-size: var(--memo-body-font-size);
+  line-height: var(--memo-body-line-height);
 }
 
 .tag-view-rail-layout--split .tag-memos-flip-nav {
@@ -4547,6 +4564,23 @@ button.parent-tag-card {
   color: inherit;
 }
 
+.parent-tag-card--source-spine-text.parent-tag-card--book-color:not(
+    .parent-tag-card--selected
+  ) {
+  background: var(--source-book-color, var(--paper-fill));
+  color: var(--source-book-ink, #111111);
+  border-color: var(--source-book-edge, #c4c9d0);
+}
+
+.home-main--parent-rail-hero
+  .parent-tag-card--source-spine-text.parent-tag-card--book-color:not(
+    .parent-tag-card--selected
+  ) {
+  background: var(--source-book-color, var(--paper-fill));
+  color: var(--source-book-ink, #111111);
+  border-color: var(--source-book-edge, #c4c9d0);
+}
+
 .parent-tag-card--source-none:not(.parent-tag-card--selected) {
   background: #eef0f3;
   border-color: #c4c9d0;
@@ -4688,6 +4722,15 @@ button.parent-tag-card {
   -webkit-user-drag: none;
 }
 
+.parent-tag-card-spine-image--probe {
+  position: absolute;
+  width: 0;
+  height: 0;
+  max-width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* 책장 — 이미지 책등은 그림 너비만, 사이 간격 없음 */
 .home-main--parent-rail-hero
   .parent-tag-rail-section--links-view
@@ -4800,6 +4843,57 @@ button.parent-tag-card {
   margin-top: 0.25rem;
 }
 
+.source-book-color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.source-book-color-swatch {
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  border: 1.5px solid rgb(17 17 17 / 18%);
+  border-radius: 999px;
+  cursor: pointer;
+  appearance: none;
+  box-sizing: border-box;
+}
+
+.source-book-color-swatch--selected {
+  outline: 2px solid #111111;
+  outline-offset: 2px;
+}
+
+.source-book-color-custom {
+  position: relative;
+  display: block;
+  width: 1.55rem;
+  height: 1.55rem;
+  overflow: hidden;
+  border: 1.5px dashed #9ca3af;
+  border-radius: 999px;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.source-book-color-custom--selected {
+  outline: 2px solid #111111;
+  outline-offset: 2px;
+}
+
+.source-book-color-custom input {
+  position: absolute;
+  inset: -40%;
+  width: 180%;
+  height: 180%;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  background: none;
+}
+
 .source-move-row {
   display: flex;
   align-items: stretch;
@@ -4835,6 +4929,73 @@ button.parent-tag-card {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.source-shelf-add-toggle {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.source-shelf-add-toggle:hover:not(:disabled) {
+  color: #111111;
+}
+
+.source-shelf-add-toggle:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.source-shelf-add-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.source-shelf-add-row .composer-source {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.source-shelf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.source-shelf-chip {
+  margin: 0;
+  padding: 0.32rem 0.7rem;
+  border: 1px solid #c4c9d0;
+  border-radius: 999px;
+  background: var(--paper-fill);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.source-shelf-chip:hover:not(:disabled) {
+  border-color: #111111;
+}
+
+.source-shelf-chip--selected {
+  background: #111111;
+  border-color: #111111;
+  color: #ffffff;
+}
+
+.source-shelf-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .source-spine-edit-remove {
@@ -5786,7 +5947,7 @@ button.parent-tag-card {
 .note-board-tag-pill {
   display: inline-block;
   font-family: var(--tag-font-family);
-  font-size: 0.72rem;
+  font-size: var(--tag-label-font-size);
   font-weight: 500;
   padding: 0.2rem 0.55rem;
   border-radius: 0;
@@ -5813,11 +5974,38 @@ button.note-board-tag-pill--link:focus-visible {
   outline-offset: 1px;
 }
 
+.note-board-card > .note-board-pin-mark,
+.note-board-sheet-memo > .note-board-pin-mark {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  color: #4b5563;
+  pointer-events: none;
+}
+
+.note-board-pin-icon {
+  display: block;
+  width: 1.05rem;
+  height: 1.05rem;
+  pointer-events: none;
+}
+
+.note-board-sheet-memo--pinned,
+.note-board-card--pinned.note-board-card--parent-sheet .note-board-sheet-memo {
+  padding-right: 2rem;
+}
+
 .note-board-card-preview {
   margin: 0;
   font-family: var(--app-font-family);
-  font-size: 0.88rem;
-  line-height: 1.55;
+  font-size: var(--memo-body-font-size);
+  line-height: var(--memo-body-line-height);
   color: var(--text-strong);
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -5955,9 +6143,9 @@ button.note-board-tag-pill--link:focus-visible {
   width: max-content;
   min-width: 100%;
   max-width: none;
-  padding: 0.45rem 0.5rem;
+  padding: 0.5rem 0.55rem;
   font-family: var(--spine-font-family);
-  font-size: 0.74rem;
+  font-size: var(--tag-label-font-size);
   font-weight: 500;
   line-height: 1.35;
   letter-spacing: 0.02em;
@@ -6026,11 +6214,12 @@ button.note-board-tag-pill--link:focus-visible {
 }
 
 .note-board-sheet-memo {
-  padding: 0.55rem 0.65rem;
+  position: relative;
+  padding: 0.7rem 0.8rem;
   min-height: 3.25rem;
   font-family: var(--app-font-family);
-  font-size: 0.88rem;
-  line-height: 1.55;
+  font-size: var(--memo-body-font-size);
+  line-height: var(--memo-body-line-height);
   color: var(--text-strong);
 }
 
@@ -6286,7 +6475,7 @@ button.note-board-tag-pill--link:focus-visible {
   align-items: center;
   gap: 0.35rem;
   font-family: var(--tag-font-family);
-  font-size: 0.82rem;
+  font-size: var(--tag-label-font-size);
   font-weight: 500;
   padding: 0.3rem 0.55rem 0.3rem 0.65rem;
   border-radius: 0;
@@ -6432,8 +6621,8 @@ button.note-board-tag-pill--link:focus-visible {
   border-radius: 12px;
     background: var(--paper-fill);
   font-family: var(--app-font-family);
-  font-size: 0.95rem;
-  line-height: 1.5;
+  font-size: var(--memo-body-font-size);
+  line-height: var(--memo-body-line-height);
   color: var(--text-strong);
   resize: vertical;
   min-height: 120px;
@@ -7045,6 +7234,10 @@ button.note-board-tag-pill--link:focus-visible {
   pointer-events: none;
 }
 
+.edit-note-list-pin-btn .edit-note-pin-icon {
+  color: #374151;
+}
+
 .tag-manage-dialog--edit-note .composer-field:has(.memo-note-editor) {
   gap: 0.35rem;
 }
@@ -7160,35 +7353,55 @@ button.note-board-tag-pill--link:focus-visible {
 
 @media (min-width: 641px) {
   .tag-manage-dialog--edit-note {
-    max-width: min(100%, 44rem);
-    max-height: min(92vh, 880px);
+    width: min(56rem, 92vw);
+    max-width: min(56rem, 92vw);
+    height: min(86vh, 52rem);
+    max-height: min(90vh, 56rem);
   }
 
   .tag-manage-dialog--edit-note .tag-manage-head {
-    padding: 1rem 1.35rem;
+    padding: 1rem 1.5rem;
+  }
+
+  .tag-manage-dialog--edit-note .edit-note-modal-scroll {
+    display: flex;
+    flex-direction: column;
   }
 
   .tag-manage-dialog--edit-note .edit-note-modal-body {
-    padding: 0 1.35rem 0.5rem;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0 1.5rem 0.5rem;
+  }
+
+  .tag-manage-dialog--edit-note .edit-note-modal-body .composer-stack {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .tag-manage-dialog--edit-note .composer-field:has(.memo-note-editor) {
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .tag-manage-dialog--edit-note .edit-note-modal-memo {
-    padding: 0 1.35rem 0.85rem;
+    padding: 0 1.5rem 0.85rem;
   }
 
   .tag-manage-dialog--edit-note .edit-note-modal-source {
-    padding: 0.85rem 1.35rem;
+    padding: 0.85rem 1.5rem;
   }
 
   .tag-manage-dialog--edit-note .edit-note-modal-actions {
-    padding: 0.85rem 1.35rem calc(1rem + env(safe-area-inset-bottom, 0px));
+    padding: 0.85rem 1.5rem calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 
-  .tag-manage-dialog--edit-note
-    .edit-note-modal-note
-    .memo-note-editor--scroll-clamp {
-    min-height: 11.5rem !important;
-    max-height: 11.5rem !important;
+  .tag-manage-dialog--edit-note .edit-note-modal-note.memo-note-editor--scroll-clamp {
+    flex: 1 1 auto;
+    min-height: 22rem !important;
+    max-height: none !important;
   }
 }
 
@@ -7343,8 +7556,8 @@ button.note-board-tag-pill--link:focus-visible {
 .note-view-modal-text {
   margin: 0;
   font-family: var(--app-font-family);
-  font-size: 0.95rem;
-  line-height: 1.7;
+  font-size: var(--memo-body-font-size);
+  line-height: var(--memo-body-line-height);
   color: var(--text-strong);
   white-space: pre-wrap;
   word-break: break-word;
@@ -7553,7 +7766,7 @@ body:has(.tag-memos-flip-overlay) .tag-view-spiral {
   background: none;
   color: #111111;
   font: inherit;
-  font-size: 0.95rem;
+  font-size: var(--tag-label-font-size);
   line-height: 1.2;
   cursor: pointer;
 }
@@ -7674,8 +7887,8 @@ button.folder-memos-page-tag:hover {
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   font-family: var(--app-font-family);
-  font-size: 0.95rem;
-  line-height: 1.7;
+  font-size: var(--memo-body-font-size);
+  line-height: var(--memo-body-line-height);
   color: #111111;
   white-space: pre-wrap;
   word-break: break-word;
@@ -8765,6 +8978,16 @@ button.folder-memos-page-tag:hover {
   box-sizing: border-box;
   padding: 0.65rem 0.55rem;
   border: 1.5px solid #c4c9d0;
+}
+
+.links-shelf-cover-blank--book-color {
+  background: var(--source-book-color, var(--paper-fill));
+  border-color: var(--source-book-edge, #c4c9d0);
+  color: var(--source-book-ink, #111111);
+}
+
+.links-shelf-cover-blank--book-color .links-shelf-cover-title {
+  color: inherit;
 }
 
 .links-shelf-cover-title {

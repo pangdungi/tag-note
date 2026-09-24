@@ -7,19 +7,15 @@ type HomeSearchResultsRailProps = {
   tags: TagRow[]
   bodyNotes: NoteWithTags[]
   loading: boolean
+  hasMore?: boolean
+  loadingMore?: boolean
+  onLoadMore?: () => void
   onSelectTag: (tagId: string) => void
   onViewNote: (note: NoteWithTags, contextTagId?: string | null) => void
 }
 
 function primaryTagIdFromNote(note: NoteWithTags): string | null {
-  const linked = note.note_tags
-    .map((nt) => nt.tags)
-    .filter(Boolean) as { id: string; name: string }[]
-  if (linked.length === 0) return null
-  const sorted = [...linked].sort((a, b) =>
-    a.name.localeCompare(b.name, 'ko'),
-  )
-  return sorted[0]!.id
+  return note.note_tags.map((nt) => nt.tags?.id ?? nt.tag_id).find(Boolean) ?? null
 }
 
 function SearchSpine({
@@ -49,6 +45,9 @@ export function HomeSearchResultsRail({
   tags,
   bodyNotes,
   loading,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
   onSelectTag,
   onViewNote,
 }: HomeSearchResultsRailProps) {
@@ -118,6 +117,16 @@ export function HomeSearchResultsRail({
             </li>
           ) : null}
         </ul>
+      ) : null}
+      {hasMore && hasPapers ? (
+        <button
+          type="button"
+          className="btn note-board-load-more"
+          disabled={loadingMore || loading}
+          onClick={() => onLoadMore?.()}
+        >
+          {loadingMore ? '불러오는 중…' : '검색 결과 더 보기'}
+        </button>
       ) : null}
     </section>
   )

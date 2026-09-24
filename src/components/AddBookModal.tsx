@@ -18,6 +18,11 @@ import {
   SOURCE_CATEGORY_OPTIONS,
   SOURCE_CATEGORY_UNCategorized,
 } from '../lib/sourceUtils'
+import { SourceBookColorField } from './SourceBookColorField'
+import {
+  normalizeSourceBookColor,
+  sampleCoverAverageColor,
+} from '../lib/sourceBookColor'
 import { ModalFooter } from './ModalFooter'
 import { ModalSelect } from './ModalSelect'
 import { ModalSegmentTabs } from './ModalSegmentTabs'
@@ -61,6 +66,7 @@ export function AddBookModal({
     SOURCE_CATEGORY_UNCategorized,
   )
   const [manualSaving, setManualSaving] = useState(false)
+  const [manualColor, setManualColor] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const busy = Boolean(importingIsbn || manualSaving)
@@ -87,6 +93,7 @@ export function AddBookModal({
       setManualTitle('')
       setManualCategory(SOURCE_CATEGORY_UNCategorized)
       setManualSaving(false)
+      setManualColor(null)
       setError(null)
     })
   }, [open])
@@ -127,10 +134,15 @@ export function AddBookModal({
       setError(null)
       setImportingIsbn(hit.isbn)
       try {
-        const size = await fetchBookPhysicalSize({
-          goodsNo: hit.yes24GoodsNo,
-          isbn: hit.isbn,
-        }).catch(() => null)
+        const [size, coverColor] = await Promise.all([
+          fetchBookPhysicalSize({
+            goodsNo: hit.yes24GoodsNo,
+            isbn: hit.isbn,
+          }).catch(() => null),
+          sampleCoverAverageColor(hit.coverUrl || hit.yes24GoodsNo).catch(
+            () => null,
+          ),
+        ])
         const row = await createBookSource(userId, {
           title: hit.title,
           isbn: hit.isbn,
@@ -141,7 +153,7 @@ export function AddBookModal({
           cover_image_url: hit.coverUrl || null,
           yes24_goods_no: hit.yes24GoodsNo,
           metadata_source: hit.source,
-          spine_image_url: hit.spineUrl || null,
+          spine_color: coverColor,
           book_width_mm: size?.widthMm ?? null,
           book_length_mm: size?.lengthMm ?? null,
           book_height_mm: size?.heightMm ?? null,
@@ -177,6 +189,7 @@ export function AddBookModal({
         const row = await createManualSource(userId, {
           title,
           category: manualCategory,
+          spine_color: normalizeSourceBookColor(manualColor),
         })
         onCreated(row, { needsSpinePaste: true })
         onClose()
@@ -194,6 +207,7 @@ export function AddBookModal({
       busy,
       manualTitle,
       manualCategory,
+      manualColor,
       onCreated,
       onClose,
       onError,
@@ -363,6 +377,12 @@ export function AddBookModal({
                   }
                 />
               </div>
+              <SourceBookColorField
+                value={manualColor}
+                disabled={busy}
+                hint="표지와 북스파인에 같은 색이 들어갑니다."
+                onChange={setManualColor}
+              />
             </form>
           )}
 

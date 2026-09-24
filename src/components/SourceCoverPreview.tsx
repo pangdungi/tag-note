@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { SourceRow } from '../lib/notesApi'
 import { resolveSourceCoverUrl } from '../lib/bookCatalogServer'
+import {
+  normalizeSourceBookColor,
+  sourceBookColorStyle,
+} from '../lib/sourceBookColor'
 import { bookStandingHeightMm, displaySourceTitle } from '../lib/sourceUtils'
 
 type SourceCoverPreviewProps = {
@@ -35,6 +39,8 @@ export function SourceCoverPreview({
   const [imageBroken, setImageBroken] = useState(false)
   const [imageRatio, setImageRatio] = useState<number | null>(null)
   const showCover = Boolean(coverUrl) && !imageBroken
+  const bookColor = normalizeSourceBookColor(source.spine_color)
+  const tintBlank = Boolean(!showCover && bookColor)
   const height = Math.max(48, spineHeight || 160)
   const width = Math.max(24, height * coverRatio(source, imageRatio))
 
@@ -74,7 +80,12 @@ export function SourceCoverPreview({
               onError={() => setImageBroken(true)}
             />
           ) : (
-            <span className="links-shelf-cover-blank">
+            <span
+              className={`links-shelf-cover-blank${
+                tintBlank ? ' links-shelf-cover-blank--book-color' : ''
+              }`}
+              style={tintBlank && bookColor ? sourceBookColorStyle(bookColor) : undefined}
+            >
               <span className="links-shelf-cover-title">{label}</span>
             </span>
           )}

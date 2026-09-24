@@ -13,6 +13,14 @@ export type TagParentLink = {
 
 export type HomeBrowseNavMode = 'books' | 'tags' | 'links' | 'dates'
 
+const UUID_LABEL_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** 태그 id가 이름 자리에 들어온 경우 — 화면에 절대 보여 주지 않음 */
+export function isUuidTagLabel(value: string | null | undefined): boolean {
+  return Boolean(value && UUID_LABEL_RE.test(value.trim()))
+}
+
 /** 입력에서 # 접두사 제거, 앞뒤 공백 */
 export function normalizeTagInput(raw: string): string {
   const t = raw.trim()
@@ -21,7 +29,8 @@ export function normalizeTagInput(raw: string): string {
 }
 
 export function displayTagName(storedName: string): string {
-  return normalizeTagInput(storedName)
+  const name = normalizeTagInput(storedName)
+  return isUuidTagLabel(name) ? '' : name
 }
 
 /** 태그별 모음 뷰 — 제목 앞에 # */
