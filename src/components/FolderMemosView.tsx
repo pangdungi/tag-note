@@ -9,6 +9,7 @@ import {
 import { displaySourceTitle } from '../lib/sourceUtils'
 import { formatHashtagLabel } from '../lib/tagUtils'
 import { MemoBodyContent } from './MemoBodyContent'
+import { useOpenOnTap } from '../hooks/useOpenOnTap'
 
 function formatNoteWhen(iso: string) {
   try {
@@ -61,6 +62,10 @@ function PaperSheet({
   onEdit?: (note: NoteWithTags) => void
   onSourceFilter?: (sourceId: string) => void
 }) {
+  const openNote = useOpenOnTap(() => {
+    if (note && onEdit && !loading) onEdit(note)
+  })
+
   if (loading && !note) {
     return (
       <div className="tag-memos-flip-sheet">
@@ -90,9 +95,7 @@ function PaperSheet({
       role={canEdit ? 'button' : undefined}
       tabIndex={canEdit ? 0 : undefined}
       aria-label={canEdit ? '메모 수정' : undefined}
-      onClick={() => {
-        if (canEdit) onEdit?.(note)
-      }}
+      {...openNote}
       onKeyDown={(event) => {
         if (!canEdit) return
         if (event.key === 'Enter' || event.key === ' ') {

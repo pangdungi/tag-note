@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react'
+import { useOpenOnTap } from '../hooks/useOpenOnTap'
 import {
   resolveNoteSourceTitle,
   type NoteWithTags,
@@ -33,6 +34,10 @@ function PaperFace({
   emptyLabel?: string
   onEdit?: (note: NoteWithTags) => void
 }) {
+  const openNote = useOpenOnTap(() => {
+    if (note && onEdit && !loading) onEdit(note)
+  })
+
   if (loading) {
     return (
       <div className="tag-memos-flip-sheet">
@@ -58,9 +63,7 @@ function PaperFace({
       role={canEdit ? 'button' : undefined}
       tabIndex={canEdit ? 0 : undefined}
       aria-label={canEdit ? '메모 수정' : undefined}
-      onClick={() => {
-        if (canEdit && note) onEdit?.(note)
-      }}
+      {...openNote}
       onKeyDown={(event) => {
         if (!canEdit || !note) return
         if (event.key === 'Enter' || event.key === ' ') {

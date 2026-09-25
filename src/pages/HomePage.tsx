@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useOpenOnTap } from '../hooks/useOpenOnTap'
 import { TagComposer, type SelectedTag } from '../components/TagComposer'
 import { SourceComposer, type SelectedSource } from '../components/SourceComposer'
 import { AddParentTagModal } from '../components/AddParentTagModal'
@@ -27,6 +28,7 @@ import {
   createNoteWithTags,
   createParentTag,
   fetchNoteWithTagsById,
+  fetchNoteBodiesByIds,
   fetchPinnedNotes,
   noteIsPinned,
   fetchNoteContextPinnedIds,
@@ -279,6 +281,9 @@ function NoteBoardCard({
   const src = resolveNoteSourceTitle(note, sourceCatalog)
   const srcId = note.source_id ?? note.sources?.id ?? null
   const body = note.body?.trim() ?? ''
+  const openNote = useOpenOnTap(() => {
+    if (body) onView(note, excludeTagId ?? null)
+  })
   const pinnedClass = contextPinned ? ' note-board-card--pinned' : ''
   const pinMark = contextPinned ? (
     <span className="note-board-pin-mark" aria-label="이 목록에 고정됨">
@@ -350,9 +355,7 @@ function NoteBoardCard({
         className={`note-board-card note-board-card--parent-sheet note-board-card--parent-sheet-memo-only${
           body ? ' note-board-card--viewable' : ''
         }${pinnedClass}`}
-        onClick={() => {
-          if (body) onView(note, excludeTagId ?? null)
-        }}
+        {...openNote}
         onKeyDown={(e) => {
           if (!body) return
           if (e.key === 'Enter' || e.key === ' ') {
@@ -386,9 +389,7 @@ function NoteBoardCard({
         className={`note-board-card note-board-card--parent-sheet${
           body ? ' note-board-card--viewable' : ''
         }${pinnedClass}`}
-        onClick={() => {
-          if (body) onView(note, excludeTagId ?? null)
-        }}
+        {...openNote}
         onKeyDown={(e) => {
           if (!body) return
           if (e.key === 'Enter' || e.key === ' ') {
@@ -426,9 +427,7 @@ function NoteBoardCard({
   return (
     <article
       className={`note-board-card${body ? ' note-board-card--viewable' : ''}${pinnedClass}`}
-      onClick={() => {
-        if (body) onView(note, excludeTagId ?? null)
-      }}
+      {...openNote}
       onKeyDown={(e) => {
         if (!body) return
         if (e.key === 'Enter' || e.key === ' ') {
@@ -702,6 +701,9 @@ function NoteBoardSheetMemoCell({
   const body = note.body?.trim() ?? ''
   const src = resolveNoteSourceTitle(note, sourceCatalog)
   const srcId = note.source_id ?? note.sources?.id ?? null
+  const openNote = useOpenOnTap(() => {
+    if (body) onView(note)
+  })
   const sheetInlineSource =
     !hideSourceInMeta && src ? (
       sourceLink && srcId && onSourceFilter ? (
@@ -733,9 +735,7 @@ function NoteBoardSheetMemoCell({
       }${contextPinned ? ' note-board-sheet-memo--pinned' : ''}`}
       role={body ? 'button' : undefined}
       tabIndex={body ? 0 : undefined}
-      onClick={() => {
-        if (body) onView(note)
-      }}
+      {...openNote}
       onKeyDown={(e) => {
         if (!body) return
         if (e.key === 'Enter' || e.key === ' ') {
@@ -930,12 +930,12 @@ function InlineRailNotesPanel({
       ? tagId
       : undefined
 
-  const sheetGroupByTag = sheetLayout && (sheetFolderMode || sheetSourceMode)
+  const sheetGroupByTag = false
 
   const { pinnedNotes, restNotes } = useMemo(() => {
     const pinned: NoteWithTags[] = []
     const rest: NoteWithTags[] = []
-    for (const note of notes) {
+    for (const note of sortNotesOldestFirst(notes)) {
       if (pinnedNoteIds?.has(note.id)) pinned.push(note)
       else rest.push(note)
     }
@@ -2928,9 +2928,11 @@ export function HomePage() {
       tagPullEntry?.tagId === selectedTagId &&
       tagFilterIdsEqual(tagPullEntry.filterTagIds, filterTagIds)
     ) {
-      return tagPullEntry.notes
+      return sortNotesOldestFirst(tagPullEntry.notes)
     }
-    return readLocalNotesForTagFilter(filterTagIds, notes)
+    return sortNotesOldestFirst(
+      readLocalNotesForTagFilter(filterTagIds, notes),
+    )
   }, [
     selectedTagId,
     tagFilterNav,
@@ -3464,6 +3466,35 @@ export function HomePage() {
     openSourceMemosFlip(sourceId)
   }
 
+  const applyHydratedBodies = useCallback((bodies: Map<string, string>) => {
+    if (bodies.size === 0) return
+    const patch = (list: NoteWithTags[]) =>
+      list.map((note) => {
+        const body = bodies.get(note.id)
+        if (body === undefined || note.body_complete !== false) return note
+        return { ...note, body, body_complete: true }
+      })
+    setNotes((prev) => patch(prev))
+    setTagPullEntry((cur) =>
+      cur ? { ...cur, notes: patch(cur.notes) } : cur,
+    )
+    setSourcePullEntry((cur) =>
+      cur ? { ...cur, notes: patch(cur.notes) } : cur,
+    )
+    for (const [key, entry] of tagPullCacheRef.current.entries()) {
+      tagPullCacheRef.current.set(key, {
+        ...entry,
+        notes: patch(entry.notes),
+      })
+    }
+    for (const [key, entry] of sourcePullCacheRef.current.entries()) {
+      sourcePullCacheRef.current.set(key, {
+        ...entry,
+        notes: patch(entry.notes),
+      })
+    }
+  }, [])
+
   const hydrateNoteBody = useCallback(async (note: NoteWithTags) => {
     if (note.body_complete !== false) return note
     const fresh = await fetchNoteWithTagsById(note.id)
@@ -3503,6 +3534,38 @@ export function HomePage() {
   const clearFocusMemoId = useCallback(() => {
     setFocusMemoId(null)
   }, [])
+
+  useEffect(() => {
+    if (booksMemoViewMode !== 'scroll') return
+    const list =
+      homeBrowseNav === 'links' && selectedSourceId
+        ? notesForSelectedSource
+        : homeBrowseNav === 'books' && booksRailExpandedParentId
+          ? notesForSelectedTag
+          : null
+    if (!list || list.length === 0) return
+    const missing = list.filter((note) => note.body_complete === false)
+    if (missing.length === 0) return
+    let cancelled = false
+    void fetchNoteBodiesByIds(missing.map((note) => note.id))
+      .then((bodies) => {
+        if (!cancelled) applyHydratedBodies(bodies)
+      })
+      .catch((e) => {
+        console.warn('[태그노트] 스크롤 뷰 본문 불러오기 실패', e)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    applyHydratedBodies,
+    booksMemoViewMode,
+    booksRailExpandedParentId,
+    homeBrowseNav,
+    notesForSelectedSource,
+    notesForSelectedTag,
+    selectedSourceId,
+  ])
 
   async function loadMoreTagNotes() {
     const entry = tagPullEntry

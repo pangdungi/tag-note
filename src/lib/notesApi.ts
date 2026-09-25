@@ -1383,6 +1383,28 @@ export async function fetchNoteWithTagsById(
   return mapNoteRowFromDb(data as unknown as NoteRowDb, { complete: true })
 }
 
+/** 스크롤 목록용 — 미리보기만 있는 메모의 전체 본문 */
+export async function fetchNoteBodiesByIds(
+  ids: string[],
+): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))]
+  const out = new Map<string, string>()
+  const pageSize = 80
+  for (let i = 0; i < unique.length; i += pageSize) {
+    const chunk = unique.slice(i, i + pageSize)
+    const { data, error } = await supabase
+      .from('notes')
+      .select('id, body')
+      .in('id', chunk)
+    if (error) throw error
+    for (const row of data ?? []) {
+      const id = (row as { id: string }).id
+      out.set(id, (row as { body?: string | null }).body ?? '')
+    }
+  }
+  return out
+}
+
 /** 로그인한 계정의 고정 메모만 (RLS + user_id) */
 export async function fetchPinnedNotes(): Promise<NoteWithTags[]> {
   const rows = await queryNoteRows((select) =>

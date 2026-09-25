@@ -284,7 +284,6 @@ export function AddNoteModal({
             }`}
             onClick={() => {
                 if (savingRef.current) return
-                savingRef.current = true
                 setError(null)
                 const editorEl = document.getElementById(
                   bodyId,
@@ -303,6 +302,7 @@ export function AddNoteModal({
                   setFieldHint('body')
                   return
                 }
+                savingRef.current = true
                 setFieldHint(null)
                 const saveSource = selectedSource?.title ?? ''
                 const tempId = crypto.randomUUID()

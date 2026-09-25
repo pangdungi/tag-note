@@ -6001,6 +6001,15 @@ button.note-board-tag-pill--link:focus-visible {
   padding-right: 2rem;
 }
 
+.note-board-card--viewable,
+.note-board-sheet-memo,
+.tag-memos-flip-sheet--edit,
+.search-paper-sheet {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
 .note-board-card-preview {
   margin: 0;
   font-family: var(--app-font-family);

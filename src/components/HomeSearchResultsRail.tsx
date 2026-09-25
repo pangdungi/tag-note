@@ -1,6 +1,7 @@
 import type { NoteWithTags, TagRow } from '../lib/notesApi'
 import { formatSpineLabel, formatSearchTagSpineLabel } from '../lib/tagUtils'
 import { MemoBodyContent } from './MemoBodyContent'
+import { useOpenOnTap } from '../hooks/useOpenOnTap'
 
 type HomeSearchResultsRailProps = {
   parentTags: TagRow[]
@@ -16,6 +17,34 @@ type HomeSearchResultsRailProps = {
 
 function primaryTagIdFromNote(note: NoteWithTags): string | null {
   return note.note_tags.map((nt) => nt.tags?.id ?? nt.tag_id).find(Boolean) ?? null
+}
+
+function SearchPaperSheet({
+  note,
+  onViewNote,
+}: {
+  note: NoteWithTags
+  onViewNote: (note: NoteWithTags, contextTagId?: string | null) => void
+}) {
+  const openNote = useOpenOnTap(() =>
+    onViewNote(note, primaryTagIdFromNote(note)),
+  )
+
+  return (
+    <button
+      type="button"
+      className="search-paper-sheet"
+      aria-label="메모 보기"
+      {...openNote}
+    >
+      <MemoBodyContent
+        as="div"
+        body={note.body ?? ''}
+        className="search-paper-sheet-body"
+        emptyLabel="내용 없음"
+      />
+    </button>
+  )
 }
 
 function SearchSpine({
@@ -96,21 +125,7 @@ export function HomeSearchResultsRail({
                     role="listitem"
                     style={{ zIndex: index + 1 }}
                   >
-                    <button
-                      type="button"
-                      className="search-paper-sheet"
-                      aria-label="메모 보기"
-                      onClick={() =>
-                        onViewNote(note, primaryTagIdFromNote(note))
-                      }
-                    >
-                      <MemoBodyContent
-                        as="div"
-                        body={note.body ?? ''}
-                        className="search-paper-sheet-body"
-                        emptyLabel="내용 없음"
-                      />
-                    </button>
+                    <SearchPaperSheet note={note} onViewNote={onViewNote} />
                   </div>
                 ))}
               </div>
