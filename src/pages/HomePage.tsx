@@ -76,7 +76,6 @@ import {
   noteBodyMatchesMainSearch,
   noteHasNoSource,
   noteSourceLabel,
-  NOTES_LIST_PAGE_SIZE,
   supabaseErrorMessage,
   tagMainSearchScore,
   type PromoteTagToParentResult,
@@ -3597,30 +3596,6 @@ export function HomePage() {
 
   function openSourceViewFromNote(sourceId: string) {
     openSourceMemosFlip(sourceId)
-  }
-
-  function openTagMemosFlip(tagId: string) {
-    setTagViewDrillDown(false)
-    setTagFilterFocusBoard(false)
-    setBooksTagFocusBoard(false)
-    setBooksRailExpandedParentId(null)
-    setSelectedSourceId(null)
-    setSourceNotesHasMore(false)
-    clearDateFilter()
-    setViewingNote(null)
-    setViewingNoteContextTagId(null)
-    setViewNoteLoading(false)
-    setTagFilterNav('tags')
-    tagFilterNavRef.current = 'tags'
-    const filterTagIds = resolveSelectedTagFilterIds(
-      tagId,
-      'tags',
-      null,
-      allTags,
-      tagParentLinks,
-    )
-    syncTagPullEntryForSelection(tagId, filterTagIds, 'tags')
-    setSelectedTagId(tagId)
   }
 
   /** 검색·다른 뷰에서 태그 상세로 들어갈 때 */

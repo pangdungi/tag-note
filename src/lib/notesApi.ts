@@ -990,7 +990,7 @@ export async function updateSource(
 }
 
 export async function persistSourceSpineColors(
-  rows: { id: string; spine_color: string | null }[],
+  rows: { id: string; spine_color?: string | null }[],
 ): Promise<void> {
   const list = rows.filter((row) => normalizeSourceBookColor(row.spine_color))
   if (list.length === 0) return

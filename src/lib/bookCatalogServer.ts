@@ -77,9 +77,9 @@ export function resolveStoredSourceSpineUrl(source: {
   const signed = source.spine_signed_url?.trim()
   if (signed) return signed
   const path = source.spine_image_path?.trim()
-  if (isHttpUrl(path)) return path
+  if (path && isHttpUrl(path)) return path
   const direct = source.spine_image_url?.trim()
-  if (isHttpUrl(direct)) return direct
+  if (direct && isHttpUrl(direct)) return direct
   return null
 }
 
