@@ -7,6 +7,7 @@ type Props = {
   onInsert: (emojiId: string) => void
   onInsertCircledNumber?: (char: string) => void
   onHighlight?: () => void
+  highlightActive?: boolean
   disabled?: boolean
 }
 
@@ -14,6 +15,7 @@ export function MemoEmojiBar({
   onInsert,
   onInsertCircledNumber,
   onHighlight,
+  highlightActive = false,
   disabled = false,
 }: Props) {
   return (
@@ -42,9 +44,10 @@ export function MemoEmojiBar({
         {onHighlight ? (
           <button
             type="button"
-            className="memo-emoji-bar-btn memo-emoji-bar-btn--highlight"
-            aria-label="선택 영역 형광펜"
-            title="선택 영역 형광펜"
+            className={`memo-emoji-bar-btn memo-emoji-bar-btn--highlight${highlightActive ? ' memo-emoji-bar-btn--highlight-on' : ''}`}
+            aria-label={highlightActive ? '형광펜 끄기' : '선택 영역 형광펜'}
+            title={highlightActive ? '형광펜 끄기' : '선택 영역 형광펜'}
+            aria-pressed={highlightActive}
             disabled={disabled}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => onHighlight()}

@@ -78,6 +78,7 @@ export function memoEmojiById(id: string): MemoQuickEmoji | undefined {
 export function normalizeMemoBodyStorage(body: string): string {
   return body
     .replace(/:m\/enter:/g, '')
+    .replace(/\u200B/g, '')
     .replaceAll(`${MEMO_HIGHLIGHT_OPEN}${MEMO_HIGHLIGHT_CLOSE}`, '')
 }
 
@@ -575,7 +576,7 @@ function mergeAdjacentHighlights(root: HTMLElement): void {
     while (
       next &&
       next.nodeType === Node.TEXT_NODE &&
-      !(next.textContent ?? '')
+      !(next.textContent ?? '').replace(/\u200B/g, '')
     ) {
       const empty = next
       next = next.nextSibling
@@ -592,15 +593,95 @@ function mergeAdjacentHighlights(root: HTMLElement): void {
   }
 }
 
+function placeCaretInText(text: Text, offset: number): void {
+  const caret = document.createRange()
+  caret.setStart(text, Math.max(0, Math.min(offset, text.length)))
+  caret.collapse(true)
+  const sel = window.getSelection()
+  sel?.removeAllRanges()
+  sel?.addRange(caret)
+}
+
+function placeCaretOutsideMark(mark: HTMLElement, after: boolean): void {
+  const parent = mark.parentNode
+  if (!parent) return
+  const sibling = after ? mark.nextSibling : mark.previousSibling
+  if (sibling && sibling.nodeType === Node.TEXT_NODE) {
+    const text = sibling as Text
+    placeCaretInText(text, after ? text.length : 0)
+    return
+  }
+  const text = document.createTextNode('\u200B')
+  if (after) {
+    parent.insertBefore(text, mark.nextSibling)
+    placeCaretInText(text, text.length)
+  } else {
+    parent.insertBefore(text, mark)
+    placeCaretInText(text, 0)
+  }
+}
+
+function isCollapsedAtMarkEdge(
+  mark: HTMLElement,
+  range: Range,
+  edge: 'start' | 'end',
+): boolean {
+  const probe = document.createRange()
+  probe.selectNodeContents(mark)
+  probe.collapse(edge === 'start')
+  return range.compareBoundaryPoints(Range.START_TO_START, probe) === 0
+}
+
+/** 커서만 있을 때 형광펜을 끊고, 다음 글자는 칠하지 않는다 */
+function exitHighlightAtCaret(root: HTMLElement, range: Range): boolean {
+  const mark = findHighlightMark(root, range.startContainer)
+  if (!mark || !mark.parentNode) return false
+
+  if (isCollapsedAtMarkEdge(mark, range, 'end')) {
+    placeCaretOutsideMark(mark, true)
+    return true
+  }
+  if (isCollapsedAtMarkEdge(mark, range, 'start')) {
+    placeCaretOutsideMark(mark, false)
+    return true
+  }
+
+  const tailRange = document.createRange()
+  tailRange.setStart(range.startContainer, range.startOffset)
+  tailRange.setEnd(mark, mark.childNodes.length)
+  const tail = tailRange.extractContents()
+  if (tail.hasChildNodes()) {
+    const afterMark = createHighlightMark()
+    afterMark.appendChild(tail)
+    mark.parentNode.insertBefore(afterMark, mark.nextSibling)
+  }
+
+  placeCaretOutsideMark(mark, true)
+  removeEmptyHighlights(root)
+  return true
+}
+
+export function isMemoHighlightActiveInEditor(root: HTMLElement): boolean {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return false
+  const range = sel.getRangeAt(0)
+  if (!isRangeInsideMemoEditor(root, range)) return false
+  return findHighlightMark(root, range.startContainer) != null
+}
+
 /** 선택 영역 형광펜 — 줄을 쪼개지 않고 글자만 칠하거나 끈다 */
 export function toggleMemoHighlightInEditor(root: HTMLElement): boolean {
   const sel = window.getSelection()
   if (!sel || sel.rangeCount === 0) return false
   const range = sel.getRangeAt(0)
   if (!isRangeInsideMemoEditor(root, range)) return false
-  if (range.collapsed) return false
 
   root.focus()
+
+  if (range.collapsed) {
+    return exitHighlightAtCaret(root, range)
+  }
+
   splitTextBoundaries(range)
   const texts = textNodesInRange(root, range)
   if (texts.length === 0) return false
@@ -608,12 +689,22 @@ export function toggleMemoHighlightInEditor(root: HTMLElement): boolean {
   const fullyHighlighted = texts.every((text) => findHighlightMark(root, text))
   if (fullyHighlighted) {
     for (const text of texts) unwrapTextHighlight(root, text)
-  } else {
-    for (const text of texts) wrapTextInHighlight(root, text)
+    mergeAdjacentHighlights(root)
+    removeEmptyHighlights(root)
+    const last = texts[texts.length - 1]
+    if (last?.parentNode) {
+      placeCaretInText(last, last.length)
+    }
+    return true
   }
 
+  for (const text of texts) wrapTextInHighlight(root, text)
   mergeAdjacentHighlights(root)
   removeEmptyHighlights(root)
-  sel.removeAllRanges()
+  const last = texts[texts.length - 1]
+  const mark = last ? findHighlightMark(root, last) : null
+  if (mark) {
+    placeCaretOutsideMark(mark, true)
+  }
   return true
 }

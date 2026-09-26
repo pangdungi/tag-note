@@ -1335,11 +1335,10 @@ function sourceIdsFromTagPullCacheKey(key: string): string[] {
 
 function resolveFolderSourceFilterIds(
   selectedTagId: string,
-  nav: HomeBrowseNavId,
   booksRailExpandedParentId: string | null,
   links: FolderSourceLink[],
 ): string[] {
-  if (nav !== 'books' || !booksRailExpandedParentId) return []
+  if (!booksRailExpandedParentId) return []
   if (selectedTagId !== booksRailExpandedParentId) return []
   return sourceIdsForFolder(selectedTagId, links)
 }
@@ -2651,7 +2650,6 @@ export function HomePage() {
     )
     const filterSourceIds = resolveFolderSourceFilterIds(
       selectedTagId,
-      tagFilterNav,
       booksRailExpandedParentId,
       folderSourceLinks,
     )
@@ -2686,7 +2684,6 @@ export function HomePage() {
     )
     const filterSourceIds = resolveFolderSourceFilterIds(
       pullTagId,
-      pullNav,
       booksRailExpandedParentIdRef.current,
       folderSourceLinksRef.current,
     )
@@ -3044,7 +3041,6 @@ export function HomePage() {
     )
     const filterSourceIds = resolveFolderSourceFilterIds(
       selectedTagId,
-      tagFilterNav,
       booksRailExpandedParentId,
       folderSourceLinks,
     )
@@ -3307,6 +3303,8 @@ export function HomePage() {
     setHomeHubOpen(false)
     clearTagDetailReturnContext()
     setHomeBrowseNav(id)
+    setTagFilterNav(id)
+    tagFilterNavRef.current = id
     clearSourceFilter()
     clearDateFilter()
     clearMainSearch()
@@ -3323,6 +3321,8 @@ export function HomePage() {
     } else {
       clearTagFilter()
     }
+    setTagFilterNav(id)
+    tagFilterNavRef.current = id
   }
 
   function toggleDateSelect(dateKey: string) {
@@ -3356,7 +3356,6 @@ export function HomePage() {
       )
     const filterSourceIds = resolveFolderSourceFilterIds(
       tagId,
-      nav,
       booksRailExpandedParentIdRef.current,
       folderSourceLinksRef.current,
     )
@@ -3411,11 +3410,15 @@ export function HomePage() {
         syncTagPullEntryForSelection(null)
       } else {
         setBooksTagFocusBoard(false)
+        booksRailExpandedParentIdRef.current = tagId
         setBooksRailExpandedParentId(tagId)
             setSelectedTagId(tagId)
+        setTagFilterNav('books')
+        tagFilterNavRef.current = 'books'
         syncTagPullEntryForSelection(
           tagId,
           resolveTagFilterIds(tagId, allTags, tagParentLinks),
+          'books',
         )
       }
       setViewingNote(null)
@@ -3423,7 +3426,34 @@ export function HomePage() {
     }
 
     if (homeBrowseNav === 'tags') {
-      openTagMemosFlip(tagId)
+      setTagViewDrillDown(false)
+      setTagFilterFocusBoard(false)
+      setBooksTagFocusBoard(false)
+      setSelectedSourceId(null)
+      setSourceNotesHasMore(false)
+      clearDateFilter()
+      setViewingNote(null)
+      setTagFilterNav('tags')
+      tagFilterNavRef.current = 'tags'
+      if (selectedTagId === tagId) {
+        selectedTagIdRef.current = null
+        setSelectedTagId(null)
+        syncTagPullEntryForSelection(null)
+        return
+      }
+      selectedTagIdRef.current = tagId
+      setSelectedTagId(tagId)
+      syncTagPullEntryForSelection(
+        tagId,
+        resolveSelectedTagFilterIds(
+          tagId,
+          'tags',
+          null,
+          allTags,
+          tagParentLinks,
+        ),
+        'tags',
+      )
       return
     }
 
@@ -3605,6 +3635,10 @@ export function HomePage() {
   }
 
   function openTagViewFromNote(tagId: string) {
+    if (homeBrowseNav === 'tags') {
+      toggleTagSelect(tagId)
+      return
+    }
     openTagInTagDetailView(tagId)
   }
 
@@ -5372,37 +5406,7 @@ export function HomePage() {
                 />
               ) : null}
               {homeBrowseNav === 'tags' ? (
-                selectedTagId ? (
-                  <FolderMemosView
-                    notes={notesForSelectedTag}
-                    loading={tagPullLoading}
-                    focusNoteId={focusMemoId}
-                    onFocusNoteConsumed={clearFocusMemoId}
-                    folderTagId={
-                      selectedTagId === TAG_VIEW_NONE_ID
-                        ? undefined
-                        : selectedTagId
-                    }
-                    titleLabel={
-                      selectedTagId === TAG_VIEW_NONE_ID
-                        ? '태그 없음'
-                        : selectedTag
-                          ? formatHashtagLabel(selectedTag.name)
-                          : '태그'
-                    }
-                    emptyHint="이 태그의 메모가 아직 없습니다."
-                    hasMore={tagNotesHasMore}
-                    loadingMore={tagNotesLoadingMore}
-                    tagCatalog={tagCatalogMap}
-                    sourceCatalog={sourceCatalogMap}
-                    onEdit={canUseCompose ? openEditNote : undefined}
-                    onTagFilter={openTagViewFromNote}
-                    onSourceFilter={filterBySourceFromCard}
-                    onLoadMore={() => void loadMoreTagNotes()}
-                    onEnsureNoteBody={hydrateNoteBody}
-                  />
-                ) : (
-                  <div className="tag-view-rail-layout">
+                  <div className="tag-view-rail-layout tag-view-rail-layout--split">
                     <HomeTagSpiralRail
                       tags={tagsForTagModeRail}
                       selectedId={selectedTagId}
@@ -5423,8 +5427,50 @@ export function HomePage() {
                       }}
                       onSelect={toggleTagSelect}
                     />
+                    <div
+                      className="tag-view-split-notes"
+                      aria-label="선택한 태그 메모"
+                    >
+                      {selectedTagId ? (
+                        <>
+                          <InlineRailNotesPanel
+                            tagLabel={
+                              selectedTagId === TAG_VIEW_NONE_ID
+                                ? '태그 없음'
+                                : selectedTag
+                                  ? displayTagName(selectedTag.name)
+                                  : '태그'
+                            }
+                            tagId={selectedTagId}
+                            tagCatalog={tagCatalogMap}
+                            sourceCatalog={sourceCatalogMap}
+                            notes={notesForSelectedTag}
+                            loading={tagPullLoading}
+                            onView={openViewNote}
+                            onTagFilter={openTagViewFromNote}
+                            sheetLayout
+                            emptyHint="이 태그의 메모가 아직 없습니다."
+                          />
+                          {tagNotesHasMore && notesForSelectedTag.length > 0 ? (
+                            <button
+                              type="button"
+                              className="btn note-board-load-more"
+                              disabled={tagNotesLoadingMore || tagPullLoading}
+                              onClick={() => void loadMoreTagNotes()}
+                            >
+                              {tagNotesLoadingMore
+                                ? '불러오는 중…'
+                                : '메모 더 보기'}
+                            </button>
+                          ) : null}
+                        </>
+                      ) : (
+                        <p className="notes-hint tag-view-split-notes-empty">
+                          태그를 선택하면 메모가 나옵니다.
+                        </p>
+                      )}
+                    </div>
                   </div>
-                )
               ) : homeBrowseNav === 'dates' ? (
                 <HomeDateViewRail
                   groups={notesByDateGroups}

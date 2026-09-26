@@ -4,6 +4,7 @@ import {
   useId,
   useLayoutEffect,
   useRef,
+  useState,
   type ClipboardEvent,
   type FocusEvent,
 } from 'react'
@@ -15,6 +16,7 @@ import {
   insertMemoEmojiInEditor,
   insertMemoPlainTextInEditor,
   insertPlainTextInMemoEditor,
+  isMemoHighlightActiveInEditor,
   isRangeInsideMemoEditor,
   memoBodyToEditorHtml,
   normalizeMemoBodyStorage,
@@ -54,6 +56,7 @@ export function MemoNoteEditor({
   const lastSerializedRef = useRef<string | null>(null)
   const savedRangeRef = useRef<Range | null>(null)
   const isComposingRef = useRef(false)
+  const [highlightOn, setHighlightOn] = useState(false)
   const fallbackId = useId()
   const editorId = id ?? fallbackId
   const lastResetKeyRef = useRef(resetKey)
@@ -116,6 +119,7 @@ export function MemoNoteEditor({
     const range = sel.getRangeAt(0)
     if (!isRangeInsideMemoEditor(el, range)) return
     savedRangeRef.current = range.cloneRange()
+    setHighlightOn(isMemoHighlightActiveInEditor(el))
   }, [disabled])
 
   const resolveEditorInsertRange = useCallback((el: HTMLDivElement): Range => {
@@ -192,9 +196,27 @@ export function MemoNoteEditor({
   const handleHighlight = () => {
     const el = editorRef.current
     if (!el || disabled) return
+
+    el.focus()
+    const sel = window.getSelection()
+    const liveInside =
+      sel &&
+      sel.rangeCount > 0 &&
+      isRangeInsideMemoEditor(el, sel.getRangeAt(0))
+    if (
+      !liveInside &&
+      sel &&
+      savedRangeRef.current &&
+      isRangeInsideMemoEditor(el, savedRangeRef.current)
+    ) {
+      sel.removeAllRanges()
+      sel.addRange(savedRangeRef.current.cloneRange())
+    }
+
     if (toggleMemoHighlightInEditor(el)) {
       emitChange()
       rememberEditorSelection()
+      setHighlightOn(isMemoHighlightActiveInEditor(el))
     }
   }
 
@@ -267,6 +289,7 @@ export function MemoNoteEditor({
         onInsert={handleEmojiInsert}
         onInsertCircledNumber={handleCircledNumberInsert}
         onHighlight={handleHighlight}
+        highlightActive={highlightOn}
         disabled={disabled}
       />
     </>
