@@ -46,6 +46,7 @@ import {
   fetchParentTreeMemoCounts,
   fetchUntaggedMemoCount,
   fetchNotesPageForSource,
+  pullAllNotesForSourceIds,
   migrateLegacySourceSpines,
   persistSourceSpineColors,
   fetchTags,
@@ -54,6 +55,7 @@ import {
   fetchTagParentLinks,
   fetchFolderSourceLinks,
   fetchNotesPageForFolder,
+  pullAllNotesForFolder,
   sourceIdsForFolder,
   filterSourcesByQuery,
   filterTagsByMainSearch,
@@ -2708,10 +2710,12 @@ export function HomePage() {
           allSourcesRef.current,
         )
       : localNotes
-    tagPullCacheRef.current.set(cacheKey, {
-      notes: initial,
-      hasMore: cached?.hasMore ?? false,
-    })
+    if (initial.length > 0) {
+      tagPullCacheRef.current.set(cacheKey, {
+        notes: initial,
+        hasMore: cached?.hasMore ?? false,
+      })
+    }
     setTagNotesHasMore(cached?.hasMore ?? false)
     setTagPullEntry({
       tagId: pullTagId,
@@ -2721,7 +2725,8 @@ export function HomePage() {
       notes: initial,
     })
 
-    if (cached && filterSourceIds.length === 0) {
+    const cacheReady = Boolean(cached && cached.hasMore === false)
+    if (cacheReady) {
       setTagPullLoading(false)
       return
     }
@@ -2732,8 +2737,8 @@ export function HomePage() {
     let cancelled = false
     let inFlight = tagPullInFlightRef.current.get(cacheKey)
     if (!inFlight) {
-      inFlight = fetchNotesPageForFolder(filterTagIds, filterSourceIds)
-        .then((page) => ({ notes: page.notes, hasMore: page.hasMore }))
+      inFlight = pullAllNotesForFolder(filterTagIds, filterSourceIds)
+        .then((page) => ({ notes: page.notes, hasMore: false }))
         .finally(() => {
           if (tagPullInFlightRef.current.get(cacheKey) === inFlight) {
             tagPullInFlightRef.current.delete(cacheKey)
@@ -2758,10 +2763,21 @@ export function HomePage() {
         )
         const entry: SelectionPullCacheEntry = {
           notes: mergedNotes,
-          hasMore: page.hasMore,
+          hasMore: false,
         }
         tagPullCacheRef.current.set(cacheKey, entry)
-        setTagNotesHasMore(page.hasMore)
+        setTagNotesHasMore(false)
+        for (const sourceId of filterSourceIds) {
+          const sourceNotes = mergedNotes.filter((note) =>
+            noteMatchesFolderSourceIds(note, [sourceId], allSourcesRef.current),
+          )
+          if (sourceNotes.length === 0) continue
+          const prev = sourcePullCacheRef.current.get(sourceId)
+          sourcePullCacheRef.current.set(sourceId, {
+            notes: mergeNotesById(prev?.notes ?? [], sourceNotes),
+            hasMore: false,
+          })
+        }
         setTagPullEntry({
           tagId: pullTagId,
           filterTagIds,
@@ -2798,40 +2814,50 @@ export function HomePage() {
     if (!uid) {
       return
     }
-    const cached = sourcePullCacheRef.current.get(selectedSourceId)
-    if (cached) {
-      setSourceNotesHasMore(cached.hasMore)
-      setSourcePullEntry({
-        sourceId: selectedSourceId,
-        notes: cached.notes,
-      })
+    const sourceId = selectedSourceId
+    const cached = sourcePullCacheRef.current.get(sourceId)
+    const source = allSourcesRef.current.find((s) => s.id === sourceId)
+    const localNotes = filterLocalNotesForSourcePull(
+      notesRef.current,
+      sourceId,
+      source?.title,
+    )
+    const initial = cached
+      ? mergeNotesById(localNotes, cached.notes)
+      : localNotes
+
+    setSourcePullEntry({
+      sourceId,
+      notes: initial,
+    })
+
+    if (cached && cached.hasMore === false) {
+      setSourceNotesHasMore(false)
       setSourcePullLoading(false)
       return
     }
-    const source = allSourcesRef.current.find((s) => s.id === selectedSourceId)
-    const localNotes = filterLocalNotesForSourcePull(
-      notesRef.current,
-      selectedSourceId,
-      source?.title,
-    )
-    setSourcePullEntry({
-      sourceId: selectedSourceId,
-      notes: localNotes,
-    })
-    const showPullLoading = localNotes.length === 0
-    setSourcePullLoading(showPullLoading)
-    if (localNotes.length > 0) {
-      setSourceNotesHasMore(localNotes.length >= NOTES_LIST_PAGE_SIZE)
-    }
+
+    setSourceNotesHasMore(cached?.hasMore ?? true)
+    setSourcePullLoading(initial.length === 0)
+
     let cancelled = false
-    let inFlight = sourcePullInFlightRef.current.get(selectedSourceId)
+    let inFlight = sourcePullInFlightRef.current.get(sourceId)
     if (!inFlight) {
-      inFlight = fetchNotesPageForSource(selectedSourceId).finally(() => {
-        if (sourcePullInFlightRef.current.get(selectedSourceId) === inFlight) {
-          sourcePullInFlightRef.current.delete(selectedSourceId)
+      inFlight = pullAllNotesForSourceIds([sourceId], (partial) => {
+        if (cancelled || selectedSourceIdRef.current !== sourceId) return
+        const merged = mergeNotesById(initial, partial)
+        setSourcePullEntry({
+          sourceId,
+          notes: merged,
+        })
+        setSourcePullLoading(false)
+      }).then((notes) => ({ notes, hasMore: false }))
+      sourcePullInFlightRef.current.set(sourceId, inFlight)
+      void inFlight.finally(() => {
+        if (sourcePullInFlightRef.current.get(sourceId) === inFlight) {
+          sourcePullInFlightRef.current.delete(sourceId)
         }
       })
-      sourcePullInFlightRef.current.set(selectedSourceId, inFlight)
     }
     void (async () => {
       try {
@@ -2839,15 +2865,16 @@ export function HomePage() {
         if (cancelled) {
           return
         }
+        const merged = mergeNotesById(initial, next.notes)
         const pulled = {
-          notes: next.notes,
-          hasMore: next.hasMore,
+          notes: merged,
+          hasMore: false,
         }
-        setSourceNotesHasMore(pulled.hasMore)
-        sourcePullCacheRef.current.set(selectedSourceId, pulled)
+        setSourceNotesHasMore(false)
+        sourcePullCacheRef.current.set(sourceId, pulled)
         setSourcePullEntry({
-          sourceId: selectedSourceId,
-          notes: pulled.notes,
+          sourceId,
+          notes: merged,
         })
         setLoadError(null)
       } catch (e) {
@@ -2866,7 +2893,6 @@ export function HomePage() {
     })()
     return () => {
       cancelled = true
-      setSourcePullLoading(false)
     }
   }, [selectedSourceId, user?.id])
 
@@ -3383,7 +3409,7 @@ export function HomePage() {
       nav,
       notes: merged,
     })
-    setTagPullLoading(merged.length === 0 && !cached)
+    setTagPullLoading(merged.length === 0 && !(cached && cached.notes.length > 0))
   }
 
   function toggleTagSelect(
@@ -3571,12 +3597,6 @@ export function HomePage() {
 
   function openSourceViewFromNote(sourceId: string) {
     openSourceMemosFlip(sourceId)
-  }
-
-  function closeTagMemosFlip() {
-    setSelectedTagId(null)
-    setTagPullEntry(null)
-    setTagPullLoading(false)
   }
 
   function openTagMemosFlip(tagId: string) {
@@ -4876,7 +4896,7 @@ export function HomePage() {
             sourceCatalog={sourceCatalogMap}
             notes={pinnedNotes}
             loading={pinnedNotesLoading}
-            onView={openViewNote}
+            onView={openEditNote}
             onTagFilter={(tagId) => {
               setPinnedBoardOpen(false)
               setPinnedNotesError(null)
@@ -4922,8 +4942,8 @@ export function HomePage() {
                     collapseLinksSourceRail()
                     return
                   }
-                  if (homeBrowseNav === 'tags' && selectedTagId) {
-                    closeTagMemosFlip()
+                  if (homeBrowseNav === 'tags' && tagViewDrillDown) {
+                    goBackToTagList()
                     return
                   }
                   returnToHomeHub()
@@ -4931,7 +4951,7 @@ export function HomePage() {
               >
                 {(homeBrowseNav === 'books' && booksRailExpandedParentId) ||
                 (homeBrowseNav === 'links' && selectedSourceId) ||
-                (homeBrowseNav === 'tags' && selectedTagId)
+                (homeBrowseNav === 'tags' && tagViewDrillDown)
                   ? '뒤로'
                   : '메뉴'}
               </button>
@@ -5446,7 +5466,7 @@ export function HomePage() {
                             sourceCatalog={sourceCatalogMap}
                             notes={notesForSelectedTag}
                             loading={tagPullLoading}
-                            onView={openViewNote}
+                            onView={openEditNote}
                             onTagFilter={openTagViewFromNote}
                             sheetLayout
                             emptyHint="이 태그의 메모가 아직 없습니다."
@@ -5504,7 +5524,7 @@ export function HomePage() {
                         sourceCatalog={sourceCatalogMap}
                         notes={notesForSelectedSource}
                         loading={sourcePullLoading}
-                        onView={openViewNote}
+                        onView={openEditNote}
                         onTagFilter={openTagViewFromNote}
                         sheetLayout
                         sheetSourceMode
@@ -5753,7 +5773,7 @@ export function HomePage() {
                       sourceCatalog={sourceCatalogMap}
                       notes={notesForSelectedTag}
                       loading={tagPullLoading}
-                      onView={openViewNote}
+                      onView={openEditNote}
                       onTagFilter={openTagViewFromNote}
                       sheetLayout
                       sheetFolderMode

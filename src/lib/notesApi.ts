@@ -1680,6 +1680,7 @@ export async function fetchNotesPageForSourceIds(
 /** 출처들에 붙은 메모를 페이지 끝까지 모은다 */
 export async function pullAllNotesForSourceIds(
   sourceIds: string[],
+  onPage?: (notes: NoteWithTags[]) => void,
 ): Promise<NoteWithTags[]> {
   const ids = [...new Set(sourceIds.filter(Boolean))]
   const map = new Map<string, NoteWithTags>()
@@ -1691,12 +1692,37 @@ export async function pullAllNotesForSourceIds(
       pages += 1
       const page = await fetchNotesPageForSource(sourceId, { before })
       for (const note of page.notes) map.set(note.id, note)
+      onPage?.([...map.values()])
       hasMore = page.hasMore
       if (page.notes.length === 0) break
       before = page.notes[page.notes.length - 1]?.created_at
     }
   }
   return [...map.values()]
+}
+
+/** 폴더·태그 목록 — 태그·출처 메모를 페이지 끝까지 모은다 */
+export async function pullAllNotesForFolder(
+  tagIds: string[],
+  sourceIds: string[],
+  onPage?: (notes: NoteWithTags[]) => void,
+): Promise<NotesPageResult> {
+  const tags = [...new Set(tagIds.filter(Boolean))]
+  const sources = [...new Set(sourceIds.filter(Boolean))]
+  if (tags.length === 0 && sources.length === 0) {
+    return { notes: [], hasMore: false }
+  }
+  const [tagPage, sourceNotes] = await Promise.all([
+    tags.length > 0
+      ? pullAllTagNotesForTagIds(tags)
+      : Promise.resolve({ notes: [] as NoteWithTags[], hasMore: false }),
+    sources.length > 0
+      ? pullAllNotesForSourceIds(sources, onPage)
+      : Promise.resolve([] as NoteWithTags[]),
+  ])
+  const notes = mergeNotesById(tagPage.notes, sourceNotes)
+  onPage?.(notes)
+  return { notes, hasMore: false }
 }
 
 /** 폴더 목록 — 하위 태그 메모 ∪ 연결한 출처의 모든 메모 */
