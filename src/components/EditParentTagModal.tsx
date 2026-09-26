@@ -3,9 +3,12 @@ import { ModalFooter } from './ModalFooter'
 import { ConfirmModal } from './ConfirmModal'
 import {
   deleteParentTag,
-  filterTagsByMainSearch,
+  sourceIdsForFolder,
+  syncFolderSources,
   syncParentTagChildren,
   updateTag,
+  type FolderSourceLink,
+  type SourceRow,
   type TagParentLink,
   type TagRow,
 } from '../lib/notesApi'
@@ -16,6 +19,7 @@ import {
   getChildTags,
   normalizeTagInput,
 } from '../lib/tagUtils'
+import { displaySourceTitle } from '../lib/sourceUtils'
 
 type Props = {
   open: boolean
@@ -23,12 +27,15 @@ type Props = {
   tag: TagRow | null
   tags: TagRow[]
   tagParentLinks: TagParentLink[]
+  sources: SourceRow[]
+  folderSourceLinks: FolderSourceLink[]
   onTagUpdated: (row: TagRow) => void
   onTagDeleted: (payload: { tagId: string; deletedNoteIds: string[] }) => void
   onChildrenSynced?: (payload: {
     tags: TagRow[]
     links: TagParentLink[]
   }) => void
+  onFolderSourcesSynced?: (links: FolderSourceLink[]) => void
   onTagError?: (message: string) => void
   onSyncFromServer?: () => void | Promise<void>
   onSourcesChanged?: () => void | Promise<void>
@@ -42,15 +49,121 @@ function sameIdSet(a: string[], b: string[]): boolean {
   return b.every((id) => setA.has(id))
 }
 
+function FolderPickSection({
+  title,
+  emptyLabel,
+  searchLabel,
+  searchPlaceholder,
+  searchId,
+  selected,
+  others,
+  search,
+  onSearch,
+  onToggle,
+  disabled,
+  renderName,
+}: {
+  title: string
+  emptyLabel: string
+  searchLabel: string
+  searchPlaceholder: string
+  searchId: string
+  selected: { id: string }[]
+  others: { id: string }[]
+  search: string
+  onSearch: (value: string) => void
+  onToggle: (id: string) => void
+  disabled: boolean
+  renderName: (id: string) => string
+}) {
+  const selectedSet = new Set(selected.map((item) => item.id))
+  const q = search.trim().toLowerCase()
+  const rows = [...selected, ...others.filter((item) => !selectedSet.has(item.id))]
+  const visible = q
+    ? rows.filter((item) => renderName(item.id).toLowerCase().includes(q))
+    : rows
+
+  return (
+    <section className="edit-parent-tag-col" aria-label={title}>
+      <div className="edit-parent-tag-col-head">
+        <h3 className="edit-parent-tag-children-title">{title}</h3>
+        {selected.length > 0 ? (
+          <span className="tag-manage-assign-selected-count">
+            {selected.length}개 선택
+          </span>
+        ) : null}
+      </div>
+      <div className="tag-manage-search-wrap edit-parent-tag-search">
+        <span className="sr-only">{searchLabel}</span>
+        <svg
+          className="home-search-icon"
+          xmlns="http://www.w3.org/2000/svg"
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+        <input
+          id={searchId}
+          type="search"
+          className="tag-manage-search-input"
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+          placeholder={searchPlaceholder}
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </div>
+      {visible.length === 0 ? (
+        <p className="edit-parent-tag-empty">{emptyLabel}</p>
+      ) : (
+        <ul className="edit-parent-tag-list">
+          {visible.map((item) => {
+            const checked = selectedSet.has(item.id)
+            const label = renderName(item.id)
+            return (
+              <li key={item.id}>
+                <label className="edit-parent-tag-row">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onToggle(item.id)}
+                    disabled={disabled}
+                    aria-label={
+                      checked ? `${label} 선택 해제` : `${label} 선택`
+                    }
+                  />
+                  <span className="edit-parent-tag-row-name">{label}</span>
+                </label>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 export function EditParentTagModal({
   open,
   onClose,
   tag,
   tags,
   tagParentLinks,
+  sources,
+  folderSourceLinks,
   onTagUpdated,
   onTagDeleted,
   onChildrenSynced,
+  onFolderSourcesSynced,
   onTagError,
   onSyncFromServer,
   onSourcesChanged,
@@ -58,10 +171,14 @@ export function EditParentTagModal({
 }: Props) {
   const titleId = useId()
   const pickSearchId = useId()
+  const sourceSearchId = useId()
   const [name, setName] = useState('')
   const [selectedChildIds, setSelectedChildIds] = useState<string[]>([])
   const [initialChildIds, setInitialChildIds] = useState<string[]>([])
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
+  const [initialSourceIds, setInitialSourceIds] = useState<string[]>([])
   const [pickSearch, setPickSearch] = useState('')
+  const [sourceSearch, setSourceSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
@@ -87,10 +204,19 @@ export function EditParentTagModal({
     return pickCandidates.filter((t) => !selected.has(t.id))
   }, [pickCandidates, selectedChildIds])
 
-  const filteredAddCandidates = useMemo(
-    () => filterTagsByMainSearch(addCandidates, pickSearch),
-    [addCandidates, pickSearch],
-  )
+  const currentSources = useMemo(() => {
+    const selected = new Set(selectedSourceIds)
+    return sources
+      .filter((s) => selected.has(s.id))
+      .sort((a, b) => a.title.localeCompare(b.title, 'ko'))
+  }, [selectedSourceIds, sources])
+
+  const addSourceCandidates = useMemo(() => {
+    const selected = new Set(selectedSourceIds)
+    return sources
+      .filter((s) => !selected.has(s.id))
+      .sort((a, b) => a.title.localeCompare(b.title, 'ko'))
+  }, [sources, selectedSourceIds])
 
   useEffect(() => {
     if (!open || !tag) {
@@ -102,30 +228,45 @@ export function EditParentTagModal({
     if (!justOpened) return
 
     const childIds = getChildTags(tag.id, tags, links).map((c) => c.id)
+    const sourceIds = sourceIdsForFolder(tag.id, folderSourceLinks)
     startTransition(() => {
       setName(tag.name)
       setSelectedChildIds(childIds)
       setInitialChildIds(childIds)
+      setSelectedSourceIds(sourceIds)
+      setInitialSourceIds(sourceIds)
       setPickSearch('')
+      setSourceSearch('')
       setError(null)
       setDeleteConfirmOpen(false)
       setDeleteBusy(false)
       setSaving(false)
     })
-  }, [open, tag, tags, links])
+  }, [open, tag, tags, links, folderSourceLinks])
 
   if (!open || !tag) return null
 
   const nameChanged = normalizeTagInput(name) !== normalizeTagInput(tag.name)
   const childrenChanged = !sameIdSet(selectedChildIds, initialChildIds)
+  const sourcesChanged = !sameIdSet(selectedSourceIds, initialSourceIds)
   const canSave =
-    (normalizeTagInput(name).length > 0 && nameChanged) || childrenChanged
+    (normalizeTagInput(name).length > 0 && nameChanged) ||
+    childrenChanged ||
+    sourcesChanged
 
   function toggleChild(tagId: string) {
     setSelectedChildIds((prev) =>
       prev.includes(tagId)
         ? prev.filter((id) => id !== tagId)
         : [...prev, tagId],
+    )
+  }
+
+  function toggleSource(sourceId: string) {
+    setSelectedSourceIds((prev) =>
+      prev.includes(sourceId)
+        ? prev.filter((id) => id !== sourceId)
+        : [...prev, sourceId],
     )
   }
 
@@ -172,117 +313,42 @@ export function EditParentTagModal({
               </div>
             </div>
 
-            <section
-              className="edit-parent-tag-children"
-              aria-label="현재 하위 태그"
-            >
-              <div className="tag-manage-assign-label-row">
-                <h3 className="edit-parent-tag-children-title">현재 하위 태그</h3>
-                {currentChildren.length > 0 ? (
-                  <span className="tag-manage-assign-selected-count">
-                    {currentChildren.length}개
-                  </span>
-                ) : null}
-              </div>
-
-              {currentChildren.length === 0 ? (
-                <p className="tag-manage-hint edit-parent-tag-children-empty">
-                  하위 태그 없음
-                </p>
-              ) : (
-                <ul className="edit-parent-tag-child-list">
-                  {currentChildren.map((child) => (
-                    <li key={child.id} className="edit-parent-tag-child-row">
-                      <label className="tag-manage-assign-pick edit-parent-tag-child-pick">
-                        <input
-                          type="checkbox"
-                          checked
-                          onChange={() => toggleChild(child.id)}
-                          disabled={saving}
-                          aria-label={`${displayTagName(child.name)} 선택 해제`}
-                        />
-                        <span className="tag-manage-pill edit-parent-tag-child-name">
-                          {displayTagName(child.name)}
-                        </span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section
-              className="edit-parent-tag-children edit-parent-tag-children--add"
-              aria-label="하위 태그 추가"
-            >
-              <div className="tag-manage-assign-label-row">
-                <h3 className="edit-parent-tag-children-title">하위 태그 추가</h3>
-                {addCandidates.length > 0 && filteredAddCandidates.length > 0 ? (
-                  <span className="tag-manage-assign-selected-count">
-                    {addCandidates.length}개 후보
-                  </span>
-                ) : null}
-              </div>
-
-              {addCandidates.length === 0 ? (
-                <p className="tag-manage-hint edit-parent-tag-children-empty">
-                  없음
-                </p>
-              ) : (
-                <>
-                  <div className="tag-manage-search-wrap tag-manage-assign-search-wrap">
-                    <span className="sr-only">추가할 하위 태그 검색</span>
-                    <svg
-                      className="home-search-icon"
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <circle cx="11" cy="11" r="8" />
-                      <path d="m21 21-4.3-4.3" />
-                    </svg>
-                    <input
-                      id={pickSearchId}
-                      type="search"
-                      className="tag-manage-search-input"
-                      value={pickSearch}
-                      onChange={(e) => setPickSearch(e.target.value)}
-                      placeholder="태그 이름 검색"
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                  </div>
-                  {filteredAddCandidates.length === 0 ? (
-                    <p className="tag-manage-assign-empty">없음</p>
-                  ) : (
-                    <ul className="tag-manage-assign-pick-list edit-parent-tag-pick-list">
-                      {filteredAddCandidates.map((child) => (
-                        <li key={child.id}>
-                          <label className="tag-manage-assign-pick">
-                            <input
-                              type="checkbox"
-                              checked={false}
-                              onChange={() => toggleChild(child.id)}
-                              disabled={saving}
-                            />
-                            <span className="tag-manage-pill">
-                              {displayTagName(child.name)}
-                            </span>
-                          </label>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </>
-              )}
-            </section>
+            <div className="edit-parent-tag-columns">
+              <FolderPickSection
+                title="하위 태그"
+                emptyLabel="없음"
+                searchLabel="하위 태그 검색"
+                searchPlaceholder="태그 이름 검색"
+                searchId={pickSearchId}
+                selected={currentChildren}
+                others={addCandidates}
+                search={pickSearch}
+                onSearch={setPickSearch}
+                onToggle={toggleChild}
+                disabled={saving}
+                renderName={(id) => {
+                  const row = tags.find((t) => t.id === id)
+                  return row ? displayTagName(row.name) : id
+                }}
+              />
+              <FolderPickSection
+                title="출처"
+                emptyLabel="없음"
+                searchLabel="출처 검색"
+                searchPlaceholder="출처 이름 검색"
+                searchId={sourceSearchId}
+                selected={currentSources}
+                others={addSourceCandidates}
+                search={sourceSearch}
+                onSearch={setSourceSearch}
+                onToggle={toggleSource}
+                disabled={saving}
+                renderName={(id) => {
+                  const row = sources.find((s) => s.id === id)
+                  return row ? displaySourceTitle(row.title) : id
+                }}
+              />
+            </div>
 
             {error ? <p className="composer-error">{error}</p> : null}
           </div>
@@ -306,6 +372,7 @@ export function EditParentTagModal({
                 const saveName = name
                 const label = normalizeTagInput(saveName)
                 const childIds = [...selectedChildIds]
+                const sourceIds = [...selectedSourceIds]
 
                 if (nameChanged) {
                   onTagUpdated({
@@ -323,6 +390,15 @@ export function EditParentTagModal({
                     ),
                   )
                 }
+                if (sourcesChanged) {
+                  onFolderSourcesSynced?.([
+                    ...folderSourceLinks.filter((l) => l.tag_id !== tagId),
+                    ...sourceIds.map((source_id) => ({
+                      tag_id: tagId,
+                      source_id,
+                    })),
+                  ])
+                }
 
                 onClose()
                 void (async () => {
@@ -334,6 +410,10 @@ export function EditParentTagModal({
                     if (childrenChanged) {
                       const result = await syncParentTagChildren(tagId, childIds)
                       onChildrenSynced?.(result)
+                    }
+                    if (sourcesChanged) {
+                      const nextLinks = await syncFolderSources(tagId, sourceIds)
+                      onFolderSourcesSynced?.(nextLinks)
                     }
                   } catch (e) {
                     console.error(
@@ -387,7 +467,6 @@ export function EditParentTagModal({
             console.error(
               '[태그노트] EditParentTagModal 상위태그 삭제 실패',
               { tagId },
-              e,
             )
             await onSyncFromServer?.()
             onTagError?.(

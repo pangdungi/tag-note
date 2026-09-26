@@ -496,6 +496,101 @@ export async function fetchTagParentLinks(): Promise<TagParentLink[]> {
   return (data ?? []) as TagParentLink[]
 }
 
+export type FolderSourceLink = {
+  tag_id: string
+  source_id: string
+}
+
+function isMissingFolderSourcesTable(error: {
+  code?: string
+  message?: string
+}): boolean {
+  return (
+    error.code === 'PGRST205' ||
+    error.code === '42P01' ||
+    Boolean(error.message?.includes('folder_sources'))
+  )
+}
+
+export async function fetchFolderSourceLinks(): Promise<FolderSourceLink[]> {
+  const { data, error } = await supabase
+    .from('folder_sources')
+    .select('tag_id, source_id')
+  if (error) {
+    if (isMissingFolderSourcesTable(error)) {
+      console.warn(
+        '[태그노트] folder_sources 테이블 없음 — 폴더 출처 연결을 건너뜁니다.',
+      )
+      return []
+    }
+    throw error
+  }
+  return (data ?? []) as FolderSourceLink[]
+}
+
+export function sourceIdsForFolder(
+  folderId: string,
+  links: FolderSourceLink[],
+): string[] {
+  return links.filter((l) => l.tag_id === folderId).map((l) => l.source_id)
+}
+
+export async function syncFolderSources(
+  tagId: string,
+  sourceIds: string[],
+): Promise<FolderSourceLink[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('로그인이 필요합니다.')
+
+  const desired = new Set(sourceIds.filter(Boolean))
+  const current = (await fetchFolderSourceLinks()).filter(
+    (l) => l.tag_id === tagId,
+  )
+  const currentIds = new Set(current.map((l) => l.source_id))
+  const toRemove = current
+    .map((l) => l.source_id)
+    .filter((id) => !desired.has(id))
+  const toAdd = [...desired].filter((id) => !currentIds.has(id))
+
+  if (toRemove.length > 0) {
+    const { error } = await supabase
+      .from('folder_sources')
+      .delete()
+      .eq('tag_id', tagId)
+      .in('source_id', toRemove)
+    if (error) {
+      if (isMissingFolderSourcesTable(error)) {
+        throw new Error(
+          '출처 연결을 쓰려면 Supabase에 034_folder_sources 마이그레이션을 적용하세요.',
+        )
+      }
+      throw error
+    }
+  }
+
+  if (toAdd.length > 0) {
+    const { error } = await supabase.from('folder_sources').insert(
+      toAdd.map((source_id) => ({
+        user_id: user.id,
+        tag_id: tagId,
+        source_id,
+      })),
+    )
+    if (error) {
+      if (isMissingFolderSourcesTable(error)) {
+        throw new Error(
+          '출처 연결을 쓰려면 Supabase에 034_folder_sources 마이그레이션을 적용하세요.',
+        )
+      }
+      throw error
+    }
+  }
+
+  return fetchFolderSourceLinks()
+}
+
 export type NoteTagLinkRow = {
   note_id: string
   tag_id: string
@@ -1552,6 +1647,94 @@ export async function fetchNotesPageForTagIds(
   const hasMore = rows.length > limit
   const slice = hasMore ? rows.slice(0, limit) : rows
   return { notes: mapListNotes(slice), hasMore }
+}
+
+/** 여러 출처 중 하나에 붙은 메모 — 최신순 페이지 */
+export async function fetchNotesPageForSourceIds(
+  sourceIds: string[],
+  opts?: { limit?: number; before?: string },
+): Promise<NotesPageResult> {
+  const ids = [...new Set(sourceIds.filter(Boolean))]
+  if (ids.length === 0) {
+    return { notes: [], hasMore: false }
+  }
+  if (ids.length === 1) {
+    return fetchNotesPageForSource(ids[0]!, opts)
+  }
+  const limit = opts?.limit ?? FOLDER_NOTES_PAGE_SIZE
+  const rows = await queryNoteRows((select) => {
+    let q = supabase
+      .from('notes')
+      .select(select)
+      .in('source_id', ids)
+      .order('created_at', { ascending: false })
+      .limit(limit + 1)
+    if (opts?.before) q = q.lt('created_at', opts.before)
+    return q
+  })
+  const hasMore = rows.length > limit
+  const slice = hasMore ? rows.slice(0, limit) : rows
+  return { notes: mapListNotes(slice), hasMore }
+}
+
+/** 출처들에 붙은 메모를 페이지 끝까지 모은다 */
+export async function pullAllNotesForSourceIds(
+  sourceIds: string[],
+): Promise<NoteWithTags[]> {
+  const ids = [...new Set(sourceIds.filter(Boolean))]
+  const map = new Map<string, NoteWithTags>()
+  for (const sourceId of ids) {
+    let before: string | undefined
+    let hasMore = true
+    let pages = 0
+    while (hasMore && pages < 80) {
+      pages += 1
+      const page = await fetchNotesPageForSource(sourceId, { before })
+      for (const note of page.notes) map.set(note.id, note)
+      hasMore = page.hasMore
+      if (page.notes.length === 0) break
+      before = page.notes[page.notes.length - 1]?.created_at
+    }
+  }
+  return [...map.values()]
+}
+
+/** 폴더 목록 — 하위 태그 메모 ∪ 연결한 출처의 모든 메모 */
+export async function fetchNotesPageForFolder(
+  tagIds: string[],
+  sourceIds: string[],
+  opts?: { limit?: number; before?: string },
+): Promise<NotesPageResult> {
+  const tags = [...new Set(tagIds.filter(Boolean))]
+  const sources = [...new Set(sourceIds.filter(Boolean))]
+  if (tags.length === 0 && sources.length === 0) {
+    return { notes: [], hasMore: false }
+  }
+  if (sources.length === 0) return fetchNotesPageForTagIds(tags, opts)
+
+  if (!opts?.before) {
+    const [tagPage, sourceNotes] = await Promise.all([
+      tags.length > 0
+        ? fetchNotesPageForTagIds(tags, { limit: opts?.limit })
+        : Promise.resolve({ notes: [] as NoteWithTags[], hasMore: false }),
+      pullAllNotesForSourceIds(sources),
+    ])
+    return {
+      notes: mergeNotesById(tagPage.notes, sourceNotes),
+      hasMore: tagPage.hasMore,
+    }
+  }
+
+  const [tagPage, sourcePage] = await Promise.all([
+    tags.length > 0
+      ? fetchNotesPageForTagIds(tags, opts)
+      : Promise.resolve({ notes: [] as NoteWithTags[], hasMore: false }),
+    fetchNotesPageForSourceIds(sources, opts),
+  ])
+  return {
+    notes: mergeNotesById(tagPage.notes, sourcePage.notes),
+    hasMore: tagPage.hasMore || sourcePage.hasMore,
+  }
 }
 
 /** 특정 출처 메모 — 최신순 페이지 */

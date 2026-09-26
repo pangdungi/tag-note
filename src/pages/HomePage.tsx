@@ -52,6 +52,9 @@ import {
   fetchTagsByIds,
   collectNoteTagIds,
   fetchTagParentLinks,
+  fetchFolderSourceLinks,
+  fetchNotesPageForFolder,
+  sourceIdsForFolder,
   filterSourcesByQuery,
   filterTagsByMainSearch,
   mapNotesWithRenamedTag,
@@ -72,12 +75,12 @@ import {
   noteHasNoSource,
   noteSourceLabel,
   NOTES_LIST_PAGE_SIZE,
-  fetchNotesPageForTagIds,
   supabaseErrorMessage,
   tagMainSearchScore,
   type PromoteTagToParentResult,
   type NoteWithTags,
   type SourceRow,
+  type FolderSourceLink,
   type TagParentLink,
   type TagRow,
 } from '../lib/notesApi'
@@ -1302,21 +1305,74 @@ function tagFilterIdsEqual(a: string[], b: string[]): boolean {
   return a.every((id) => set.has(id))
 }
 
-function tagPullCacheKey(filterTagIds: string[]): string {
+function tagPullCacheKey(
+  filterTagIds: string[],
+  filterSourceIds: string[] = [],
+): string {
+  const src = [...new Set(filterSourceIds.filter(Boolean))].sort().join('+')
+  const srcPart = src ? `|src:${src}` : ''
   if (
     filterTagIds.length === 1 &&
     filterTagIds[0] === TAG_VIEW_NONE_ID
   ) {
-    return 'tags:none:v5'
+    return `tags:none:v5${srcPart}`
   }
-  return `${filterTagIds.join('+')}:v5`
+  return `${filterTagIds.join('+')}:v5${srcPart}`
 }
 
 function filterIdsFromTagPullCacheKey(key: string): string[] | null {
-  if (key === 'tags:none:v5') return [TAG_VIEW_NONE_ID]
-  if (!key.endsWith(':v5')) return null
-  const ids = key.slice(0, -3).split('+').filter(Boolean)
+  const tagPart = key.split('|src:')[0] ?? key
+  if (tagPart === 'tags:none:v5') return [TAG_VIEW_NONE_ID]
+  if (!tagPart.endsWith(':v5')) return null
+  const ids = tagPart.slice(0, -3).split('+').filter(Boolean)
   return ids.length > 0 ? ids : null
+}
+
+function sourceIdsFromTagPullCacheKey(key: string): string[] {
+  const src = key.split('|src:')[1]
+  return src ? src.split('+').filter(Boolean) : []
+}
+
+function resolveFolderSourceFilterIds(
+  selectedTagId: string,
+  nav: HomeBrowseNavId,
+  booksRailExpandedParentId: string | null,
+  links: FolderSourceLink[],
+): string[] {
+  if (nav !== 'books' || !booksRailExpandedParentId) return []
+  if (selectedTagId !== booksRailExpandedParentId) return []
+  return sourceIdsForFolder(selectedTagId, links)
+}
+
+function noteMatchesFolderSourceIds(
+  note: NoteWithTags,
+  sourceIds: string[],
+  sources: SourceRow[] = [],
+): boolean {
+  if (sourceIds.length === 0) return false
+  const sid = note.source_id ?? note.sources?.id
+  if (sid && sourceIds.includes(sid)) return true
+  if (sid) return false
+  const label = sourceTitleKey(noteSourceLabel(note))
+  if (!label) return false
+  return sourceIds.some((id) => {
+    const src = sources.find((s) => s.id === id)
+    return src ? sourceTitleKey(src.title) === label : false
+  })
+}
+
+function readLocalNotesForFolderFilter(
+  filterTagIds: string[],
+  filterSourceIds: string[],
+  prev: NoteWithTags[],
+  sources: SourceRow[] = [],
+): NoteWithTags[] {
+  const byTag = readLocalNotesForTagFilter(filterTagIds, prev)
+  if (filterSourceIds.length === 0) return byTag
+  const bySrc = prev.filter((n) =>
+    noteMatchesFolderSourceIds(n, filterSourceIds, sources),
+  )
+  return mergeNotesById(byTag, bySrc)
 }
 
 function readLocalNotesForTagFilter(
@@ -1396,6 +1452,9 @@ export function HomePage() {
   const [bootstrapSource, setBootstrapSource] = useState<SelectedSource | null>(null)
   const [allTags, setAllTags] = useState<TagRow[]>([])
   const [tagParentLinks, setTagParentLinks] = useState<TagParentLink[]>([])
+  const [folderSourceLinks, setFolderSourceLinks] = useState<FolderSourceLink[]>(
+    [],
+  )
   const [allSources, setAllSources] = useState<SourceRow[]>([])
   const [bookshelves, setBookshelves] = useState<BookshelfRow[]>([])
   const [notes, setNotes] = useState<NoteWithTags[]>([])
@@ -1518,6 +1577,7 @@ export function HomePage() {
   const notesRef = useRef(notes)
   const allTagsRef = useRef(allTags)
   const tagParentLinksRef = useRef(tagParentLinks)
+  const folderSourceLinksRef = useRef(folderSourceLinks)
   const ensuringDefaultFolderRef = useRef(false)
   const allSourcesRef = useRef(allSources)
   useEffect(() => {
@@ -1529,6 +1589,9 @@ export function HomePage() {
   useEffect(() => {
     tagParentLinksRef.current = tagParentLinks
   }, [tagParentLinks])
+  useEffect(() => {
+    folderSourceLinksRef.current = folderSourceLinks
+  }, [folderSourceLinks])
   useEffect(() => {
     allSourcesRef.current = allSources
   }, [allSources])
@@ -1638,7 +1701,12 @@ export function HomePage() {
         tagPullCacheRef.current.set(key, {
           ...entry,
           notes: patchList(entry.notes, (note) =>
-            readLocalNotesForTagFilter(ids, [note]).length > 0,
+            readLocalNotesForFolderFilter(
+              ids,
+              sourceIdsFromTagPullCacheKey(key),
+              [note],
+              allSourcesRef.current,
+            ).length > 0,
           ),
         })
       }
@@ -1647,7 +1715,12 @@ export function HomePage() {
         return {
           ...cur,
           notes: patchList(cur.notes, (note) =>
-            readLocalNotesForTagFilter(cur.filterTagIds, [note]).length > 0,
+            readLocalNotesForFolderFilter(
+              cur.filterTagIds,
+              cur.filterSourceIds ?? [],
+              [note],
+              allSourcesRef.current,
+            ).length > 0,
           ),
         }
       })
@@ -1718,15 +1791,17 @@ export function HomePage() {
   }, [invalidateTagPullRequests])
 
   const fetchHomeSnapshotEssential = useCallback(async () => {
-    const [tags, links, notePage, shelves] = await Promise.all([
+    const [tags, links, folderSources, notePage, shelves] = await Promise.all([
       fetchTags(),
       fetchTagParentLinks(),
+      fetchFolderSourceLinks(),
       fetchNotesPage(),
       fetchBookshelves(),
     ])
     return {
       tags,
       tagParentLinks: links,
+      folderSourceLinks: folderSources,
       notes: notePage.notes,
       bookshelves: shelves,
     }
@@ -1823,11 +1898,14 @@ export function HomePage() {
         const {
           tags,
           tagParentLinks: links,
+          folderSourceLinks: folderSources,
           notes: noteRows,
           bookshelves: shelves,
         } = await fetchHomeSnapshotEssential()
         setAllTags(tags)
         setTagParentLinks(links)
+        setFolderSourceLinks(folderSources)
+        folderSourceLinksRef.current = folderSources
         setBookshelves(shelves)
         setNotes(noteRows)
         if (!opts?.background) {
@@ -1883,6 +1961,7 @@ export function HomePage() {
   const [tagPullEntry, setTagPullEntry] = useState<{
     tagId: string
     filterTagIds: string[]
+    filterSourceIds: string[]
     nav: HomeBrowseNavId
     notes: NoteWithTags[]
   } | null>(null)
@@ -2287,6 +2366,15 @@ export function HomePage() {
     [clearTagPullCache],
   )
 
+  const applyFolderSourcesSynced = useCallback(
+    (links: FolderSourceLink[]) => {
+      setFolderSourceLinks(links)
+      folderSourceLinksRef.current = links
+      clearTagPullCache()
+    },
+    [clearTagPullCache],
+  )
+
   const applyTagPromoted = useCallback(
     (result: PromoteTagToParentResult) => {
       const parent: TagRow = {
@@ -2344,6 +2432,7 @@ export function HomePage() {
           (l) => l.tag_id !== tagId && l.parent_tag_id !== tagId,
         ),
       )
+      setFolderSourceLinks((prev) => prev.filter((l) => l.tag_id !== tagId))
       const unlink = (list: NoteWithTags[]) =>
         list.map((n) => ({
           ...n,
@@ -2452,6 +2541,9 @@ export function HomePage() {
       const titleKey = deleted ? sourceTitleKey(deleted.title) : undefined
       setSelectedSourceId((s) => (s === sourceId ? null : s))
       setAllSources((prev) => prev.filter((s) => s.id !== sourceId))
+      setFolderSourceLinks((prev) =>
+        prev.filter((l) => l.source_id !== sourceId),
+      )
       setNotes((prev) =>
         mapNotesWithClearedSource(prev, sourceId, titleKey),
       )
@@ -2557,13 +2649,20 @@ export function HomePage() {
       allTags,
       tagParentLinks,
     )
-    return tagPullCacheKey(filterTagIds)
+    const filterSourceIds = resolveFolderSourceFilterIds(
+      selectedTagId,
+      tagFilterNav,
+      booksRailExpandedParentId,
+      folderSourceLinks,
+    )
+    return tagPullCacheKey(filterTagIds, filterSourceIds)
   }, [
     selectedTagId,
     tagFilterNav,
     booksRailExpandedParentId,
     allTags,
     tagParentLinks,
+    folderSourceLinks,
   ])
 
   useEffect(() => {
@@ -2585,16 +2684,31 @@ export function HomePage() {
       allTagsRef.current,
       tagParentLinksRef.current,
     )
-    const cacheKey = tagPullCacheKey(filterTagIds)
-    const localNotes = readLocalNotesForTagFilter(
+    const filterSourceIds = resolveFolderSourceFilterIds(
+      pullTagId,
+      pullNav,
+      booksRailExpandedParentIdRef.current,
+      folderSourceLinksRef.current,
+    )
+    const cacheKey = tagPullCacheKey(filterTagIds, filterSourceIds)
+    const cachedSourceNotes: NoteWithTags[] = []
+    for (const sourceId of filterSourceIds) {
+      const sourceEntry = sourcePullCacheRef.current.get(sourceId)
+      if (sourceEntry) cachedSourceNotes.push(...sourceEntry.notes)
+    }
+    const localNotes = readLocalNotesForFolderFilter(
       filterTagIds,
-      notesRef.current,
+      filterSourceIds,
+      mergeNotesById(notesRef.current, cachedSourceNotes),
+      allSourcesRef.current,
     )
     const cached = tagPullCacheRef.current.get(cacheKey)
     const initial = cached
-      ? readLocalNotesForTagFilter(
+      ? readLocalNotesForFolderFilter(
           filterTagIds,
+          filterSourceIds,
           mergeNotesById(localNotes, cached.notes),
+          allSourcesRef.current,
         )
       : localNotes
     tagPullCacheRef.current.set(cacheKey, {
@@ -2605,11 +2719,12 @@ export function HomePage() {
     setTagPullEntry({
       tagId: pullTagId,
       filterTagIds,
+      filterSourceIds,
       nav: pullNav,
       notes: initial,
     })
 
-    if (cached) {
+    if (cached && filterSourceIds.length === 0) {
       setTagPullLoading(false)
       return
     }
@@ -2620,7 +2735,7 @@ export function HomePage() {
     let cancelled = false
     let inFlight = tagPullInFlightRef.current.get(cacheKey)
     if (!inFlight) {
-      inFlight = fetchNotesPageForTagIds(filterTagIds)
+      inFlight = fetchNotesPageForFolder(filterTagIds, filterSourceIds)
         .then((page) => ({ notes: page.notes, hasMore: page.hasMore }))
         .finally(() => {
           if (tagPullInFlightRef.current.get(cacheKey) === inFlight) {
@@ -2638,9 +2753,11 @@ export function HomePage() {
         ) {
           return
         }
-        const mergedNotes = readLocalNotesForTagFilter(
+        const mergedNotes = readLocalNotesForFolderFilter(
           filterTagIds,
-          page.notes,
+          filterSourceIds,
+          mergeNotesById(initial, page.notes),
+          allSourcesRef.current,
         )
         const entry: SelectionPullCacheEntry = {
           notes: mergedNotes,
@@ -2651,6 +2768,7 @@ export function HomePage() {
         setTagPullEntry({
           tagId: pullTagId,
           filterTagIds,
+          filterSourceIds,
           nav: pullNav,
           notes: mergedNotes,
         })
@@ -2924,14 +3042,26 @@ export function HomePage() {
       allTags,
       tagParentLinks,
     )
+    const filterSourceIds = resolveFolderSourceFilterIds(
+      selectedTagId,
+      tagFilterNav,
+      booksRailExpandedParentId,
+      folderSourceLinks,
+    )
     if (
       tagPullEntry?.tagId === selectedTagId &&
-      tagFilterIdsEqual(tagPullEntry.filterTagIds, filterTagIds)
+      tagFilterIdsEqual(tagPullEntry.filterTagIds, filterTagIds) &&
+      tagFilterIdsEqual(tagPullEntry.filterSourceIds ?? [], filterSourceIds)
     ) {
       return sortNotesOldestFirst(tagPullEntry.notes)
     }
     return sortNotesOldestFirst(
-      readLocalNotesForTagFilter(filterTagIds, notes),
+      readLocalNotesForFolderFilter(
+        filterTagIds,
+        filterSourceIds,
+        notes,
+        allSources,
+      ),
     )
   }, [
     selectedTagId,
@@ -2939,8 +3069,10 @@ export function HomePage() {
     booksRailExpandedParentId,
     allTags,
     tagParentLinks,
+    folderSourceLinks,
     tagPullEntry,
     notes,
+    allSources,
   ])
 
   const selectedSource = useMemo(() => {
@@ -3222,19 +3354,33 @@ export function HomePage() {
         allTagsRef.current,
         tagParentLinksRef.current,
       )
-    const cacheKey = tagPullCacheKey(filterTagIds)
-    const localNotes = readLocalNotesForTagFilter(filterTagIds, notesRef.current)
+    const filterSourceIds = resolveFolderSourceFilterIds(
+      tagId,
+      nav,
+      booksRailExpandedParentIdRef.current,
+      folderSourceLinksRef.current,
+    )
+    const cacheKey = tagPullCacheKey(filterTagIds, filterSourceIds)
+    const localNotes = readLocalNotesForFolderFilter(
+      filterTagIds,
+      filterSourceIds,
+      notesRef.current,
+      allSourcesRef.current,
+    )
     const cached = tagPullCacheRef.current.get(cacheKey)
     const merged = cached
-      ? readLocalNotesForTagFilter(
+      ? readLocalNotesForFolderFilter(
           filterTagIds,
+          filterSourceIds,
           mergeNotesById(localNotes, cached.notes),
+          allSourcesRef.current,
         )
       : localNotes
     setTagNotesHasMore(cached?.hasMore ?? false)
     setTagPullEntry({
       tagId,
       filterTagIds,
+      filterSourceIds,
       nav,
       notes: merged,
     })
@@ -3574,9 +3720,16 @@ export function HomePage() {
     if (!before) return
     setTagNotesLoadingMore(true)
     try {
-      const page = await fetchNotesPageForTagIds(entry.filterTagIds, { before })
+      const page = await fetchNotesPageForFolder(
+        entry.filterTagIds,
+        entry.filterSourceIds ?? [],
+        { before },
+      )
       const mergedNotes = mergeNotesById(entry.notes, page.notes)
-      const key = tagPullCacheKey(entry.filterTagIds)
+      const key = tagPullCacheKey(
+        entry.filterTagIds,
+        entry.filterSourceIds ?? [],
+      )
       tagPullCacheRef.current.set(key, {
         notes: mergedNotes,
         hasMore: page.hasMore,
@@ -5861,12 +6014,22 @@ export function HomePage() {
         tag={railEditingParentTag}
         tags={allTags}
         tagParentLinks={tagParentLinks}
+        sources={allSources}
+        folderSourceLinks={folderSourceLinks}
         onClose={() => setRailEditingParentTag(null)}
         onTagUpdated={applyTagUpdated}
         onTagDeleted={applyTagDeleted}
         onAfterTagDeleted={syncTagsAfterDelete}
         onChildrenSynced={(payload) => {
           applyChildrenSynced(payload)
+          const parentId = railEditingParentTag?.id
+          if (parentId) {
+            setBooksRailExpandedParentId(parentId)
+            setHomeBrowseNav('books')
+          }
+        }}
+        onFolderSourcesSynced={(links) => {
+          applyFolderSourcesSynced(links)
           const parentId = railEditingParentTag?.id
           if (parentId) {
             setBooksRailExpandedParentId(parentId)

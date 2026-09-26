@@ -74,9 +74,11 @@ export function memoEmojiById(id: string): MemoQuickEmoji | undefined {
   return MEMO_EMOJI_BY_ID.get(resolved)
 }
 
-/** DB에 남은 레거시 enter 토큰만 제거 */
+/** DB에 남은 레거시 enter 토큰·빈 형광펜만 제거 */
 export function normalizeMemoBodyStorage(body: string): string {
-  return body.replace(/:m\/enter:/g, '')
+  return body
+    .replace(/:m\/enter:/g, '')
+    .replaceAll(`${MEMO_HIGHLIGHT_OPEN}${MEMO_HIGHLIGHT_CLOSE}`, '')
 }
 
 export type MemoBodySegment =
@@ -84,7 +86,35 @@ export type MemoBodySegment =
   | { type: 'emoji'; id: string; emoji: MemoQuickEmoji }
   | { type: 'highlight'; children: MemoBodySegment[] }
 
+function stripOrphanHighlightTokens(text: string): string {
+  return text
+    .split(MEMO_HIGHLIGHT_OPEN)
+    .join('')
+    .split(MEMO_HIGHLIGHT_CLOSE)
+    .join('')
+}
+
+function findMatchingHighlightClose(text: string, afterOpen: number): number {
+  let depth = 1
+  let i = afterOpen
+  while (i < text.length && depth > 0) {
+    const nextOpen = text.indexOf(MEMO_HIGHLIGHT_OPEN, i)
+    const nextClose = text.indexOf(MEMO_HIGHLIGHT_CLOSE, i)
+    if (nextClose === -1) return -1
+    if (nextOpen !== -1 && nextOpen < nextClose) {
+      depth += 1
+      i = nextOpen + MEMO_HIGHLIGHT_OPEN.length
+      continue
+    }
+    depth -= 1
+    if (depth === 0) return nextClose
+    i = nextClose + MEMO_HIGHLIGHT_CLOSE.length
+  }
+  return -1
+}
+
 function parseMemoBodyEmojiOnly(text: string): MemoBodySegment[] {
+  text = stripOrphanHighlightTokens(text)
   if (!text) return []
 
   type Mark = { index: number; length: number; id: string }
@@ -165,9 +195,12 @@ function parseMemoBodySegments(text: string, depth = 0): MemoBodySegment[] {
     }
 
     const afterOpen = openIdx + MEMO_HIGHLIGHT_OPEN.length
-    const closeIdx = text.indexOf(MEMO_HIGHLIGHT_CLOSE, afterOpen)
+    const closeIdx = findMatchingHighlightClose(text, afterOpen)
     if (closeIdx === -1) {
-      segments.push(...parseMemoBodyEmojiOnly(text.slice(openIdx)))
+      segments.push({
+        type: 'highlight',
+        children: parseMemoBodySegments(text.slice(afterOpen), depth + 1),
+      })
       break
     }
 
@@ -458,25 +491,108 @@ function findHighlightMark(root: HTMLElement, node: Node): HTMLElement | null {
   return null
 }
 
-function unwrapHighlightMark(mark: HTMLElement): void {
+function createHighlightMark(): HTMLElement {
+  const mark = document.createElement('mark')
+  mark.className = 'memo-body-highlight'
+  mark.dataset.memoHighlight = '1'
+  return mark
+}
+
+function removeEmptyHighlights(root: HTMLElement): void {
+  for (const mark of [...root.querySelectorAll('mark.memo-body-highlight')]) {
+    const hasEmoji = mark.querySelector('img[data-memo-emoji]')
+    const text = (mark.textContent ?? '').replace(/\u200B/g, '')
+    if (!hasEmoji && text.length === 0) mark.remove()
+  }
+}
+
+function textOverlapsRange(text: Text, range: Range): boolean {
+  if (!text.data || !range.intersectsNode(text)) return false
+  const from = text === range.startContainer ? range.startOffset : 0
+  const to = text === range.endContainer ? range.endOffset : text.data.length
+  return from < to
+}
+
+function splitTextBoundaries(range: Range): void {
+  const { startContainer, startOffset, endContainer, endOffset } = range
+
+  if (endContainer.nodeType === Node.TEXT_NODE) {
+    const text = endContainer as Text
+    if (endOffset > 0 && endOffset < text.length) {
+      text.splitText(endOffset)
+    }
+  }
+
+  if (startContainer.nodeType === Node.TEXT_NODE) {
+    const text = startContainer as Text
+    if (startOffset > 0 && startOffset < text.length) {
+      const after = text.splitText(startOffset)
+      if (endContainer === startContainer) {
+        range.setStart(after, 0)
+        range.setEnd(after, Math.max(0, endOffset - startOffset))
+      } else {
+        range.setStart(after, 0)
+      }
+    }
+  }
+}
+
+function textNodesInRange(root: HTMLElement, range: Range): Text[] {
+  const out: Text[] = []
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node as Text
+    if (!textOverlapsRange(text, range)) continue
+    out.push(text)
+  }
+  return out
+}
+
+function wrapTextInHighlight(root: HTMLElement, text: Text): void {
+  if (findHighlightMark(root, text)) return
+  const parent = text.parentNode
+  if (!parent) return
+  const mark = createHighlightMark()
+  parent.insertBefore(mark, text)
+  mark.appendChild(text)
+}
+
+function unwrapTextHighlight(root: HTMLElement, text: Text): void {
+  const mark = findHighlightMark(root, text)
+  if (!mark) return
   const parent = mark.parentNode
   if (!parent) return
-  while (mark.firstChild) {
-    parent.insertBefore(mark.firstChild, mark)
+  parent.insertBefore(text, mark)
+  if (!mark.hasChildNodes()) mark.remove()
+}
+
+function mergeAdjacentHighlights(root: HTMLElement): void {
+  for (const mark of [
+    ...root.querySelectorAll('mark.memo-body-highlight'),
+  ] as HTMLElement[]) {
+    if (!mark.parentNode) continue
+    let next = mark.nextSibling
+    while (
+      next &&
+      next.nodeType === Node.TEXT_NODE &&
+      !(next.textContent ?? '')
+    ) {
+      const empty = next
+      next = next.nextSibling
+      empty.remove()
+    }
+    if (
+      next instanceof HTMLElement &&
+      next.tagName === 'MARK' &&
+      next.classList.contains('memo-body-highlight')
+    ) {
+      while (next.firstChild) mark.appendChild(next.firstChild)
+      next.remove()
+    }
   }
-  parent.removeChild(mark)
 }
 
-function rangeSelectsEntireHighlight(range: Range, mark: HTMLElement): boolean {
-  const markRange = document.createRange()
-  markRange.selectNodeContents(mark)
-  return (
-    range.compareBoundaryPoints(Range.START_TO_START, markRange) === 0 &&
-    range.compareBoundaryPoints(Range.END_TO_END, markRange) === 0
-  )
-}
-
-/** 선택 영역 형광펜 — 다시 누르면(전체 선택 시) 제거 */
+/** 선택 영역 형광펜 — 줄을 쪼개지 않고 글자만 칠하거나 끈다 */
 export function toggleMemoHighlightInEditor(root: HTMLElement): boolean {
   const sel = window.getSelection()
   if (!sel || sel.rangeCount === 0) return false
@@ -485,44 +601,19 @@ export function toggleMemoHighlightInEditor(root: HTMLElement): boolean {
   if (range.collapsed) return false
 
   root.focus()
+  splitTextBoundaries(range)
+  const texts = textNodesInRange(root, range)
+  if (texts.length === 0) return false
 
-  const startMark = findHighlightMark(root, range.startContainer)
-  const endMark = findHighlightMark(root, range.endContainer)
-  if (
-    startMark &&
-    startMark === endMark &&
-    rangeSelectsEntireHighlight(range, startMark)
-  ) {
-    unwrapHighlightMark(startMark)
-    sel.removeAllRanges()
-    return true
+  const fullyHighlighted = texts.every((text) => findHighlightMark(root, text))
+  if (fullyHighlighted) {
+    for (const text of texts) unwrapTextHighlight(root, text)
+  } else {
+    for (const text of texts) wrapTextInHighlight(root, text)
   }
 
-  const mark = document.createElement('mark')
-  mark.className = 'memo-body-highlight'
-  mark.dataset.memoHighlight = '1'
-
-  try {
-    const extracted = range.extractContents()
-    range.insertNode(mark)
-    mark.appendChild(extracted)
-    const caret = document.createRange()
-    caret.setStartAfter(mark)
-    caret.collapse(true)
-    sel.removeAllRanges()
-    sel.addRange(caret)
-    return true
-  } catch {
-    try {
-      range.surroundContents(mark)
-      const caret = document.createRange()
-      caret.setStartAfter(mark)
-      caret.collapse(true)
-      sel.removeAllRanges()
-      sel.addRange(caret)
-      return true
-    } catch {
-      return false
-    }
-  }
+  mergeAdjacentHighlights(root)
+  removeEmptyHighlights(root)
+  sel.removeAllRanges()
+  return true
 }
