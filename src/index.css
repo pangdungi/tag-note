@@ -3193,7 +3193,7 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
 
 .home-main--parent-rail-hero
   .parent-tag-rail-section--links-all {
-  --links-all-spine-max-h: min(400px, 46dvh);
+  --links-all-spine-max-h: min(500px, 58dvh);
 }
 
 .home-main--parent-rail-hero
@@ -3304,9 +3304,9 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
   .parent-tag-rail-section--links-all
   .links-all-rail
   .parent-tag-card:not(.parent-tag-card--source-spine-image) {
-  width: clamp(2.2rem, 5.4vw, 2.95rem);
+  width: clamp(2.55rem, 6.2vw, 3.4rem);
   height: auto;
-  min-height: 3.2rem;
+  min-height: 3.8rem;
   max-height: var(--links-all-spine-max-h);
   justify-content: flex-end;
   padding: 0.55rem 0.18rem 0.44rem;
@@ -3322,7 +3322,7 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
   height: calc(
     var(--links-all-spine-max-h) * var(--source-spine-text-fill, 0.78)
   );
-  min-height: 11.5rem;
+  min-height: 13.5rem;
   max-height: var(--links-all-spine-max-h);
 }
 
@@ -3362,7 +3362,7 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
   .parent-tag-rail-section--links-all
   .links-all-rail
   .parent-tag-card-label {
-  font-size: 0.86rem;
+  font-size: 0.96rem;
   line-height: 1.16;
   letter-spacing: 0.03em;
   max-height: calc(var(--links-all-spine-max-h) - 1.45rem);
@@ -3382,7 +3382,7 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
 @media (max-width: 640px) {
   .home-main--parent-rail-hero
     .parent-tag-rail-section--links-all {
-    --links-all-spine-max-h: min(420px, 50dvh);
+    --links-all-spine-max-h: min(520px, 62dvh);
   }
 
   .home-main--parent-rail-hero
@@ -3395,8 +3395,8 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
     .parent-tag-rail-section--links-all
     .links-all-rail
     .parent-tag-card:not(.parent-tag-card--source-spine-image) {
-    width: clamp(2.75rem, 13.5vw, 3.25rem);
-    min-height: 4.2rem;
+    width: clamp(3.05rem, 15vw, 3.65rem);
+    min-height: 4.8rem;
     padding: 0.58rem 0.18rem 0.48rem;
   }
 
@@ -3404,7 +3404,7 @@ body:has(.parent-tag-rail-section--books-view) .home-hub-back {
     .parent-tag-rail-section--links-all
     .links-all-rail
     .parent-tag-card-label {
-    font-size: 0.86rem;
+    font-size: 0.96rem;
     line-height: 1.16;
     max-height: calc(var(--links-all-spine-max-h) - 1.55rem);
   }
