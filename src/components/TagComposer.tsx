@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ClipboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ClipboardEvent, type ReactNode } from 'react'
 import type { TagRow } from '../lib/notesApi'
 import { displayTagName, normalizeTagInput } from '../lib/tagUtils'
 import { filterTagsByQuery } from '../lib/notesApi'
@@ -25,9 +25,10 @@ type Props = {
   onChange: (tags: SelectedTag[]) => void
   /** 태그 입력창 바로 아래 검증 안내 등 */
   hint?: ReactNode
+  autoFocus?: boolean
 }
 
-export function TagComposer({ allTags, selected, onChange, hint }: Props) {
+export function TagComposer({ allTags, selected, onChange, hint, autoFocus = false }: Props) {
   const listId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const lastEnterAt = useRef(0)
@@ -35,6 +36,11 @@ export function TagComposer({ allTags, selected, onChange, hint }: Props) {
   const [open, setOpen] = useState(false)
   /** -1: 입력한 글자로만 확정(Enter). 0 이상: 화살표로 고른 제안만 Enter로 확정 */
   const [activeIndex, setActiveIndex] = useState(-1)
+
+  useEffect(() => {
+    if (!autoFocus) return
+    inputRef.current?.focus()
+  }, [autoFocus])
 
   const excludeIds = selected.map((s) => s.id).filter(Boolean) as string[]
   const suggestions = filterTagsByQuery(allTags, draft, excludeIds).slice(0, 8)

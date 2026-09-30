@@ -24,6 +24,8 @@ type Props = {
   initialTags: SelectedTag[]
   /** 출처 뷰에서 출처 선택 후 + — 출처 칸에 미리 넣음 */
   initialSource?: SelectedSource | null
+  /** 붙여넣기로 열 때 본문 */
+  initialBody?: string
   /** 상위태그 spine 클릭 맥락 — 상위태그 칩·제목 고정, 상위 선택 UI 숨김 */
   lockedParentTagId?: string | null
   /** 상위 아래 하위 a 선택 후 + — a만 태그, 상위 지정 UI 숨김 */
@@ -116,6 +118,7 @@ export function AddNoteModal({
   onClose,
   initialTags,
   initialSource = null,
+  initialBody = '',
   lockedParentTagId = null,
   childTagCompose = false,
   allTags,
@@ -140,9 +143,11 @@ export function AddNoteModal({
   const allTagsRef = useRef(allTags)
   const initialTagsRef = useRef(initialTags)
   const initialSourceRef = useRef(initialSource)
+  const initialBodyRef = useRef(initialBody)
   allTagsRef.current = allTags
   initialTagsRef.current = initialTags
   initialSourceRef.current = initialSource
+  initialBodyRef.current = initialBody
 
   const lockedParent = lockedParentTagId
     ? allTags.find((t) => t.id === lockedParentTagId)
@@ -175,15 +180,16 @@ export function AddNoteModal({
       allTagsRef.current,
     )
     const seedSource = initialSourceRef.current
+    const seedBody = initialBodyRef.current
     setTags(seed)
-    setBody('')
+    setBody(seedBody)
     setSelectedSource(
       seedSource
         ? { id: seedSource.id, title: seedSource.title }
         : null,
     )
     setError(null)
-    setFieldHint(null)
+    setFieldHint(seedBody.trim() && seed.length === 0 ? 'tags' : null)
     setComposeSession((n) => n + 1)
   }, [open, lockedParentTagId, childTagCompose])
 
@@ -222,6 +228,7 @@ export function AddNoteModal({
           <div className="composer-stack">
             <TagComposer
               allTags={allTags}
+              autoFocus={Boolean(initialBody.trim())}
               selected={tags}
               onChange={(next) => {
                 setTags(next)

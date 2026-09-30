@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { SourceRow } from '../lib/notesApi'
 import { filterSourcesByQuery } from '../lib/notesApi'
 import { displaySourceTitle, normalizeSourceTitle, sourceTitleKey } from '../lib/sourceUtils'
@@ -47,18 +47,27 @@ export function SourceComposer({
   const lastEnterAt = useRef(0)
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
+  const [draft, setDraft] = useState(
+    selected ? displaySourceTitle(selected.title) : '',
+  )
 
-  const inputValue = selected ? displaySourceTitle(selected.title) : ''
-  const suggestions = filterSourcesByQuery(allSources, inputValue)
+  useEffect(() => {
+    const next = selected ? displaySourceTitle(selected.title) : ''
+    setDraft((cur) => (sourceTitleKey(cur) === sourceTitleKey(next) ? cur : next))
+  }, [selected?.id, selected?.title])
+
+  const suggestions = filterSourcesByQuery(allSources, draft)
 
   function applyTitle(raw: string) {
+    setDraft(raw)
     onChange(resolveSourceFromTitle(raw, allSources))
-    setOpen(Boolean(normalizeSourceTitle(raw)))
+    setOpen(Boolean(raw.trim()))
     setActiveIndex(-1)
   }
 
   function pickSource(row: SourceRow) {
     onChange({ id: row.id, title: row.title })
+    setDraft(displaySourceTitle(row.title))
     setOpen(false)
     setActiveIndex(-1)
     inputRef.current?.focus()
@@ -92,7 +101,7 @@ export function SourceComposer({
             id={listId + '-source'}
             type="text"
             className="composer-source source-composer-input"
-            value={inputValue}
+            value={draft}
             autoComplete="off"
             spellCheck={false}
             placeholder="책, 기사 등 (선택)"
@@ -102,6 +111,9 @@ export function SourceComposer({
             onChange={(e) => applyTitle(e.target.value)}
             onFocus={() => setOpen(true)}
             onBlur={() => {
+              const next = resolveSourceFromTitle(draft, allSources)
+              onChange(next)
+              setDraft(next ? displaySourceTitle(next.title) : '')
               window.setTimeout(() => setOpen(false), 150)
             }}
             onKeyDown={(e) => {
@@ -144,7 +156,7 @@ export function SourceComposer({
                 setOpen(false)
                 setActiveIndex(-1)
               }
-              if (e.key === 'Backspace' && selected && !inputValue) {
+              if (e.key === 'Backspace' && selected && !draft) {
                 onChange(null)
               }
             }}
@@ -163,7 +175,7 @@ export function SourceComposer({
               ×
             </button>
           ) : null}
-          {open && inputValue.trim() && suggestions.length > 0 ? (
+          {open && draft.trim() && suggestions.length > 0 ? (
             <ul
               id={listId + '-suggest'}
               className={`source-suggest${

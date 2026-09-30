@@ -378,6 +378,29 @@ function createMemoEmojiImg(emoji: MemoQuickEmoji): HTMLImageElement {
   return img
 }
 
+function escapeHtmlAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+}
+
+function memoEmojiInsertHtml(emoji: MemoQuickEmoji): string {
+  return `<img src="${escapeHtmlAttr(emoji.iconSrc)}" data-memo-emoji="${escapeHtmlAttr(emoji.id)}" class="memo-body-inline-icon" draggable="false" contenteditable="false" alt="${escapeHtmlAttr(emoji.label)}">`
+}
+
+function restoreEditorRange(root: HTMLElement, sel: Selection): Range {
+  if (sel.rangeCount > 0 && isRangeInsideMemoEditor(root, sel.getRangeAt(0))) {
+    return sel.getRangeAt(0)
+  }
+  const range = document.createRange()
+  range.selectNodeContents(root)
+  range.collapse(false)
+  sel.removeAllRanges()
+  sel.addRange(range)
+  return range
+}
+
 export function insertMemoPlainTextInEditor(
   root: HTMLElement,
   text: string,
@@ -385,9 +408,17 @@ export function insertMemoPlainTextInEditor(
   if (!text) return false
   root.focus()
   const sel = window.getSelection()
-  if (!sel || sel.rangeCount === 0) return false
-  const range = sel.getRangeAt(0)
+  if (!sel) return false
+  const range = restoreEditorRange(root, sel)
   if (!isRangeInsideMemoEditor(root, range)) return false
+  sel.removeAllRanges()
+  sel.addRange(range)
+  if (
+    typeof document.execCommand === 'function' &&
+    document.execCommand('insertText', false, text)
+  ) {
+    return true
+  }
   range.deleteContents()
   range.insertNode(document.createTextNode(text))
   range.collapse(false)
@@ -404,19 +435,20 @@ export function insertMemoEmojiInEditor(root: HTMLElement, id: string): boolean 
   const sel = window.getSelection()
   if (!sel) return false
 
-  let range: Range
-  if (sel.rangeCount > 0 && isRangeInsideMemoEditor(root, sel.getRangeAt(0))) {
-    range = sel.getRangeAt(0)
-  } else {
-    range = document.createRange()
-    range.selectNodeContents(root)
-    range.collapse(false)
-  }
+  const range = restoreEditorRange(root, sel)
   range.collapse(false)
+  sel.removeAllRanges()
+  sel.addRange(range)
+
+  if (
+    typeof document.execCommand === 'function' &&
+    document.execCommand('insertHTML', false, memoEmojiInsertHtml(emoji))
+  ) {
+    return true
+  }
 
   const img = createMemoEmojiImg(emoji)
   range.insertNode(img)
-
   const caret = document.createRange()
   caret.setStartAfter(img)
   caret.collapse(true)

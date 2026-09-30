@@ -143,6 +143,10 @@ import {
   writeHomeSnapshotCache,
 } from '../lib/homeSnapshotCache'
 import { useLoadingUiMountLog } from '../lib/loadingUiMountLog'
+import {
+  clipboardHtmlToPlainMemoText,
+  parseNotePasteWithTrailingUrl,
+} from '../lib/pasteNoteFormat'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { AccountModal } from '../components/AccountModal'
 import tagIconUrl from '../assets/tag-icon.png'
@@ -162,6 +166,54 @@ const BOOKS_MEMO_VIEW_TABS = [
 ] as const
 
 type BooksMemoViewMode = 'page' | 'scroll'
+
+type AddNotePasteSeed = {
+  body: string
+  sourceTitle: string | null
+}
+
+function isPasteHotkey(e: KeyboardEvent): boolean {
+  if (e.repeat || e.altKey || e.isComposing) return false
+  if (!(e.metaKey || e.ctrlKey)) return false
+  if (e.code === 'KeyV') return true
+  const key = e.key.toLowerCase()
+  return key === 'v' || key === 'ㅠ'
+}
+
+/** 입력·편집 중인 칸이면 Cmd/Ctrl+V를 메모 추가로 가로채지 않음 */
+function isTypingPasteTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Node)) return false
+  const el = target instanceof Element ? target : target.parentElement
+  if (!el) return false
+  if (el.closest('[data-paste-catcher]')) return false
+  const field = el.closest(
+    'input, textarea, select, [contenteditable="true"], [contenteditable=""]',
+  )
+  if (!field) return false
+  if (field instanceof HTMLInputElement) {
+    const type = field.type
+    if (
+      type === 'button' ||
+      type === 'submit' ||
+      type === 'checkbox' ||
+      type === 'radio' ||
+      type === 'file' ||
+      type === 'hidden'
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+function noteTextFromClipboard(raw: string): AddNotePasteSeed | null {
+  const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+  if (!text) return null
+  const parsed = parseNotePasteWithTrailingUrl(text)
+  const body = (parsed?.body ?? text).trim()
+  if (!body) return null
+  return { body, sourceTitle: parsed?.source ?? null }
+}
 
 /** 태그 상세(← 태그 목록) 진입 직전 화면 — 뒤로가기 복원용 */
 type TagDetailReturnSnapshot = {
@@ -1335,13 +1387,13 @@ function sourceIdsFromTagPullCacheKey(key: string): string[] {
 }
 
 function resolveFolderSourceFilterIds(
-  selectedTagId: string,
+  selectedTagId: string | null,
   booksRailExpandedParentId: string | null,
   links: FolderSourceLink[],
 ): string[] {
   if (!booksRailExpandedParentId) return []
-  if (selectedTagId !== booksRailExpandedParentId) return []
-  return sourceIdsForFolder(selectedTagId, links)
+  if (selectedTagId && selectedTagId !== booksRailExpandedParentId) return []
+  return sourceIdsForFolder(booksRailExpandedParentId, links)
 }
 
 function noteMatchesFolderSourceIds(
@@ -1520,6 +1572,8 @@ export function HomePage() {
   const [homeDataReady, setHomeDataReady] = useState(false)
 
   const [addNoteOpen, setAddNoteOpen] = useState(false)
+  const [addNotePasteSeed, setAddNotePasteSeed] =
+    useState<AddNotePasteSeed | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [folderListSearchOpen, setFolderListSearchOpen] = useState(false)
   const [folderListQuery, setFolderListQuery] = useState('')
@@ -1965,6 +2019,8 @@ export function HomePage() {
     nav: HomeBrowseNavId
     notes: NoteWithTags[]
   } | null>(null)
+  const tagPullEntryRef = useRef(tagPullEntry)
+  tagPullEntryRef.current = tagPullEntry
   const [sourcePullLoading, setSourcePullLoading] = useState(false)
 
   /** 메모 검색 — 서버 조회 결과 (검색어·hasMore와 함께 보관) */
@@ -2370,9 +2426,8 @@ export function HomePage() {
     (links: FolderSourceLink[]) => {
       setFolderSourceLinks(links)
       folderSourceLinksRef.current = links
-      clearTagPullCache()
     },
-    [clearTagPullCache],
+    [],
   )
 
   const applyTagPromoted = useCallback(
@@ -2647,23 +2702,57 @@ export function HomePage() {
     void loadDataRef.current({ showGridLoading: true })
   }, [user?.id])
 
+  function collectFolderSeedNotes(
+    pullTagId: string,
+    filterTagIds: string[],
+    filterSourceIds: string[],
+  ): NoteWithTags[] {
+    let seed = notesRef.current
+    const prev = tagPullEntryRef.current
+    if (prev && prev.tagId === pullTagId) {
+      seed = mergeNotesById(seed, prev.notes)
+    }
+    const tagOnly = tagPullCacheRef.current.get(
+      tagPullCacheKey(filterTagIds, []),
+    )
+    if (tagOnly) seed = mergeNotesById(seed, tagOnly.notes)
+    const exact = tagPullCacheRef.current.get(
+      tagPullCacheKey(filterTagIds, filterSourceIds),
+    )
+    if (exact) seed = mergeNotesById(seed, exact.notes)
+    for (const sourceId of filterSourceIds) {
+      const sourceEntry = sourcePullCacheRef.current.get(sourceId)
+      if (sourceEntry) seed = mergeNotesById(seed, sourceEntry.notes)
+    }
+    return readLocalNotesForFolderFilter(
+      filterTagIds,
+      filterSourceIds,
+      seed,
+      allSourcesRef.current,
+    )
+  }
+
+  const folderPullId =
+    selectedTagId ??
+    (homeBrowseNav === 'books' ? booksRailExpandedParentId : null)
+
   const tagPullFilterKey = useMemo(() => {
-    if (!selectedTagId) return ''
+    if (!folderPullId) return ''
     const filterTagIds = resolveSelectedTagFilterIds(
-      selectedTagId,
+      folderPullId,
       tagFilterNav,
       booksRailExpandedParentId,
       allTags,
       tagParentLinks,
     )
     const filterSourceIds = resolveFolderSourceFilterIds(
-      selectedTagId,
+      folderPullId,
       booksRailExpandedParentId,
       folderSourceLinks,
     )
     return tagPullCacheKey(filterTagIds, filterSourceIds)
   }, [
-    selectedTagId,
+    folderPullId,
     tagFilterNav,
     booksRailExpandedParentId,
     allTags,
@@ -2672,7 +2761,11 @@ export function HomePage() {
   ])
 
   useEffect(() => {
-    const pullTagId = selectedTagIdRef.current
+    const pullTagId =
+      selectedTagIdRef.current ??
+      (homeBrowseNavRef.current === 'books'
+        ? booksRailExpandedParentIdRef.current
+        : null)
     if (!pullTagId || !tagPullFilterKey) {
       setTagPullEntry(null)
       setTagPullLoading(false)
@@ -2696,26 +2789,12 @@ export function HomePage() {
       folderSourceLinksRef.current,
     )
     const cacheKey = tagPullCacheKey(filterTagIds, filterSourceIds)
-    const cachedSourceNotes: NoteWithTags[] = []
-    for (const sourceId of filterSourceIds) {
-      const sourceEntry = sourcePullCacheRef.current.get(sourceId)
-      if (sourceEntry) cachedSourceNotes.push(...sourceEntry.notes)
-    }
-    const localNotes = readLocalNotesForFolderFilter(
+    const cached = tagPullCacheRef.current.get(cacheKey)
+    const initial = collectFolderSeedNotes(
+      pullTagId,
       filterTagIds,
       filterSourceIds,
-      mergeNotesById(notesRef.current, cachedSourceNotes),
-      allSourcesRef.current,
     )
-    const cached = tagPullCacheRef.current.get(cacheKey)
-    const initial = cached
-      ? readLocalNotesForFolderFilter(
-          filterTagIds,
-          filterSourceIds,
-          mergeNotesById(localNotes, cached.notes),
-          allSourcesRef.current,
-        )
-      : localNotes
     if (initial.length > 0) {
       tagPullCacheRef.current.set(cacheKey, {
         notes: initial,
@@ -2731,7 +2810,11 @@ export function HomePage() {
       notes: initial,
     })
 
-    const cacheReady = Boolean(cached && cached.hasMore === false)
+    const cacheReady = Boolean(
+      cached &&
+        cached.hasMore === false &&
+        !(cached.notes.length === 0 && filterSourceIds.length > 0),
+    )
     if (cacheReady) {
       setTagPullLoading(false)
       return
@@ -2739,7 +2822,6 @@ export function HomePage() {
 
     setTagPullLoading(initial.length === 0)
 
-    const pullGen = tagPullGenerationRef.current
     let cancelled = false
     let inFlight = tagPullInFlightRef.current.get(cacheKey)
     if (!inFlight) {
@@ -2755,10 +2837,23 @@ export function HomePage() {
     void (async () => {
       try {
         const page = await inFlight!
-        if (
-          cancelled ||
-          pullGen !== tagPullGenerationRef.current
-        ) {
+        if (cancelled) {
+          return
+        }
+        if (tagPullCacheKey(
+          resolveSelectedTagFilterIds(
+            selectedTagIdRef.current ?? pullTagId,
+            tagFilterNavRef.current,
+            booksRailExpandedParentIdRef.current,
+            allTagsRef.current,
+            tagParentLinksRef.current,
+          ),
+          resolveFolderSourceFilterIds(
+            selectedTagIdRef.current ?? pullTagId,
+            booksRailExpandedParentIdRef.current,
+            folderSourceLinksRef.current,
+          ),
+        ) !== cacheKey) {
           return
         }
         const mergedNotes = readLocalNotesForFolderFilter(
@@ -3063,21 +3158,24 @@ export function HomePage() {
   const searchResultsLoading = searchNotesLoading || searchNotesPending
 
   const notesForSelectedTag = useMemo(() => {
-    if (!selectedTagId) return []
+    if (!folderPullId) return []
     const filterTagIds = resolveSelectedTagFilterIds(
-      selectedTagId,
+      folderPullId,
       tagFilterNav,
       booksRailExpandedParentId,
       allTags,
       tagParentLinks,
     )
     const filterSourceIds = resolveFolderSourceFilterIds(
-      selectedTagId,
+      folderPullId,
       booksRailExpandedParentId,
       folderSourceLinks,
     )
+    const seed = tagPullEntry?.tagId === folderPullId
+      ? mergeNotesById(tagPullEntry.notes, notes)
+      : notes
     if (
-      tagPullEntry?.tagId === selectedTagId &&
+      tagPullEntry?.tagId === folderPullId &&
       tagFilterIdsEqual(tagPullEntry.filterTagIds, filterTagIds) &&
       tagFilterIdsEqual(tagPullEntry.filterSourceIds ?? [], filterSourceIds)
     ) {
@@ -3087,12 +3185,12 @@ export function HomePage() {
       readLocalNotesForFolderFilter(
         filterTagIds,
         filterSourceIds,
-        notes,
+        seed,
         allSources,
       ),
     )
   }, [
-    selectedTagId,
+    folderPullId,
     tagFilterNav,
     booksRailExpandedParentId,
     allTags,
@@ -3366,6 +3464,28 @@ export function HomePage() {
     setViewingNote(null)
   }
 
+  function enterFolderView(folderId: string) {
+    setHomeHubOpen(false)
+    setHomeBrowseNav('books')
+    setTagFilterNav('books')
+    tagFilterNavRef.current = 'books'
+    booksRailExpandedParentIdRef.current = folderId
+    selectedTagIdRef.current = folderId
+    setBooksRailExpandedParentId(folderId)
+    setSelectedTagId(folderId)
+    setBooksTagFocusBoard(false)
+    setViewingNote(null)
+    syncTagPullEntryForSelection(
+      folderId,
+      resolveTagFilterIds(
+        folderId,
+        allTagsRef.current,
+        tagParentLinksRef.current,
+      ),
+      'books',
+    )
+  }
+
   function syncTagPullEntryForSelection(
     tagId: string | null,
     explicitFilterTagIds?: string[],
@@ -3392,21 +3512,12 @@ export function HomePage() {
       folderSourceLinksRef.current,
     )
     const cacheKey = tagPullCacheKey(filterTagIds, filterSourceIds)
-    const localNotes = readLocalNotesForFolderFilter(
+    const cached = tagPullCacheRef.current.get(cacheKey)
+    const merged = collectFolderSeedNotes(
+      tagId,
       filterTagIds,
       filterSourceIds,
-      notesRef.current,
-      allSourcesRef.current,
     )
-    const cached = tagPullCacheRef.current.get(cacheKey)
-    const merged = cached
-      ? readLocalNotesForFolderFilter(
-          filterTagIds,
-          filterSourceIds,
-          mergeNotesById(localNotes, cached.notes),
-          allSourcesRef.current,
-        )
-      : localNotes
     setTagNotesHasMore(cached?.hasMore ?? false)
     setTagPullEntry({
       tagId,
@@ -3441,17 +3552,7 @@ export function HomePage() {
             setSelectedTagId(null)
         syncTagPullEntryForSelection(null)
       } else {
-        setBooksTagFocusBoard(false)
-        booksRailExpandedParentIdRef.current = tagId
-        setBooksRailExpandedParentId(tagId)
-            setSelectedTagId(tagId)
-        setTagFilterNav('books')
-        tagFilterNavRef.current = 'books'
-        syncTagPullEntryForSelection(
-          tagId,
-          resolveTagFilterIds(tagId, allTags, tagParentLinks),
-          'books',
-        )
+        enterFolderView(tagId)
       }
       setViewingNote(null)
       return
@@ -3883,6 +3984,16 @@ export function HomePage() {
     if (!source) return null
     return { id: source.id, title: source.title }
   }, [homeBrowseNav, selectedSourceId, allSources])
+
+  /** 출처 뷰는 현재 출처 유지, 폴더뷰·출처없음은 붙여넣기 책 제목을 출처로 */
+  const addNoteModalSource = useMemo(() => {
+    if (addNoteInitialSource) return addNoteInitialSource
+    const title = addNotePasteSeed?.sourceTitle?.trim() ?? ''
+    if (!title) return null
+    const key = sourceTitleKey(title)
+    const match = allSources.find((s) => sourceTitleKey(s.title) === key)
+    return match ? { id: match.id, title: match.title } : { title }
+  }, [addNoteInitialSource, addNotePasteSeed, allSources])
 
   const tagViewNoneMemoCount = untaggedMemoCount
 
@@ -4396,6 +4507,7 @@ export function HomePage() {
   const showTagFilteredNoteBoard = Boolean(
     selectedTagId &&
       !showBooksFolderNotesInRail &&
+      !(homeBrowseNav === 'tags' && effectiveShowBrowseRail) &&
       (tagViewDrillDown ||
         tagFilterFocusBoard ||
         booksTagFocusBoard ||
@@ -4735,29 +4847,120 @@ export function HomePage() {
     setAddParentTagRailOpen(true)
   }
 
-  async function openAddNote() {
+  async function openAddNote(seed?: AddNotePasteSeed) {
     if (!canUseCompose) return
-    if (showFolderListAdds) {
-      try {
-        const folder = await ensureDefaultFolder()
-        if (!folder) return
-      } catch (e) {
-        setSaveError(
-          supabaseErrorMessage(e, '기본 폴더를 만들지 못했습니다.'),
-        )
-        return
-      }
-    }
+    setAddNotePasteSeed(seed ?? null)
     setAddNoteOpen(true)
+    if (!showFolderListAdds) return
+    try {
+      await ensureDefaultFolder()
+    } catch (e) {
+      setSaveError(
+        supabaseErrorMessage(e, '기본 폴더를 만들지 못했습니다.'),
+      )
+    }
   }
 
   function closeAddNote() {
     setAddNoteOpen(false)
+    setAddNotePasteSeed(null)
   }
 
   function toggleAddNote() {
-    if (!addNoteOpen) openAddNote()
+    if (!addNoteOpen) void openAddNote()
   }
+
+  const pasteCatcherRef = useRef<HTMLTextAreaElement>(null)
+  const pasteComposeRef = useRef({
+    enabled: false,
+    open: openAddNote,
+  })
+  pasteComposeRef.current = {
+    enabled:
+      canUseCompose &&
+      !homeHubOpen &&
+      !pinnedBoardOpen &&
+      !addNoteOpen &&
+      !editingNote &&
+      !viewingNote &&
+      !addBookModalOpen &&
+      !accountModalOpen &&
+      !addParentTagRailOpen &&
+      !railEditingSource &&
+      !railEditingTag &&
+      !railEditingParentTag &&
+      (homeBrowseNav === 'links' || homeBrowseNav === 'books'),
+    open: openAddNote,
+  }
+
+  useEffect(() => {
+    let swallowPasteUntil = 0
+
+    function openFromClipboardRaw(raw: string): boolean {
+      const seed = noteTextFromClipboard(raw)
+      if (!seed) return false
+      swallowPasteUntil = Date.now() + 600
+      void pasteComposeRef.current.open(seed)
+      pasteCatcherRef.current?.blur()
+      return true
+    }
+
+    function clipboardRawFromEvent(e: ClipboardEvent): string {
+      return (
+        e.clipboardData?.getData('text/plain') ||
+        clipboardHtmlToPlainMemoText(
+          e.clipboardData?.getData('text/html') ?? '',
+        )
+      )
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (!isPasteHotkey(e)) return
+      if (!pasteComposeRef.current.enabled) return
+      if (
+        isTypingPasteTarget(e.target) ||
+        isTypingPasteTarget(document.activeElement)
+      ) {
+        return
+      }
+      const catcher = pasteCatcherRef.current
+      if (catcher) {
+        catcher.value = ''
+        catcher.focus({ preventScroll: true })
+      }
+      if (!navigator.clipboard?.readText) return
+      void navigator.clipboard
+        .readText()
+        .then((text) => {
+          if (!pasteComposeRef.current.enabled) return
+          openFromClipboardRaw(text)
+        })
+        .catch(() => {
+          /* 이어지는 paste 이벤트가 처리 */
+        })
+    }
+
+    function onPaste(e: ClipboardEvent) {
+      if (Date.now() < swallowPasteUntil) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      if (!pasteComposeRef.current.enabled) return
+      if (isTypingPasteTarget(e.target)) return
+      const raw = clipboardRawFromEvent(e)
+      if (!openFromClipboardRaw(raw)) return
+      e.preventDefault()
+      e.stopPropagation()
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('paste', onPaste, true)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('paste', onPaste, true)
+    }
+  }, [])
 
   function toggleSearch() {
     if (searchOpen || hasActiveSearch) {
@@ -4820,6 +5023,18 @@ export function HomePage() {
         homeHubOpen ? 'home-layout home-layout--hub-font' : 'home-layout'
       }
     >
+      <textarea
+        ref={pasteCatcherRef}
+        data-paste-catcher=""
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        inputMode="none"
+      />
       {loadError ? (
         <div className="setup-banner" role="status">
           <p className="setup-banner-title">데이터를 불러오지 못했습니다</p>
@@ -6011,7 +6226,8 @@ export function HomePage() {
           open={addNoteOpen}
           onClose={() => closeAddNote()}
           initialTags={addNoteCompose.initialTags}
-          initialSource={addNoteInitialSource}
+          initialSource={addNoteModalSource}
+          initialBody={addNotePasteSeed?.body ?? ''}
           lockedParentTagId={addNoteCompose.lockedParentTagId}
           childTagCompose={addNoteCompose.childTagCompose}
           allTags={allTags}
@@ -6071,18 +6287,12 @@ export function HomePage() {
         onChildrenSynced={(payload) => {
           applyChildrenSynced(payload)
           const parentId = railEditingParentTag?.id
-          if (parentId) {
-            setBooksRailExpandedParentId(parentId)
-            setHomeBrowseNav('books')
-          }
+          if (parentId) enterFolderView(parentId)
         }}
         onFolderSourcesSynced={(links) => {
           applyFolderSourcesSynced(links)
           const parentId = railEditingParentTag?.id
-          if (parentId) {
-            setBooksRailExpandedParentId(parentId)
-            setHomeBrowseNav('books')
-          }
+          if (parentId) enterFolderView(parentId)
         }}
         onTagError={(message) => setSaveError(message)}
         onSyncFromServer={syncAllFromServer}
