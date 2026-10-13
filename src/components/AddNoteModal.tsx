@@ -2,6 +2,8 @@ import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { ModalFooter } from './ModalFooter'
 import { TagComposer, type SelectedTag } from './TagComposer'
 import { SourceComposer, type SelectedSource } from './SourceComposer'
+import { ConfirmModal } from './ConfirmModal'
+import { displaySourceTitle, sourceTitleKey } from '../lib/sourceUtils'
 import {
   createNoteWithTags,
   type NoteWithTags,
@@ -15,6 +17,8 @@ import { readMemoEditorBody } from '../lib/memoQuickEmojis'
 type SavedOptions = {
   /** 서버 저장 성공 후 임시(로컬) 메모 id를 교체할 때 */
   replacingId?: string
+  /** 서버 insert 전 로컬 미리보기 */
+  pending?: boolean
 }
 
 type Props = {
@@ -24,6 +28,8 @@ type Props = {
   initialTags: SelectedTag[]
   /** 출처 뷰에서 출처 선택 후 + — 출처 칸에 미리 넣음 */
   initialSource?: SelectedSource | null
+  /** 출처 뷰 — 교보 붙여넣기가 출처를 덮지 않음 */
+  keepFilledSource?: boolean
   /** 붙여넣기로 열 때 본문 */
   initialBody?: string
   /** 상위태그 spine 클릭 맥락 — 상위태그 칩·제목 고정, 상위 선택 UI 숨김 */
@@ -46,38 +52,33 @@ function buildSeedTags(
   const seed = initialTags.map((t) => ({ ...t }))
   if (!lockedParentTagId) return seed
   const parent = allTags.find((t) => t.id === lockedParentTagId)
-  const name = normalizeTagInput(parent?.name ?? '')
-  if (!name) return seed
-  const already = seed.some(
-    (t) =>
-      t.id === lockedParentTagId ||
-      normalizeTagInput(t.name).toLowerCase() === name.toLowerCase(),
-  )
-  if (already) return seed
+  if (!parent) return seed
+  if (seed.some((t) => t.id === lockedParentTagId)) return seed
   seed.unshift({
     id: lockedParentTagId,
-    name,
-    color_index: parent?.color_index ?? 0,
+    name: parent.name,
+    color_index: parent.color_index,
   })
   return seed
 }
 
-function resolveSaveTagNames(
+function resolveSaveTags(
   tags: SelectedTag[],
   lockedParentTagId: string | null | undefined,
   allTags: TagRow[],
-): string[] {
-  const names = tags.map((t) => normalizeTagInput(t.name)).filter(Boolean)
-  if (!lockedParentTagId) return names
+): { id?: string; name: string }[] {
+  const next = tags
+    .map((t) => ({
+      id: t.id,
+      name: normalizeTagInput(t.name),
+    }))
+    .filter((t) => t.id || t.name)
+  if (!lockedParentTagId) return next
+  if (next.some((t) => t.id === lockedParentTagId)) return next
   const parent = allTags.find((t) => t.id === lockedParentTagId)
-  const parentName = normalizeTagInput(parent?.name ?? '')
-  if (
-    parentName &&
-    !names.some((n) => n.toLowerCase() === parentName.toLowerCase())
-  ) {
-    names.unshift(parentName)
-  }
-  return names
+  if (!parent) return next
+  next.unshift({ id: parent.id, name: parent.name })
+  return next
 }
 
 function buildLocalPreviewNote(
@@ -118,6 +119,7 @@ export function AddNoteModal({
   onClose,
   initialTags,
   initialSource = null,
+  keepFilledSource = false,
   initialBody = '',
   lockedParentTagId = null,
   childTagCompose = false,
@@ -138,6 +140,9 @@ export function AddNoteModal({
   const [error, setError] = useState<string | null>(null)
   const [fieldHint, setFieldHint] = useState<'tags' | 'body' | null>(null)
   const [composeSession, setComposeSession] = useState(0)
+  const [pendingPasteSource, setPendingPasteSource] = useState<string | null>(
+    null,
+  )
   const prevOpenRef = useRef(false)
   const savingRef = useRef(false)
   const allTagsRef = useRef(allTags)
@@ -164,6 +169,7 @@ export function AddNoteModal({
       setSelectedSource(null)
       setError(null)
       setFieldHint(null)
+      setPendingPasteSource(null)
       return
     }
 
@@ -190,6 +196,7 @@ export function AddNoteModal({
     )
     setError(null)
     setFieldHint(seedBody.trim() && seed.length === 0 ? 'tags' : null)
+    setPendingPasteSource(null)
     setComposeSession((n) => n + 1)
   }, [open, lockedParentTagId, childTagCompose])
 
@@ -202,6 +209,7 @@ export function AddNoteModal({
   const modalTitle = lockedParentName || '메모 추가'
 
   return (
+    <>
     <div className="tag-manage-overlay tag-manage-overlay--edit-note" role="presentation">
       <div className="tag-manage-backdrop" aria-hidden="true" />
       <div
@@ -257,10 +265,26 @@ export function AddNoteModal({
                   setFieldHint((h) => (h === 'body' ? null : h))
                 }}
                 source={selectedSource?.title ?? ''}
-                onSourceChange={(title) => {
-                  const t = title.trim()
-                  setSelectedSource(t ? { title: t } : null)
-                }}
+                onSourceChange={
+                  keepFilledSource
+                    ? undefined
+                    : (title) => {
+                        const t = title.trim()
+                        if (!t) return
+                        const current = selectedSource?.title.trim() ?? ''
+                        if (
+                          current &&
+                          sourceTitleKey(current) !== sourceTitleKey(t)
+                        ) {
+                          setPendingPasteSource(t)
+                          return
+                        }
+                        setSelectedSource({
+                          title: t,
+                          id: selectedSource?.id,
+                        })
+                      }
+                }
                 placeholder="내용을 입력하세요"
                 rows={5}
                 scrollClamp
@@ -296,7 +320,7 @@ export function AddNoteModal({
                   bodyId,
                 ) as HTMLDivElement | null
                 const saveBody = readMemoEditorBody(editorEl) || body
-                const saveTags = resolveSaveTagNames(
+                const saveTags = resolveSaveTags(
                   tags,
                   lockedParentTagId,
                   allTags,
@@ -313,14 +337,13 @@ export function AddNoteModal({
                 setFieldHint(null)
                 const saveSource = selectedSource?.title ?? ''
                 const tempId = crypto.randomUUID()
-                const previewTags: SelectedTag[] = saveTags.map((name) => {
-                  const hit = allTags.find(
-                    (t) =>
-                      t.name.toLowerCase() === name.toLowerCase() || t.name === name,
-                  )
+                const previewTags: SelectedTag[] = saveTags.map((t) => {
+                  const hit = t.id
+                    ? allTags.find((row) => row.id === t.id)
+                    : undefined
                   return {
-                    id: hit?.id,
-                    name,
+                    id: t.id ?? hit?.id,
+                    name: t.name,
                     color_index: hit?.color_index ?? 0,
                   }
                 })
@@ -331,17 +354,21 @@ export function AddNoteModal({
                   previewTags,
                   allTags,
                 )
-                void onSaved(preview)
+                void onSaved(preview, { pending: true })
                 onClose()
                 void (async () => {
                   try {
                     const note = await createNoteWithTags(
                       saveBody,
-                      saveTags,
+                      saveTags.map((t) => t.name),
                       userId,
                       [...allTags],
                       saveSource,
                       [...allSources],
+                      {
+                        sourceId: selectedSource?.id ?? null,
+                        tags: saveTags,
+                      },
                     )
                     await onSaved(note, { replacingId: tempId })
                   } catch (e) {
@@ -368,5 +395,25 @@ export function AddNoteModal({
         </ModalFooter>
       </div>
     </div>
+      <ConfirmModal
+        open={pendingPasteSource !== null}
+        title="출처를 바꿀까요?"
+        message={
+          selectedSource?.title
+            ? `원래 출처는 「${displaySourceTitle(selectedSource.title)}」입니다. 붙여넣은 「${displaySourceTitle(pendingPasteSource ?? '')}」(으)로 바꿀까요?`
+            : ''
+        }
+        confirmLabel="바꾸기"
+        cancelLabel="유지"
+        footerAlign="between"
+        confirmFirst
+        onCancel={() => setPendingPasteSource(null)}
+        onConfirm={() => {
+          const next = pendingPasteSource?.trim()
+          setPendingPasteSource(null)
+          if (next) setSelectedSource({ title: next })
+        }}
+      />
+    </>
   )
 }

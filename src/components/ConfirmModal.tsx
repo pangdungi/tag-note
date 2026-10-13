@@ -10,6 +10,10 @@ type Props = {
   /** 위험 동작(삭제 등)이면 붉은 강조 확인 버튼 */
   danger?: boolean
   busy?: boolean
+  /** between: 양쪽 · end: 오른쪽 */
+  footerAlign?: 'between' | 'end'
+  /** 확인을 왼쪽, 취소를 오른쪽 */
+  confirmFirst?: boolean
   onConfirm: () => void | Promise<void>
   onCancel: () => void
 }
@@ -22,6 +26,8 @@ export function ConfirmModal({
   cancelLabel = '취소',
   danger = false,
   busy = false,
+  footerAlign = 'end',
+  confirmFirst = false,
   onConfirm,
   onCancel,
 }: Props) {
@@ -48,25 +54,50 @@ export function ConfirmModal({
             {message}
           </p>
         </div>
-        <ModalFooter align="end">
-          <button
-            type="button"
-            className="btn btn--quiet"
-            disabled={busy}
-            onClick={() => onCancel()}
-          >
-            {cancelLabel}
-          </button>
-          <button
-            type="button"
-            className={
-              danger ? 'btn btn--danger' : 'btn btn--emphasis'
-            }
-            disabled={busy}
-            onClick={() => void onConfirm()}
-          >
-            {confirmLabel}
-          </button>
+        <ModalFooter align={footerAlign}>
+          {confirmFirst ? (
+            <>
+              <button
+                type="button"
+                className={
+                  danger ? 'btn btn--danger' : 'btn btn--emphasis'
+                }
+                disabled={busy}
+                onClick={() => void onConfirm()}
+              >
+                {confirmLabel}
+              </button>
+              <button
+                type="button"
+                className="btn btn--quiet"
+                disabled={busy}
+                onClick={() => onCancel()}
+              >
+                {cancelLabel}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="btn btn--quiet"
+                disabled={busy}
+                onClick={() => onCancel()}
+              >
+                {cancelLabel}
+              </button>
+              <button
+                type="button"
+                className={
+                  danger ? 'btn btn--danger' : 'btn btn--emphasis'
+                }
+                disabled={busy}
+                onClick={() => void onConfirm()}
+              >
+                {confirmLabel}
+              </button>
+            </>
+          )}
         </ModalFooter>
       </div>
     </div>

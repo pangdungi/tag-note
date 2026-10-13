@@ -43,6 +43,21 @@ export function displaySourceTitle(title: string): string {
   return normalizeSourceTitle(title)
 }
 
+export const SOURCE_REVIEW_MAX = 800
+
+export function normalizeSourceRating(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isInteger(n) || n < 1 || n > 5) return null
+  return n
+}
+
+export function normalizeSourceReview(value: unknown): string {
+  return String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .trim()
+    .slice(0, SOURCE_REVIEW_MAX)
+}
+
 /** 책장에 세웠을 때 높이(mm). 예스24 세로(length) 우선, 없으면 가로. */
 export function bookStandingHeightMm(source: {
   book_length_mm?: number | null
@@ -55,22 +70,20 @@ export function bookStandingHeightMm(source: {
   return null
 }
 
-/** 이미지 없는 텍스트 북스파인 — 짧은 제목도 신국판(188mm) 정도로 맞춤 */
-export const DEFAULT_TEXT_SPINE_FILL = 0.78
-export const MIN_TEXT_SPINE_FILL = 0.62
+/** 이미지 없는 텍스트 북스파인 — 6자까지 기본 높이, 7자부터 제목에 맞춤 */
+export const DEFAULT_TEXT_SPINE_FILL = 0.5
+export const MIN_TEXT_SPINE_FILL = 0.5
+const TEXT_SPINE_GROW_FROM = 7
+const TEXT_SPINE_PER_CHAR = 0.05
 
-export function textSpineFillRatio(
-  source: {
-    book_length_mm?: number | null
-    book_width_mm?: number | null
-  },
-  maxStandingMm?: number | null,
-): number {
-  const mm = bookStandingHeightMm(source)
-  if (mm && maxStandingMm && maxStandingMm > 0) {
-    return Math.min(1, Math.max(MIN_TEXT_SPINE_FILL, mm / maxStandingMm))
-  }
-  return DEFAULT_TEXT_SPINE_FILL
+export function spineTitleCharCount(title: string): number {
+  return [...displaySourceTitle(title).replace(/[()（）<>〈〉\s]/g, '')].length
+}
+
+export function textSpineFillRatio(title: string): number {
+  const n = spineTitleCharCount(title)
+  if (n < TEXT_SPINE_GROW_FROM) return DEFAULT_TEXT_SPINE_FILL
+  return Math.min(1, DEFAULT_TEXT_SPINE_FILL + (n - 6) * TEXT_SPINE_PER_CHAR)
 }
 
 /** 책 뷰 북스파인 — 출처 없는 메모를 모은 가상 항목 id */

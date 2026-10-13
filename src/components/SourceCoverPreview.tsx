@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { SourceRow } from '../lib/notesApi'
 import { resolveSourceCoverUrl } from '../lib/bookCatalogServer'
 import {
-  normalizeSourceBookColor,
+  resolveTextSpineColor,
   sourceBookColorStyle,
 } from '../lib/sourceBookColor'
 import { bookStandingHeightMm, displaySourceTitle } from '../lib/sourceUtils'
@@ -39,8 +39,8 @@ export function SourceCoverPreview({
   const [imageBroken, setImageBroken] = useState(false)
   const [imageRatio, setImageRatio] = useState<number | null>(null)
   const showCover = Boolean(coverUrl) && !imageBroken
-  const bookColor = normalizeSourceBookColor(source.spine_color)
-  const tintBlank = Boolean(!showCover && bookColor)
+  const bookColor = showCover ? null : resolveTextSpineColor(source)
+  const tintBlank = Boolean(bookColor)
   const height = Math.max(48, spineHeight || 160)
   const width = Math.max(24, height * coverRatio(source, imageRatio))
 
@@ -60,10 +60,13 @@ export function SourceCoverPreview({
         <span className="links-shelf-cover-inside" aria-hidden="true" />
         <button
           type="button"
-          className="links-shelf-cover"
+          className={`links-shelf-cover${
+            tintBlank ? ' links-shelf-cover--book-color' : ''
+          }`}
           aria-label={`${label} 메모 보기`}
           disabled={opening}
           onClick={onOpen}
+          style={tintBlank && bookColor ? sourceBookColorStyle(bookColor) : undefined}
         >
           {showCover && coverUrl ? (
             <img
@@ -84,7 +87,6 @@ export function SourceCoverPreview({
               className={`links-shelf-cover-blank${
                 tintBlank ? ' links-shelf-cover-blank--book-color' : ''
               }`}
-              style={tintBlank && bookColor ? sourceBookColorStyle(bookColor) : undefined}
             >
               <span className="links-shelf-cover-title">{label}</span>
             </span>

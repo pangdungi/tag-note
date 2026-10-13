@@ -9,6 +9,7 @@ import {
 } from '../lib/bookCatalogServer'
 import {
   normalizeSourceBookColor,
+  resolveTextSpineColor,
   sourceBookColorStyle,
 } from '../lib/sourceBookColor'
 import {
@@ -23,20 +24,22 @@ type SourceSpineCardProps = {
   source: SourceRow
   selected: boolean
   expanded: boolean
-  tagCount: number
   maxSpineHeight?: number
   onSelect: (event: MouseEvent<HTMLButtonElement>) => void
   onSpineSize?: (size: { width: number; height: number }) => void
+  onHoverStart?: () => void
+  onHoverEnd?: () => void
 }
 
 export function SourceSpineCard({
   source,
   selected,
   expanded,
-  tagCount,
   maxSpineHeight,
   onSelect,
   onSpineSize,
+  onHoverStart,
+  onHoverEnd,
 }: SourceSpineCardProps) {
   const label = displaySourceTitle(source.title)
   const goodsNo = source.yes24_goods_no?.trim() ?? ''
@@ -49,7 +52,9 @@ export function SourceSpineCard({
   )
   const useImage = Boolean(spineUrl) && !imageBroken && remoteSpineReady
   const bookColor = !useImage
-    ? normalizeSourceBookColor(source.spine_color)
+    ? isSourceViewNoneId(source.id)
+      ? normalizeSourceBookColor(source.spine_color)
+      : resolveTextSpineColor(source)
     : null
   const [loadedSpineSize, setLoadedSpineSize] = useState<{
     width: number
@@ -87,9 +92,7 @@ export function SourceSpineCard({
   const naturalH =
     standingMm ?? spineHeight ?? loadedSpineSize?.height ?? 560
   const naturalW = spineWidth ?? loadedSpineSize?.width ?? 80
-  const textFill = useImage
-    ? undefined
-    : textSpineFillRatio(source, standingMm ? maxSpineHeight : null)
+  const textFill = useImage ? undefined : textSpineFillRatio(source.title)
   const cardStyle: CSSProperties = useImage
     ? {
         ['--source-spine-natural-w' as string]: String(naturalW),
@@ -119,9 +122,18 @@ export function SourceSpineCard({
           : ''
       }${
         isSourceViewNoneId(source.id) ? ' parent-tag-card--source-none' : ''
+      }${
+        source.is_life_book ? ' parent-tag-card--life-book' : ''
       }`}
       style={cardStyle}
+      onPointerEnter={onHoverStart}
+      onPointerLeave={onHoverEnd}
     >
+      {source.is_life_book ? (
+        <span className="source-life-book-mark" title="인생책" aria-hidden>
+          인생
+        </span>
+      ) : null}
       <button
         type="button"
         className={`parent-tag-card-body${
@@ -130,7 +142,7 @@ export function SourceSpineCard({
         aria-pressed={selected}
         aria-current={selected ? 'true' : undefined}
         aria-expanded={expanded}
-        aria-label={label}
+        aria-label={source.is_life_book ? `${label} · 인생책` : label}
         title={label}
         onClick={(event) => onSelect(event)}
       >
@@ -183,11 +195,6 @@ export function SourceSpineCard({
           </span>
         ) : null}
       </button>
-      {!useImage ? (
-        <span className="parent-tag-spine-stat" aria-label={`태그 ${tagCount}개`}>
-          {tagCount}
-        </span>
-      ) : null}
     </div>
   )
 }

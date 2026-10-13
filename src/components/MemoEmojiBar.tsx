@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import {
   MEMO_CIRCLED_NUMBERS,
   MEMO_QUICK_EMOJIS,
@@ -18,6 +19,14 @@ export function MemoEmojiBar({
   highlightActive = false,
   disabled = false,
 }: Props) {
+  const lastInsertAt = useRef(0)
+  function once(run: () => void) {
+    const now = Date.now()
+    if (now - lastInsertAt.current < 160) return
+    lastInsertAt.current = now
+    run()
+  }
+
   return (
     <div className="memo-emoji-bar-wrap">
       <div className="memo-emoji-bar" role="toolbar" aria-label="빠른 아이콘">
@@ -29,7 +38,7 @@ export function MemoEmojiBar({
             aria-label={`${item.label} 삽입`}
             disabled={disabled}
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => onInsert(item.id)}
+            onClick={() => once(() => onInsert(item.id))}
           >
             <img
               className="memo-emoji-bar-icon"
@@ -50,7 +59,7 @@ export function MemoEmojiBar({
             aria-pressed={highlightActive}
             disabled={disabled}
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => onHighlight()}
+            onClick={() => once(() => onHighlight())}
           >
             <span className="memo-emoji-bar-highlight-icon" aria-hidden="true" />
           </button>
@@ -70,7 +79,7 @@ export function MemoEmojiBar({
               aria-label={`${item.label}번 삽입`}
               disabled={disabled}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => onInsertCircledNumber(item.char)}
+              onClick={() => once(() => onInsertCircledNumber(item.char))}
             >
               {item.char}
             </button>

@@ -31,10 +31,13 @@ import {
   resolveSourceSpineUrl,
 } from '../lib/bookCatalogServer'
 import { SourceBookColorField } from './SourceBookColorField'
+import { SourceLifeBookField } from './SourceLifeBookField'
+import { SourceRatingReviewFields } from './SourceRatingReviewFields'
 import {
   canEditSourceBookColor,
   isManualSource,
   normalizeSourceBookColor,
+  resolveTextSpineColor,
   useCoverSampleColor,
 } from '../lib/sourceBookColor'
 import {
@@ -44,6 +47,8 @@ import {
 import {
   displaySourceTitle,
   normalizeSourceCategory,
+  normalizeSourceRating,
+  normalizeSourceReview,
   normalizeSourceTitle,
   SOURCE_CATEGORY_OPTIONS,
   SOURCE_CATEGORY_UNCategorized,
@@ -130,6 +135,12 @@ export function EditSourceModal({
   const [initialSpineColor, setInitialSpineColor] = useState<string | null>(
     null,
   )
+  const [lifeBook, setLifeBook] = useState(false)
+  const [initialLifeBook, setInitialLifeBook] = useState(false)
+  const [rating, setRating] = useState<number | null>(null)
+  const [initialRating, setInitialRating] = useState<number | null>(null)
+  const [review, setReview] = useState('')
+  const [initialReview, setInitialReview] = useState('')
 
   const categoryOptions = useMemo(() => {
     const base = SOURCE_CATEGORY_OPTIONS.filter(
@@ -185,6 +196,15 @@ export function EditSourceModal({
       const nextColor = normalizeSourceBookColor(source.spine_color)
       setSpineColor(nextColor)
       setInitialSpineColor(nextColor)
+      const nextLifeBook = Boolean(source.is_life_book)
+      setLifeBook(nextLifeBook)
+      setInitialLifeBook(nextLifeBook)
+      const nextRating = normalizeSourceRating(source.rating)
+      setRating(nextRating)
+      setInitialRating(nextRating)
+      const nextReview = normalizeSourceReview(source.review)
+      setReview(nextReview)
+      setInitialReview(nextReview)
       setError(null)
       setDeleteConfirmOpen(false)
       setMoveTargetId('')
@@ -311,13 +331,20 @@ export function EditSourceModal({
   const canEditColor = canEditSourceBookColor(source, { hasLocalSpine })
   const coverUrl = resolveSourceCoverUrl(source)
   const colorChanged = (spineColor ?? null) !== (initialSpineColor ?? null)
+  const lifeBookChanged = lifeBook !== initialLifeBook
+  const ratingChanged = rating !== initialRating
+  const reviewChanged =
+    normalizeSourceReview(review) !== initialReview
   const canSave =
     normalizeSourceTitle(title).length > 0 &&
     (titleChanged ||
       categoryChanged ||
       bookshelfChanged ||
       spineChanged ||
-      colorChanged)
+      colorChanged ||
+      lifeBookChanged ||
+      ratingChanged ||
+      reviewChanged)
 
   const previewStyle = (
     spineImage
@@ -553,10 +580,23 @@ export function EditSourceModal({
                 )}
               </div>
 
+              <SourceLifeBookField
+                checked={lifeBook}
+                disabled={saving || pasteBusy}
+                onChange={setLifeBook}
+              />
+              <SourceRatingReviewFields
+                rating={rating}
+                review={review}
+                disabled={saving || pasteBusy}
+                onRatingChange={setRating}
+                onReviewChange={setReview}
+              />
+
               {canEditColor ? (
                 <SourceBookColorField
                   value={spineColor}
-                  fallback={coverSample}
+                  fallback={coverSample ?? resolveTextSpineColor(source)}
                   disabled={saving || pasteBusy}
                   hint={
                     isManualSource(source)
@@ -644,6 +684,9 @@ export function EditSourceModal({
                   spine_image_width: nextSpine?.width ?? null,
                   spine_image_height: nextSpine?.height ?? null,
                   spine_color: saveSpineColor ?? null,
+                  is_life_book: lifeBook,
+                  rating,
+                  review: normalizeSourceReview(review) || null,
                 }
                 onSourceUpdated(optimistic)
                 onClose()
@@ -674,6 +717,9 @@ export function EditSourceModal({
                       ...(colorChanged
                         ? { spine_color: saveSpineColor ?? null }
                         : {}),
+                      is_life_book: lifeBook,
+                      rating,
+                      review: normalizeSourceReview(review) || null,
                     })
                     onSourceUpdated(row)
                   } catch (e) {

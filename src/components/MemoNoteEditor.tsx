@@ -13,6 +13,7 @@ import {
   parseNotePasteWithTrailingUrl,
 } from '../lib/pasteNoteFormat'
 import {
+  deleteMemoEmojiBeforeCaret,
   insertMemoEmojiInEditor,
   insertMemoPlainTextInEditor,
   insertPlainTextInMemoEditor,
@@ -220,6 +221,15 @@ export function MemoNoteEditor({
     }
   }
 
+  const tryDeleteEmojiBehindCaret = () => {
+    const el = editorRef.current
+    if (!el || disabled) return false
+    if (!deleteMemoEmojiBeforeCaret(el)) return false
+    emitChange()
+    rememberEditorSelection()
+    return true
+  }
+
   const handlePaste = (e: ClipboardEvent<HTMLDivElement>) => {
     if (disabled) return
     const el = editorRef.current
@@ -284,6 +294,14 @@ export function MemoNoteEditor({
           emitChange()
         }}
         onPaste={handlePaste}
+        onBeforeInput={(e) => {
+          if (e.nativeEvent.inputType !== 'deleteContentBackward') return
+          if (tryDeleteEmojiBehindCaret()) e.preventDefault()
+        }}
+        onKeyDown={(e) => {
+          if (e.key !== 'Backspace' || e.nativeEvent.isComposing) return
+          if (tryDeleteEmojiBehindCaret()) e.preventDefault()
+        }}
       />
       <MemoEmojiBar
         onInsert={handleEmojiInsert}

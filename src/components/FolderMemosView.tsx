@@ -135,11 +135,11 @@ function PaperSheet({
   )
 }
 
-const FOLDER_TAB_H = 28
-const FOLDER_TAB_JOIN = 6
-const FOLDER_TAB_CORNER = 8
+const FOLDER_TAB_H = 40
+const FOLDER_TAB_JOIN = 7
+const FOLDER_TAB_CORNER = 9
 const FOLDER_TAB_STROKE = 1.25
-const FOLDER_TAB_PAD = 10
+const FOLDER_TAB_PAD = 12
 
 function folderPageTabPath(width: number, tabLeft: number, tabWidth: number) {
   const y = FOLDER_TAB_H - FOLDER_TAB_STROKE / 2
@@ -223,7 +223,7 @@ export function FolderPageTabHead({
           <path
             d={folderPageTabPath(width, tabLeft, tabWidth)}
             fill="none"
-            stroke="#111111"
+            stroke="currentColor"
             strokeWidth={FOLDER_TAB_STROKE}
             strokeLinejoin="round"
             strokeLinecap="butt"

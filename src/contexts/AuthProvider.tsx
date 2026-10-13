@@ -23,8 +23,7 @@ import {
   fetchUserSubscription,
   SubscriptionFetchTimeoutError,
 } from '../lib/subscriptionsApi'
-import { loadAndApplyUserAppFontSafe } from '../lib/userPreferencesApi'
-import { resetAppFontForSignedOut } from '../lib/appFont'
+import { applyAppFontToDocument } from '../lib/appFont'
 import { clearHomeSnapshotCache } from '../lib/homeSnapshotCache'
 import { AuthContext } from './auth-context'
 
@@ -102,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSubscription(null)
         setSession(null)
         clearHomeSnapshotCache()
-        resetAppFontForSignedOut()
+        applyAppFontToDocument()
         return
       }
 
@@ -129,7 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (e instanceof SubscriptionFetchTimeoutError) {
           setSubscription(null)
           setSession(next)
-          void loadAndApplyUserAppFontSafe(next.user.id)
+          applyAppFontToDocument()
           return
         }
         throw e
@@ -148,13 +147,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         setSubscription(null)
         setSession(null)
-        resetAppFontForSignedOut()
+        applyAppFontToDocument()
         return
       }
 
       setSubscription(sub)
       setSession(next)
-      void loadAndApplyUserAppFontSafe(next.user.id)
+      applyAppFontToDocument()
     } finally {
       processInFlightRef.current = Math.max(0, processInFlightRef.current - 1)
       console.info('[tag-note][auth] processSession 끝', {
@@ -318,7 +317,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (e instanceof SubscriptionFetchTimeoutError) {
           setSubscription(null)
           setSession(data.session)
-          void loadAndApplyUserAppFontSafe(data.user.id)
+          applyAppFontToDocument()
           return { error: null }
         }
         throw e
@@ -331,7 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearHomeSnapshotCache(data.user.id)
         setSubscription(null)
         setSession(null)
-        resetAppFontForSignedOut()
+        applyAppFontToDocument()
         if (!sub) {
           setMissingSubscriptionNotice()
           return {
@@ -350,7 +349,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setSubscription(sub)
       setSession(data.session)
-      void loadAndApplyUserAppFontSafe(data.user.id)
+      applyAppFontToDocument()
       return { error: null }
     },
     [],
@@ -530,7 +529,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (uid) clearHomeSnapshotCache(uid)
     setSubscription(null)
     setSession(null)
-    resetAppFontForSignedOut()
+    applyAppFontToDocument()
   }, [session])
 
   const refreshSubscription = useCallback(async () => {
@@ -556,7 +555,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       else setExpiryNoticeAndSignOut()
       setSubscription(null)
       setSession(null)
-      resetAppFontForSignedOut()
+      applyAppFontToDocument()
     }
   }, [session])
 

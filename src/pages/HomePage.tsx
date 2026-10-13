@@ -7,6 +7,7 @@ import { AddBookModal } from '../components/AddBookModal'
 import { AlertModal } from '../components/AlertModal'
 import { SourceSpineCard } from '../components/SourceSpineCard'
 import { SourceCoverPreview } from '../components/SourceCoverPreview'
+import { LinksAllHoverCard } from '../components/LinksAllHoverCard'
 import { EditParentTagModal } from '../components/EditParentTagModal'
 import { EditTagModal } from '../components/EditTagModal'
 import { EditSourceModal } from '../components/EditSourceModal'
@@ -246,15 +247,11 @@ function resolveSourceSheetLayout(
 function resolveFolderSheetLayout(
   note: NoteWithTags,
   folderTagId: string,
-  folderTagName?: string,
 ): 'parent-sheet' | 'parent-sheet-memo-only' {
-  const folderNorm = folderTagName ? normalizeTagInput(folderTagName) : ''
   const visibleCount = note.note_tags.filter((nt) => {
     const id = nt.tags?.id ?? nt.tag_id
-    const name = nt.tags?.name ?? ''
     if (!id) return false
     if (id === folderTagId) return false
-    if (folderNorm && normalizeTagInput(name) === folderNorm) return false
     return true
   }).length
   return visibleCount > 0 ? 'parent-sheet' : 'parent-sheet-memo-only'
@@ -293,7 +290,6 @@ function NoteBoardCard({
   layout = 'default',
   hideSourceInMeta = false,
   hideDateInMeta = false,
-  hideFolderTagName,
 }: {
   note: NoteWithTags
   tagCatalog: Map<string, TagRow>
@@ -315,8 +311,6 @@ function NoteBoardCard({
   hideSourceInMeta?: boolean
   /** 상위태그 시트 — 날짜는 보기 모달에서만 */
   hideDateInMeta?: boolean
-  /** 폴더 뷰 — 같은 이름 태그(구 하위)도 숨김 */
-  hideFolderTagName?: string
 }) {
   const sorted = [...resolveNoteTagChips(note, tagCatalog)].sort((a, b) =>
     a.name.localeCompare(b.name, 'ko'),
@@ -325,13 +319,7 @@ function NoteBoardCard({
     hideTagIds?.filter(Boolean) ?? [],
   )
   if (excludeTagId) hidden.add(excludeTagId)
-  const folderNameNorm = hideFolderTagName
-    ? normalizeTagInput(hideFolderTagName)
-    : ''
-  const isTagHidden = (tg: { id: string; name: string }) =>
-    hidden.has(tg.id) ||
-    (folderNameNorm.length > 0 &&
-      normalizeTagInput(tg.name) === folderNameNorm)
+  const isTagHidden = (tg: { id: string; name: string }) => hidden.has(tg.id)
   const visibleTags = sorted.filter((tg) => !isTagHidden(tg))
 
   const src = resolveNoteSourceTitle(note, sourceCatalog)
@@ -435,10 +423,7 @@ function NoteBoardCard({
   }
 
   if (layout === 'parent-sheet') {
-    const sheetTags =
-      hidden.size > 0 || folderNameNorm.length > 0
-        ? sorted.filter((tg) => !isTagHidden(tg))
-        : sorted
+    const sheetTags = visibleTags
 
     return (
       <article
@@ -557,103 +542,33 @@ function getVisibleSheetTags(
   note: NoteWithTags,
   tagCatalog: Map<string, TagRow>,
   hideTagIds?: string[],
-  hideFolderTagName?: string,
 ): SheetTagChip[] {
-  const folderNameNorm = hideFolderTagName
-    ? normalizeTagInput(hideFolderTagName)
-    : ''
   const hidden = new Set(hideTagIds?.filter(Boolean) ?? [])
   return resolveNoteTagChips(note, tagCatalog)
-    .filter((tg) => {
-      if (hidden.has(tg.id)) return false
-      if (
-        folderNameNorm &&
-        normalizeTagInput(tg.name) === folderNameNorm
-      ) {
-        return false
-      }
-      return true
-    })
+    .filter((tg) => !hidden.has(tg.id))
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
-function sheetTagGroupsShareAnyTagId(
-  tagIdsA: Set<string>,
-  tagIdsB: Set<string>,
-): boolean {
-  if (tagIdsA.size === 0 || tagIdsB.size === 0) return false
-  for (const id of tagIdsA) {
-    if (tagIdsB.has(id)) return true
-  }
-  return false
+function sheetTagSetKey(tags: SheetTagChip[]): string {
+  if (tags.length === 0) return '__memo_only__'
+  return [...new Set(tags.map((t) => t.id))].sort().join('\0')
 }
 
-/** 태그 id가 하나라도 겹치면 시트 블록을 붙여서 배치 (각 행의 태그 목록은 그대로) */
-function clusterSheetGroupsBySharedTags<
-  T extends { tags: SheetTagChip[] },
->(groups: T[]): T[] {
-  if (groups.length <= 1) return groups
-
-  const tagSets = groups.map((g) => new Set(g.tags.map((t) => t.id)))
-  const parent = groups.map((_, i) => i)
-
-  const findRoot = (i: number): number => {
-    let cur = i
-    while (parent[cur] !== cur) {
-      const next = parent[cur]!
-      parent[cur] = next
-      cur = next
-    }
-    return cur
-  }
-
-  const unionRoots = (a: number, b: number) => {
-    const ra = findRoot(a)
-    const rb = findRoot(b)
-    if (ra !== rb) parent[ra] = rb
-  }
-
-  for (let i = 0; i < groups.length; i++) {
-    for (let j = i + 1; j < groups.length; j++) {
-      if (sheetTagGroupsShareAnyTagId(tagSets[i]!, tagSets[j]!)) {
-        unionRoots(i, j)
-      }
-    }
-  }
-
-  const clusterMap = new Map<number, number[]>()
-  for (let i = 0; i < groups.length; i++) {
-    const root = findRoot(i)
-    const list = clusterMap.get(root)
-    if (list) list.push(i)
-    else clusterMap.set(root, [i])
-  }
-
-  const clusterRoots = [...clusterMap.keys()].sort(
-    (a, b) => Math.min(...clusterMap.get(a)!) - Math.min(...clusterMap.get(b)!),
-  )
-
-  const clustered: T[] = []
-  for (const root of clusterRoots) {
-    const indices = clusterMap.get(root)!.sort((a, b) => a - b)
-    for (const i of indices) {
-      clustered.push(groups[i]!)
-    }
-  }
-  return clustered
+function noteSheetSourceKey(note: NoteWithTags): string {
+  return note.source_id ?? note.sources?.id ?? '__no_source__'
 }
 
+/** 같은 출처·같은 폴더 안에서, 보이는 태그 id 집합이 완전히 같을 때만 묶음 */
 function groupNotesByVisibleSheetTags(
   notes: NoteWithTags[],
   tagCatalog: Map<string, TagRow>,
   hideTagIds?: string[],
-  hideFolderTagName?: string,
+  splitBySource = false,
 ): Array<{ key: string; tags: SheetTagChip[]; notes: NoteWithTags[] }> {
   const map = new Map<
     string,
     { tags: SheetTagChip[]; notes: NoteWithTags[] }
   >()
-  /** 태그 그룹 첫 등장(가장 오래된 메모) 순 — 기존 그룹에 추가해도 순서 유지 */
   const groupOrder: string[] = []
 
   for (const note of sortNotesOldestFirst(notes)) {
@@ -661,10 +576,11 @@ function groupNotesByVisibleSheetTags(
       note,
       tagCatalog,
       hideTagIds,
-      hideFolderTagName,
     )
-    const key =
-      tags.length === 0 ? '__memo_only__' : tags.map((t) => t.id).join('\0')
+    const tagKey = sheetTagSetKey(tags)
+    const key = splitBySource
+      ? `${noteSheetSourceKey(note)}\0${tagKey}`
+      : tagKey
     const bucket = map.get(key)
     if (bucket) {
       bucket.notes.push(note)
@@ -674,20 +590,22 @@ function groupNotesByVisibleSheetTags(
     }
   }
 
-  const groups = groupOrder.map((key) => {
+  return groupOrder.map((key) => {
     const group = map.get(key)!
     group.notes.sort(compareNotesOldestFirst)
+    const tags = refreshTagChipsFromCatalog(group.tags, tagCatalog)
+    const tagKey =
+      tags.length > 0
+        ? sheetTagSetKey(tags)
+        : `__memo_only__:${group.notes[0]?.id ?? 'empty'}`
     return {
       ...group,
-      tags: refreshTagChipsFromCatalog(group.tags, tagCatalog),
-      key:
-        group.tags.length > 0
-          ? group.tags.map((t) => t.id).join('\0')
-          : `__memo_only__:${group.notes[0]?.id ?? 'empty'}`,
+      tags,
+      key: splitBySource
+        ? `${noteSheetSourceKey(group.notes[0]!)}\0${tagKey}`
+        : tagKey,
     }
   })
-
-  return clusterSheetGroupsBySharedTags(groups)
 }
 
 function NoteBoardSheetTagLine({
@@ -986,7 +904,7 @@ function InlineRailNotesPanel({
       ? tagId
       : undefined
 
-  const sheetGroupByTag = false
+  const sheetGroupByTag = sheetFolderMode || sheetSourceMode
 
   const { pinnedNotes, restNotes } = useMemo(() => {
     const pinned: NoteWithTags[] = []
@@ -1004,7 +922,7 @@ function InlineRailNotesPanel({
       restNotes,
       tagCatalog,
       sheetHiddenTagIds,
-      sheetFolderMode ? sheetFolderTagName ?? tagLabel : undefined,
+      sheetFolderMode,
     )
   }, [
     sheetGroupByTag,
@@ -1046,9 +964,6 @@ function InlineRailNotesPanel({
       sourceLink={false}
       hideSourceInMeta={sheetSourceMode}
       hideDateInMeta={sheetLayout}
-      hideFolderTagName={
-        sheetFolderMode ? sheetFolderTagName ?? tagLabel : undefined
-      }
       layout={
         sheetLayout
           ? pinnedNoteIds?.has(note.id)
@@ -1059,7 +974,6 @@ function InlineRailNotesPanel({
                 ? resolveFolderSheetLayout(
                     note,
                     sheetHideParentTagId,
-                    sheetFolderTagName ?? tagLabel,
                   )
                 : resolveParentSheetLayout(
                     note,
@@ -1143,26 +1057,6 @@ type RailEditContext =
   | { kind: 'parent'; tag: TagRow }
   | { kind: 'tag'; tag: TagRow }
   | { kind: 'source'; source: SourceRow }
-
-function LinksCategoryDoodleRule() {
-  return (
-    <svg
-      className="links-category-doodle-rule"
-      viewBox="0 0 420 16"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <path
-        className="links-category-doodle-rule__a"
-        d="M2 8.2 C 18 5.1, 34 11.6, 52 7.4 S 88 4.2, 112 10.1 S 148 6.4, 176 9.6 S 214 4.8, 242 10.4 S 278 6.1, 308 9.2 S 344 12.4, 372 7.8 S 398 5.6, 418 8.6"
-      />
-      <path
-        className="links-category-doodle-rule__b"
-        d="M3 9.6 C 22 6.8, 40 12.8, 58 8.8 S 96 5.4, 118 11 S 156 7.2, 184 10.4 S 222 6, 250 11.2 S 286 7, 314 10 S 350 13.2, 376 8.8 S 400 6.4, 417 9.4"
-      />
-    </svg>
-  )
-}
 
 function HomeTagGridLoadingHint() {
   useLoadingUiMountLog('HomePage · section.tag-grid-section · loading===true')
@@ -1549,6 +1443,8 @@ export function HomePage() {
   const [previewSourceId, setPreviewSourceId] = useState<string | null>(null)
   const [previewSpineHeight, setPreviewSpineHeight] = useState(160)
   const [coverOpeningId, setCoverOpeningId] = useState<string | null>(null)
+  const skipPreviewScrollCloseRef = useRef(false)
+  const [hoverSourceId, setHoverSourceId] = useState<string | null>(null)
   const COVER_OPEN_MS = 560
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
   /** 상위태그 모드 — 하위 태그 메모만 닫아도 펼친 상위 스파인 유지 */
@@ -1704,6 +1600,12 @@ export function HomePage() {
   )
   /** 삭제·저장 후 늦게 도착한 태그 pull 응답 무시 */
   const tagPullGenerationRef = useRef(0)
+  const pendingCreateIdsRef = useRef(new Set<string>())
+  const pendingContextPinRef = useRef(new Map<string, boolean>())
+  const listPinScopeRef = useRef<{
+    kind: NoteContextPinKind
+    contextId: string
+  } | null>(null)
   const selectedTagIdRef = useRef(selectedTagId)
   const selectedSourceIdRef = useRef(selectedSourceId)
   const homeBrowseNavRef = useRef(homeBrowseNav)
@@ -2091,7 +1993,46 @@ export function HomePage() {
   }, [refreshTagsAndLinks, refreshHomeTagCounts, user?.id])
 
   const applyNoteCreated = useCallback(
-    (note: NoteWithTags, opts?: { replacingId?: string }) => {
+    (
+      note: NoteWithTags,
+      opts?: { replacingId?: string; pending?: boolean },
+    ) => {
+      if (opts?.pending) pendingCreateIdsRef.current.add(note.id)
+      const replacedId = opts?.replacingId
+      if (replacedId) {
+        pendingCreateIdsRef.current.delete(replacedId)
+        const queuedPin = pendingContextPinRef.current.get(replacedId)
+        pendingContextPinRef.current.delete(replacedId)
+        setContextPinnedIds((prev) => {
+          const wasPinned = prev.has(replacedId) || queuedPin === true
+          if (!wasPinned && queuedPin !== false) return prev
+          const next = new Set(prev)
+          next.delete(replacedId)
+          if (queuedPin === false) next.delete(note.id)
+          else next.add(note.id)
+          return next
+        })
+        if (queuedPin === true && listPinScopeRef.current && user?.id) {
+          void setNoteContextPinned(
+            note.id,
+            listPinScopeRef.current.kind,
+            listPinScopeRef.current.contextId,
+            true,
+            user.id,
+          ).catch((err) => {
+            setContextPinnedIds((prev) => {
+              const next = new Set(prev)
+              next.delete(note.id)
+              return next
+            })
+            setSaveError(
+              supabaseErrorMessage(err, '이 목록 고정을 저장하지 못했습니다.'),
+            )
+          })
+        }
+        setEditingNote((cur) => (cur?.id === replacedId ? note : cur))
+        setViewingNote((cur) => (cur?.id === replacedId ? note : cur))
+      }
       invalidateTagPullRequests()
       setNotes((prev) => {
         const next = sortNotesOldestFirst([
@@ -2120,10 +2061,13 @@ export function HomePage() {
       patchNoteInViewCaches,
       refreshHomeTagCounts,
       refreshTagsAndLinks,
+      user?.id,
     ],
   )
 
   const applyNoteRemoved = useCallback((noteId: string) => {
+    pendingCreateIdsRef.current.delete(noteId)
+    pendingContextPinRef.current.delete(noteId)
     invalidateTagPullRequests()
     setNotes((prev) => {
       const next = prev.filter((n) => n.id !== noteId)
@@ -3616,6 +3560,7 @@ export function HomePage() {
     const card = event.currentTarget.closest('.parent-tag-card')
     const height = (card ?? event.currentTarget).getBoundingClientRect().height
     setPreviewSpineHeight(height > 0 ? height : 160)
+    skipPreviewScrollCloseRef.current = true
     setPreviewSourceId(sourceId)
   }
 
@@ -3660,15 +3605,43 @@ export function HomePage() {
   useEffect(() => {
     if (homeBrowseNav !== 'links') {
       closeSourceCoverPreview()
+      setHoverSourceId(null)
     }
   }, [homeBrowseNav])
+
+  useEffect(() => {
+    if (linksViewMode !== 'all') setHoverSourceId(null)
+  }, [linksViewMode])
 
   useLayoutEffect(() => {
     if (!previewSourceId) return
     const cover = document.querySelector('.links-shelf-cover')
-    if (!(cover instanceof HTMLElement)) return
-    cover.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+    if (cover instanceof HTMLElement) {
+      cover.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+    }
+    let frame2 = 0
+    const frame1 = window.requestAnimationFrame(() => {
+      frame2 = window.requestAnimationFrame(() => {
+        skipPreviewScrollCloseRef.current = false
+      })
+    })
+    return () => {
+      window.cancelAnimationFrame(frame1)
+      window.cancelAnimationFrame(frame2)
+    }
   }, [previewSourceId])
+
+  useEffect(() => {
+    if (!previewSourceId || coverOpeningId) return
+    const root = parentTagRailSectionRef.current
+    if (!root) return
+    const onScroll = () => {
+      if (skipPreviewScrollCloseRef.current) return
+      closeSourceCoverPreview()
+    }
+    root.addEventListener('scroll', onScroll, true)
+    return () => root.removeEventListener('scroll', onScroll, true)
+  }, [previewSourceId, coverOpeningId])
 
   function toggleSourceSelect(sourceId: string) {
     if (selectedSourceId === sourceId) {
@@ -4173,6 +4146,10 @@ export function HomePage() {
         [...allTags],
         saveSource,
         [...allSources],
+        {
+          sourceId: bootstrapSource?.id ?? null,
+          tags: bootstrapTags.map((t) => ({ id: t.id, name: t.name })),
+        },
       )
       setBootstrapBody('')
       setBootstrapSource(null)
@@ -4219,6 +4196,7 @@ export function HomePage() {
     }
     return null
   }, [booksRailExpandedParentId, homeBrowseNav, selectedSourceId])
+  listPinScopeRef.current = listPinScope
 
   useEffect(() => {
     if (!listPinScope || !user?.id) {
@@ -4241,6 +4219,16 @@ export function HomePage() {
   const setListContextPin = useCallback(
     async (note: NoteWithTags, nextPinned: boolean) => {
       if (!canUseCompose || !listPinScope || !user?.id) return
+      if (pendingCreateIdsRef.current.has(note.id)) {
+        pendingContextPinRef.current.set(note.id, nextPinned)
+        setContextPinnedIds((prev) => {
+          const next = new Set(prev)
+          if (nextPinned) next.add(note.id)
+          else next.delete(note.id)
+          return next
+        })
+        return
+      }
       setContextPinnedIds((prev) => {
         const next = new Set(prev)
         if (nextPinned) next.add(note.id)
@@ -4262,11 +4250,14 @@ export function HomePage() {
           else next.add(note.id)
           return next
         })
+        const raw = supabaseErrorMessage(
+          err,
+          '이 목록 고정을 바꾸지 못했습니다.',
+        )
         setSaveError(
-          supabaseErrorMessage(
-            err,
-            '이 목록 고정을 바꾸지 못했습니다. 032 마이그레이션을 실행했는지 확인해 주세요.',
-          ),
+          raw.includes('note_context_pins_note_id_fkey')
+            ? '메모가 아직 저장되지 않아 고정하지 못했습니다.'
+            : raw,
         )
       }
     },
@@ -4374,6 +4365,19 @@ export function HomePage() {
     [sourcesForLinkModeRail],
   )
 
+  const linksAllHoverSource = useMemo(() => {
+    if (linksViewMode !== 'all' || selectedSourceId) return null
+    const id = hoverSourceId ?? previewSourceId
+    if (!id || isSourceViewNoneId(id)) return null
+    return sourcesForAllLinksView.find((row) => row.id === id) ?? null
+  }, [
+    linksViewMode,
+    selectedSourceId,
+    hoverSourceId,
+    previewSourceId,
+    sourcesForAllLinksView,
+  ])
+
   const maxBookStandingMm = useMemo(() => {
     let max = 0
     for (const s of sourcesForLinkModeRail) {
@@ -4427,11 +4431,6 @@ export function HomePage() {
   const parentTreeMemoCounts = useMemo(
     () => new Map(Object.entries(parentTreeMemoCountById)),
     [parentTreeMemoCountById],
-  )
-
-  const sourceTagCounts = useMemo(
-    () => new Map(Object.entries(sourceTagCountById)),
-    [sourceTagCountById],
   )
 
   const notesByDateGroups = useMemo(
@@ -4849,7 +4848,16 @@ export function HomePage() {
 
   async function openAddNote(seed?: AddNotePasteSeed) {
     if (!canUseCompose) return
-    setAddNotePasteSeed(seed ?? null)
+    const keepSource = Boolean(
+      homeBrowseNav === 'links' &&
+        selectedSourceId &&
+        !isSourceViewNoneId(selectedSourceId),
+    )
+    setAddNotePasteSeed(
+      seed
+        ? { ...seed, sourceTitle: keepSource ? null : seed.sourceTitle }
+        : null,
+    )
     setAddNoteOpen(true)
     if (!showFolderListAdds) return
     try {
@@ -5607,6 +5615,10 @@ export function HomePage() {
               }${
                 homeBrowseNav === 'links' ? ' parent-tag-rail-section--links-view' : ''
               }${
+                homeBrowseNav === 'links' && !selectedSourceId
+                  ? ' parent-tag-rail-section--links-shelf'
+                  : ''
+              }${
                 homeBrowseNav === 'links' &&
                 linksViewMode === 'all' &&
                 !selectedSourceId
@@ -5764,10 +5776,15 @@ export function HomePage() {
               ) : homeBrowseNav === 'links' ? (
                   <>
                     {linksViewMode === 'all' ? (
+                      <div className="links-all-stage">
+                        {linksAllHoverSource ? (
+                          <LinksAllHoverCard source={linksAllHoverSource} />
+                        ) : null}
                       <div
                         ref={parentTagRailScrollRef}
                         className="links-all-scroll"
                         aria-label="전체"
+                        onPointerLeave={() => setHoverSourceId(null)}
                       >
                         {sourcesForAllLinksView.length === 0 ? (
                           <p className="notes-hint links-all-empty">
@@ -5779,7 +5796,6 @@ export function HomePage() {
                           <div className="links-all-shelf">
                             <ul className="parent-tag-rail links-all-rail">
                               {sourcesForAllLinksView.map((s) => {
-                                const tagCount = sourceTagCounts.get(s.id) ?? 0
                                 return (
                                   <li
                                     key={s.id}
@@ -5794,13 +5810,17 @@ export function HomePage() {
                                         source={s}
                                         selected={false}
                                         expanded={false}
-                                        tagCount={tagCount}
                                         maxSpineHeight={spineHeightMaxFor(s)}
                                         onSelect={(event) =>
                                           openSourceCoverPreview(s.id, event)
                                         }
                                         onSpineSize={(size) =>
                                           rememberSpineSize(s.id, size)
+                                        }
+                                        onHoverStart={
+                                          isSourceViewNoneId(s.id)
+                                            ? undefined
+                                            : () => setHoverSourceId(s.id)
                                         }
                                       />
                                       {previewSourceId === s.id &&
@@ -5829,6 +5849,7 @@ export function HomePage() {
                           </div>
                         )}
                       </div>
+                      </div>
                     ) : (
                       <div
                         ref={parentTagRailScrollRef}
@@ -5846,7 +5867,7 @@ export function HomePage() {
                                 : '등록된 도서가 없습니다.'}
                           </p>
                         ) : null}
-                        {sourceGroupedShelves.map((shelf, shelfIndex) => (
+                        {sourceGroupedShelves.map((shelf) => (
                           <section
                             key={shelf.categoryKey}
                             ref={(el) => {
@@ -5882,7 +5903,6 @@ export function HomePage() {
                               ) : null}
                               <ul className="parent-tag-rail links-category-shelf-rail">
                                 {shelf.sources.map((s) => {
-                                  const tagCount = sourceTagCounts.get(s.id) ?? 0
                                   return (
                                     <li
                                       key={s.id}
@@ -5897,7 +5917,6 @@ export function HomePage() {
                                           source={s}
                                           selected={false}
                                           expanded={false}
-                                          tagCount={tagCount}
                                           maxSpineHeight={spineHeightMaxFor(s)}
                                           onSelect={(event) =>
                                             openSourceCoverPreview(
@@ -5933,9 +5952,6 @@ export function HomePage() {
                                 })}
                               </ul>
                             </div>
-                            {shelfIndex < sourceGroupedShelves.length - 1 ? (
-                              <LinksCategoryDoodleRule />
-                            ) : null}
                           </section>
                         ))}
                       </div>
@@ -6130,13 +6146,6 @@ export function HomePage() {
                           homeBrowseNav === 'books' &&
                           Boolean(booksRailExpandedParentId)
                         }
-                        hideFolderTagName={
-                          homeBrowseNav === 'books' && booksRailExpandedParentId
-                            ? allTags.find(
-                                (x) => x.id === booksRailExpandedParentId,
-                              )?.name
-                            : undefined
-                        }
                         hideTagIds={
                           homeBrowseNav === 'books' && booksRailExpandedParentId
                             ? [booksRailExpandedParentId]
@@ -6147,9 +6156,6 @@ export function HomePage() {
                             ? resolveFolderSheetLayout(
                                 note,
                                 booksRailExpandedParentId,
-                                allTags.find(
-                                  (x) => x.id === booksRailExpandedParentId,
-                                )?.name,
                               )
                             : 'default'
                         }
@@ -6227,6 +6233,7 @@ export function HomePage() {
           onClose={() => closeAddNote()}
           initialTags={addNoteCompose.initialTags}
           initialSource={addNoteModalSource}
+          keepFilledSource={Boolean(addNoteInitialSource)}
           initialBody={addNotePasteSeed?.body ?? ''}
           lockedParentTagId={addNoteCompose.lockedParentTagId}
           childTagCompose={addNoteCompose.childTagCompose}
@@ -6373,6 +6380,7 @@ export function HomePage() {
           onSyncNoteFromServer={syncNoteFromServer}
           onNoteDeleted={applyNoteDeleted}
           onSourcesChanged={refreshSourcesInUse}
+          keepFilledSource={Boolean(addNoteInitialSource)}
           listPin={
             listPinScope && editingNote
               ? {

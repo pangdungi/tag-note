@@ -7,6 +7,8 @@ import {
 } from './sourceSpineStorage'
 import {
   normalizeSourceCategory,
+  normalizeSourceRating,
+  normalizeSourceReview,
   normalizeSourceTitle,
   SOURCE_VIEW_NONE_ID,
   sourceTitleKey,
@@ -107,6 +109,9 @@ export type SourceRow = {
   book_height_mm?: number | null
   bookshelf_id?: string | null
   spine_color?: string | null
+  is_life_book?: boolean
+  rating?: number | null
+  review?: string | null
 }
 
 export type BookshelfRow = {
@@ -119,9 +124,13 @@ export type BookshelfRow = {
 const SOURCE_LIST_SELECT_CORE =
   'id, title, created_at, isbn, author, publisher, published_year, category, cover_image_url, kyobo_product_id, yes24_goods_no, metadata_source, spine_image_path, spine_image_width, spine_image_height, book_width_mm, book_length_mm, book_height_mm, spine_color'
 
-const SOURCE_SELECT_CORE = SOURCE_LIST_SELECT_CORE
+const SOURCE_LIST_SELECT_WITH_LIFE = `${SOURCE_LIST_SELECT_CORE}, is_life_book`
 
-const SOURCE_SELECT = `${SOURCE_LIST_SELECT_CORE}, bookshelf_id`
+const SOURCE_LIST_SELECT_WITH_REVIEW = `${SOURCE_LIST_SELECT_WITH_LIFE}, rating, review`
+
+const SOURCE_SELECT_CORE = SOURCE_LIST_SELECT_WITH_REVIEW
+
+const SOURCE_SELECT = `${SOURCE_LIST_SELECT_WITH_REVIEW}, bookshelf_id`
 
 const SOURCE_SELECT_LEGACY_CORE =
   'id, title, created_at, isbn, author, publisher, published_year, category, cover_image_url, kyobo_product_id, yes24_goods_no, metadata_source, spine_image_width, spine_image_height, book_width_mm, book_length_mm, book_height_mm'
@@ -145,6 +154,29 @@ function isMissingSpinePathColumn(error: { message?: string; code?: string }) {
 
 function isMissingSpineColorColumn(error: { message?: string; code?: string }) {
   return isMissingColumn(error, 'spine_color')
+}
+
+function isMissingLifeBookColumn(error: { message?: string; code?: string }) {
+  return isMissingColumn(error, 'is_life_book')
+}
+
+function lifeBookMigrationError() {
+  return new Error(
+    '인생책 기능을 쓰려면 Supabase에 036_sources_life_book.sql을 실행하세요.',
+  )
+}
+
+function isMissingRatingReviewColumn(error: {
+  message?: string
+  code?: string
+}) {
+  return isMissingColumn(error, 'rating') || isMissingColumn(error, 'review')
+}
+
+function ratingReviewMigrationError() {
+  return new Error(
+    '별점·도서평 기능을 쓰려면 Supabase에 037_sources_rating_review.sql을 실행하세요.',
+  )
 }
 
 function isMissingBodyPreviewColumn(error: { message?: string; code?: string }) {
@@ -175,7 +207,11 @@ async function selectSourceRows(
 ): Promise<SourceRow[]> {
   const attempts = [
     SOURCE_SELECT,
-    SOURCE_SELECT_CORE,
+    `${SOURCE_LIST_SELECT_WITH_LIFE}, bookshelf_id`,
+    SOURCE_LIST_SELECT_WITH_REVIEW,
+    SOURCE_LIST_SELECT_WITH_LIFE,
+    `${SOURCE_LIST_SELECT_CORE}, bookshelf_id`,
+    SOURCE_LIST_SELECT_CORE,
     `${SOURCE_SELECT_LEGACY_CORE}, bookshelf_id`,
     SOURCE_SELECT_LEGACY_CORE,
   ]
@@ -187,7 +223,9 @@ async function selectSourceRows(
     const retryable =
       isMissingBookshelfColumn(error) ||
       isMissingSpinePathColumn(error) ||
-      isMissingSpineColorColumn(error)
+      isMissingSpineColorColumn(error) ||
+      isMissingLifeBookColumn(error) ||
+      isMissingRatingReviewColumn(error)
     if (!retryable) throw error
   }
   if (lastError) throw lastError
@@ -896,6 +934,9 @@ export async function updateSource(
     book_height_mm?: number | null
     bookshelf_id?: string | null
     spine_color?: string | null
+    is_life_book?: boolean
+    rating?: number | null
+    review?: string | null
   },
 ): Promise<SourceRow> {
   const updates: Record<string, unknown> = {}
@@ -951,6 +992,16 @@ export async function updateSource(
   if (patch.spine_color !== undefined) {
     updates.spine_color = patch.spine_color
   }
+  if (patch.is_life_book !== undefined) {
+    updates.is_life_book = patch.is_life_book
+  }
+  if (patch.rating !== undefined) {
+    updates.rating = normalizeSourceRating(patch.rating)
+  }
+  if (patch.review !== undefined) {
+    const review = normalizeSourceReview(patch.review)
+    updates.review = review.length > 0 ? review : null
+  }
 
   if (Object.keys(updates).length === 0) {
     return (await withSignedSpineUrls([await selectSourceById(sourceId)]))[0]!
@@ -974,6 +1025,12 @@ export async function updateSource(
       throw new Error(
         '책 색 기능을 쓰려면 Supabase에 033_source_spine_color.sql을 실행하세요.',
       )
+    }
+    if (isMissingLifeBookColumn(error)) {
+      throw lifeBookMigrationError()
+    }
+    if (isMissingRatingReviewColumn(error)) {
+      throw ratingReviewMigrationError()
     }
     throw error
   }
@@ -1029,6 +1086,9 @@ export type CreateBookSourceInput = {
   book_width_mm?: number | null
   book_length_mm?: number | null
   book_height_mm?: number | null
+  is_life_book?: boolean
+  rating?: number | null
+  review?: string | null
 }
 
 /** ISBN 기준 책 출처 생성 또는 기존 행 갱신 */
@@ -1079,6 +1139,11 @@ export async function createBookSource(
     ...payload,
   }
   if (input.spine_color) insertPayload.spine_color = input.spine_color
+  if (input.is_life_book) insertPayload.is_life_book = true
+  const createRating = normalizeSourceRating(input.rating)
+  if (createRating != null) insertPayload.rating = createRating
+  const createReview = normalizeSourceReview(input.review)
+  if (createReview) insertPayload.review = createReview
 
   const { data, error } = await supabase
     .from('sources')
@@ -1089,6 +1154,15 @@ export async function createBookSource(
   if (error) {
     if (error.code === '23505') {
       throw new Error('같은 ISBN의 출처가 이미 있습니다.')
+    }
+    if (isMissingLifeBookColumn(error) && insertPayload.is_life_book) {
+      throw lifeBookMigrationError()
+    }
+    if (
+      isMissingRatingReviewColumn(error) &&
+      (insertPayload.rating != null || insertPayload.review)
+    ) {
+      throw ratingReviewMigrationError()
     }
     if (isMissingSpineColorColumn(error) && insertPayload.spine_color) {
       delete insertPayload.spine_color
@@ -1136,6 +1210,9 @@ export async function applyBookCatalogToSource(
     book_width_mm: input.book_width_mm ?? null,
     book_length_mm: input.book_length_mm ?? null,
     book_height_mm: input.book_height_mm ?? null,
+    is_life_book: input.is_life_book,
+    rating: input.rating,
+    review: input.review,
   })
 }
 
@@ -1143,6 +1220,9 @@ export type CreateManualSourceInput = {
   title: string
   category?: string | null
   spine_color?: string | null
+  is_life_book?: boolean
+  rating?: number | null
+  review?: string | null
 }
 
 /** 제목·분야로 출처 직접 등록 (ISBN 없음) */
@@ -1175,6 +1255,11 @@ export async function createManualSource(
     metadata_source: 'manual',
   }
   if (input.spine_color) insertPayload.spine_color = input.spine_color
+  if (input.is_life_book) insertPayload.is_life_book = true
+  const manualRating = normalizeSourceRating(input.rating)
+  if (manualRating != null) insertPayload.rating = manualRating
+  const manualReview = normalizeSourceReview(input.review)
+  if (manualReview) insertPayload.review = manualReview
 
   const { data, error } = await supabase
     .from('sources')
@@ -1185,6 +1270,15 @@ export async function createManualSource(
   if (error) {
     if (error.code === '23505') {
       throw new Error('같은 이름의 출처가 이미 있습니다.')
+    }
+    if (isMissingLifeBookColumn(error) && insertPayload.is_life_book) {
+      throw lifeBookMigrationError()
+    }
+    if (
+      isMissingRatingReviewColumn(error) &&
+      (insertPayload.rating != null || insertPayload.review)
+    ) {
+      throw ratingReviewMigrationError()
     }
     if (isMissingSpineColorColumn(error)) {
       throw new Error(
@@ -2035,6 +2129,49 @@ function buildNoteWithTags(
   }
 }
 
+async function lookupSourceRowById(
+  sourceId: string,
+): Promise<{ id: string; title: string } | null> {
+  const { data, error } = await supabase
+    .from('sources')
+    .select('id, title')
+    .eq('id', sourceId)
+    .maybeSingle()
+  if (error) throw error
+  return (data as { id: string; title: string } | null) ?? null
+}
+
+async function lookupTagRowById(tagId: string): Promise<TagRow | null> {
+  const { data, error } = await supabase
+    .from('tags')
+    .select('id, name, color_index, parent_id, is_parent, created_at')
+    .eq('id', tagId)
+    .maybeSingle()
+  if (error) throw error
+  return (data as TagRow | null) ?? null
+}
+
+/** 출처가 있으면 반드시 id로 붙인다. 제목 조회는 id가 없을 때만. */
+async function ensureSourceRef(
+  preferredId: string | null | undefined,
+  rawTitle: string,
+  userId: string,
+  cache: SourceRow[],
+): Promise<{ id: string; title: string } | null> {
+  const id = preferredId?.trim() || ''
+  if (id) {
+    const cached = cache.find((s) => s.id === id)
+    if (cached) return { id: cached.id, title: cached.title }
+    const row = await lookupSourceRowById(id)
+    if (row) {
+      cache.push({ id: row.id, title: row.title } as SourceRow)
+      return row
+    }
+    throw new Error('선택한 출처를 찾을 수 없습니다.')
+  }
+  return ensureSourceId(rawTitle, userId, cache)
+}
+
 async function ensureSourceId(
   rawTitle: string,
   userId: string,
@@ -2114,6 +2251,64 @@ async function resolveTagIdsForNames(
     }),
   )
   return resolved
+}
+
+export type NoteSaveLinkRefs = {
+  sourceId?: string | null
+  tags?: { id?: string | null; name: string }[]
+}
+
+function isPersistedLinkId(id: string | null | undefined): id is string {
+  return Boolean(id && !id.startsWith('pending-'))
+}
+
+async function resolveTagLinksForSave(
+  inputs: { id?: string | null; name: string }[],
+  userId: string,
+  cache: TagRow[],
+): Promise<
+  { tag_id: string; name: string; color_index: number; parent_id?: string | null }[]
+> {
+  const links: {
+    tag_id: string
+    name: string
+    color_index: number
+    parent_id?: string | null
+  }[] = []
+  const seen = new Set<string>()
+
+  for (const input of inputs) {
+    const id = input.id?.trim() || ''
+    if (isPersistedLinkId(id)) {
+      if (seen.has(id)) continue
+      let row = cache.find((t) => t.id === id) ?? null
+      if (!row) {
+        row = await lookupTagRowById(id)
+        if (row) cache.push(row)
+      }
+      if (!row) throw new Error('선택한 태그를 찾을 수 없습니다.')
+      seen.add(row.id)
+      links.push({
+        tag_id: row.id,
+        name: row.name,
+        color_index: row.color_index,
+        parent_id: row.parent_id ?? null,
+      })
+      continue
+    }
+    const label = normalizeTagInput(input.name)
+    if (!label) continue
+    const ensured = await ensureTagId(label, userId, cache)
+    if (seen.has(ensured.id)) continue
+    seen.add(ensured.id)
+    links.push({
+      tag_id: ensured.id,
+      name: label,
+      color_index: ensured.color_index,
+      parent_id: ensured.parent_id ?? null,
+    })
+  }
+  return links
 }
 
 /** 캐시에 있는 태그만 즉시 해석 (DB insert 없음) */
@@ -2706,11 +2901,17 @@ export async function createNoteWithTags(
   tagCache: TagRow[],
   source?: string,
   sourceCache: SourceRow[] = [],
+  refs?: NoteSaveLinkRefs,
 ): Promise<NoteWithTags> {
   const trimmed = body.trim()
   const sourceTrim = (source ?? '').trim()
-  const labels = tagNames.map((t) => normalizeTagInput(t)).filter(Boolean)
-  const meta = noteSavePayloadMeta(body, source ?? '', tagNames)
+  const tagInputs = refs?.tags?.length
+    ? refs.tags
+    : tagNames.map((name) => ({ name }))
+  const labels = tagInputs
+    .map((t) => normalizeTagInput(t.name))
+    .filter(Boolean)
+  const meta = noteSavePayloadMeta(body, source ?? '', labels)
   console.info('[태그노트] 메모 create 시작', { userId, ...meta })
 
   if (!trimmed) {
@@ -2719,7 +2920,7 @@ export async function createNoteWithTags(
     throw err
   }
 
-  if (labels.length === 0) {
+  if (tagInputs.length === 0) {
     const err = new Error('태그를 하나 이상 추가하세요.')
     logNoteSaveError('create', '입력 검증', { userId, ...meta }, err)
     throw err
@@ -2732,20 +2933,21 @@ export async function createNoteWithTags(
     parent_id?: string | null
   }[]
   try {
-    tagLinks = await resolveTagIdsForNames(
-      labels,
-      userId,
-      tagCache,
-    )
+    tagLinks = await resolveTagLinksForSave(tagInputs, userId, tagCache)
   } catch (error) {
     logNoteSaveError('create', '태그 ID 해석', { userId, ...meta }, error)
     throw error
   }
 
   let sourceRef: { id: string; title: string } | null = null
-  if (sourceTrim) {
+  if (refs?.sourceId || sourceTrim) {
     try {
-      sourceRef = await ensureSourceId(sourceTrim, userId, sourceCache)
+      sourceRef = await ensureSourceRef(
+        refs?.sourceId,
+        sourceTrim,
+        userId,
+        sourceCache,
+      )
     } catch (error) {
       logNoteSaveError('create', '출처 ID 해석', { userId, ...meta }, error)
       throw error
@@ -2797,14 +2999,20 @@ export async function updateNoteWithTags(
   source?: string,
   sourceCache: SourceRow[] = [],
   isPinned?: boolean,
+  refs?: NoteSaveLinkRefs,
 ): Promise<NoteWithTags> {
   const trimmed = body.trim()
   const sourceTrim = (source ?? '').trim()
-  const labels = tagNames.map((t) => normalizeTagInput(t)).filter(Boolean)
-  const meta = { noteId, userId, ...noteSavePayloadMeta(body, source ?? '', tagNames) }
+  const tagInputs = refs?.tags?.length
+    ? refs.tags
+    : tagNames.map((name) => ({ name }))
+  const labels = tagInputs
+    .map((t) => normalizeTagInput(t.name))
+    .filter(Boolean)
+  const meta = { noteId, userId, ...noteSavePayloadMeta(body, source ?? '', labels) }
   console.info('[태그노트] 메모 update 시작', meta)
 
-  if (labels.length === 0) {
+  if (tagInputs.length === 0) {
     const err = new Error('태그를 하나 이상 유지하세요.')
     logNoteSaveError('update', '입력 검증', meta, err)
     throw err
@@ -2817,15 +3025,16 @@ export async function updateNoteWithTags(
   }
 
   const tagCacheMut = [...tagCache]
-  const { resolved: cachedTagLinks, pendingNames } = resolveCachedTagIdsForNames(
-    labels,
-    tagCacheMut,
-  )
 
   let sourceRef: { id: string; title: string } | null = null
-  if (sourceTrim) {
+  if (refs?.sourceId || sourceTrim) {
     try {
-      sourceRef = await ensureSourceId(sourceTrim, userId, sourceCache)
+      sourceRef = await ensureSourceRef(
+        refs?.sourceId,
+        sourceTrim,
+        userId,
+        sourceCache,
+      )
     } catch (error) {
       logNoteSaveError('update', '출처 ID 해석', meta, error)
       throw error
@@ -2861,24 +3070,17 @@ export async function updateNoteWithTags(
   }
   const noteRow = note as NoteRowCore
 
-  let tagLinks = [...cachedTagLinks]
-  if (pendingNames.length > 0) {
-    try {
-      const ensured = await Promise.all(
-        pendingNames.map(async (label) => {
-          const { id, color_index, parent_id } = await ensureTagId(
-            label,
-            userId,
-            tagCacheMut,
-          )
-          return { tag_id: id, name: label, color_index, parent_id }
-        }),
-      )
-      tagLinks = [...tagLinks, ...ensured]
-    } catch (error) {
-      logNoteSaveError('update', '태그 ID 해석', meta, error)
-      throw error
-    }
+  let tagLinks: {
+    tag_id: string
+    name: string
+    color_index: number
+    parent_id?: string | null
+  }[]
+  try {
+    tagLinks = await resolveTagLinksForSave(tagInputs, userId, tagCacheMut)
+  } catch (error) {
+    logNoteSaveError('update', '태그 ID 해석', meta, error)
+    throw error
   }
   const newTagIds = new Set(tagLinks.map((t) => t.tag_id))
 

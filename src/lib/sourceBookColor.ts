@@ -55,6 +55,36 @@ export function sourceBookEdgeColor(bg: string): string {
   return `#${[r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('')}`
 }
 
+const RANDOM_SPINE_COLORS = SOURCE_BOOK_COLOR_SWATCHES.filter(
+  (c) => c !== DEFAULT_SOURCE_BOOK_COLOR,
+)
+
+export function sourceFollowsCoverColor(source: {
+  yes24_goods_no?: string | null
+  cover_image_url?: string | null
+  kyobo_product_id?: string | null
+}): boolean {
+  if (source.yes24_goods_no?.trim()) return true
+  return Boolean(resolveSourceCoverUrl(source))
+}
+
+export function randomSpineColorForSource(sourceId: string): string {
+  let hash = 0
+  for (let i = 0; i < sourceId.length; i += 1) {
+    hash = (hash * 31 + sourceId.charCodeAt(i)) >>> 0
+  }
+  return RANDOM_SPINE_COLORS[hash % RANDOM_SPINE_COLORS.length]
+}
+
+export function resolveTextSpineColor(source: SourceRow): string {
+  const stored = normalizeSourceBookColor(source.spine_color)
+  if (sourceFollowsCoverColor(source)) {
+    return stored ?? DEFAULT_SOURCE_BOOK_COLOR
+  }
+  if (stored && stored !== DEFAULT_SOURCE_BOOK_COLOR) return stored
+  return randomSpineColorForSource(source.id)
+}
+
 export function sourceBookColorStyle(bg: string): CSSProperties {
   return {
     ['--source-book-color' as string]: bg,

@@ -1,0 +1,10 @@
+# 아임웹 OAuth·웹훅은 외부에서 JWT 없이 호출됩니다.
+
+[functions.imweb-order-webhook]
+verify_jwt = false
+
+[functions.imweb-connect]
+verify_jwt = false
+
+[functions.imweb-oauth-callback]
+verify_jwt = false

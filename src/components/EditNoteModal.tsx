@@ -14,6 +14,7 @@ import {
   type SourceRow,
   type TagRow,
 } from '../lib/notesApi'
+import { displaySourceTitle, sourceTitleKey } from '../lib/sourceUtils'
 import { MemoNoteEditor } from './MemoNoteEditor'
 import { readMemoEditorBody } from '../lib/memoQuickEmojis'
 import pinClipUrl from '../assets/home-hub-pin-clip.png'
@@ -82,6 +83,8 @@ type Props = {
   onSyncNoteFromServer?: (noteId: string) => void | Promise<void>
   onNoteDeleted: (noteId: string) => void | Promise<void>
   onSourcesChanged?: () => void | Promise<void>
+  /** 출처 뷰 — 교보 붙여넣기가 출처를 덮지 않음 */
+  keepFilledSource?: boolean
   listPin?: {
     kind: NoteContextPinKind
     contextId: string
@@ -102,6 +105,7 @@ export function EditNoteModal({
   onSyncNoteFromServer,
   onNoteDeleted,
   onSourcesChanged,
+  keepFilledSource = false,
   listPin = null,
   onToggleListPin,
 }: Props) {
@@ -111,6 +115,9 @@ export function EditNoteModal({
   const [selectedSource, setSelectedSource] = useState<SelectedSource | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [pendingPasteSource, setPendingPasteSource] = useState<string | null>(
+    null,
+  )
   const [seededNoteId, setSeededNoteId] = useState<string | null>(null)
   const [isPinned, setIsPinned] = useState(false)
   const [listPinned, setListPinned] = useState(false)
@@ -118,6 +125,7 @@ export function EditNoteModal({
   useLayoutEffect(() => {
     if (!open || !note) {
       setSeededNoteId(null)
+      setPendingPasteSource(null)
       return
     }
     setTags(noteToSelectedTags(note, allTags))
@@ -127,6 +135,7 @@ export function EditNoteModal({
     setListPinned(Boolean(listPin?.pinned))
     setError(null)
     setDeleteConfirmOpen(false)
+    setPendingPasteSource(null)
     setSeededNoteId(note.id)
   }, [
     open,
@@ -234,10 +243,26 @@ export function EditNoteModal({
                 value={editorBody}
                 onChange={setBody}
                 source={selectedSource?.title ?? ''}
-                onSourceChange={(title) => {
-                  const t = title.trim()
-                  setSelectedSource(t ? { title: t } : null)
-                }}
+                onSourceChange={
+                  keepFilledSource
+                    ? undefined
+                    : (title) => {
+                        const t = title.trim()
+                        if (!t) return
+                        const current = selectedSource?.title.trim() ?? ''
+                        if (
+                          current &&
+                          sourceTitleKey(current) !== sourceTitleKey(t)
+                        ) {
+                          setPendingPasteSource(t)
+                          return
+                        }
+                        setSelectedSource({
+                          title: t,
+                          id: selectedSource?.id,
+                        })
+                      }
+                }
                 placeholder="내용을 입력하세요"
                 rows={5}
                 scrollClamp
@@ -298,6 +323,10 @@ export function EditNoteModal({
                       saveSource,
                       [...allSources],
                       isPinned,
+                      {
+                        sourceId: selectedSource?.id ?? null,
+                        tags: tags.map((t) => ({ id: t.id, name: t.name })),
+                      },
                     )
                     await onNoteUpdated(updated)
                     await onSourcesChanged?.()
@@ -325,6 +354,25 @@ export function EditNoteModal({
       </div>
       </div>
 
+      <ConfirmModal
+        open={pendingPasteSource !== null}
+        title="출처를 바꿀까요?"
+        message={
+          selectedSource?.title
+            ? `원래 출처는 「${displaySourceTitle(selectedSource.title)}」입니다. 붙여넣은 「${displaySourceTitle(pendingPasteSource ?? '')}」(으)로 바꿀까요?`
+            : ''
+        }
+        confirmLabel="바꾸기"
+        cancelLabel="유지"
+        footerAlign="between"
+        confirmFirst
+        onCancel={() => setPendingPasteSource(null)}
+        onConfirm={() => {
+          const next = pendingPasteSource?.trim()
+          setPendingPasteSource(null)
+          if (next) setSelectedSource({ title: next })
+        }}
+      />
       <ConfirmModal
         open={deleteConfirmOpen}
         title="메모 삭제"

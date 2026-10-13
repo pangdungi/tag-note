@@ -378,17 +378,6 @@ function createMemoEmojiImg(emoji: MemoQuickEmoji): HTMLImageElement {
   return img
 }
 
-function escapeHtmlAttr(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-}
-
-function memoEmojiInsertHtml(emoji: MemoQuickEmoji): string {
-  return `<img src="${escapeHtmlAttr(emoji.iconSrc)}" data-memo-emoji="${escapeHtmlAttr(emoji.id)}" class="memo-body-inline-icon" draggable="false" contenteditable="false" alt="${escapeHtmlAttr(emoji.label)}">`
-}
-
 function restoreEditorRange(root: HTMLElement, sel: Selection): Range {
   if (sel.rangeCount > 0 && isRangeInsideMemoEditor(root, sel.getRangeAt(0))) {
     return sel.getRangeAt(0)
@@ -413,17 +402,102 @@ export function insertMemoPlainTextInEditor(
   if (!isRangeInsideMemoEditor(root, range)) return false
   sel.removeAllRanges()
   sel.addRange(range)
-  if (
-    typeof document.execCommand === 'function' &&
+  const before = root.innerHTML
+  if (typeof document.execCommand === 'function') {
     document.execCommand('insertText', false, text)
-  ) {
-    return true
+    if (root.innerHTML !== before) return true
   }
   range.deleteContents()
   range.insertNode(document.createTextNode(text))
   range.collapse(false)
   sel.removeAllRanges()
   sel.addRange(range)
+  return true
+}
+
+function placeCaretAfterNode(sel: Selection, node: Node) {
+  let tail = node.nextSibling
+  if (!tail || tail.nodeType !== Node.TEXT_NODE) {
+    tail = document.createTextNode('')
+    node.parentNode?.insertBefore(tail, node.nextSibling)
+  }
+  const caret = document.createRange()
+  caret.setStart(tail, 0)
+  caret.collapse(true)
+  sel.removeAllRanges()
+  sel.addRange(caret)
+}
+
+function isIgnorableEditorText(node: Node): boolean {
+  if (node.nodeType !== Node.TEXT_NODE) return false
+  return !(node.textContent ?? '').replace(/\u200B/g, '')
+}
+
+function isMemoEmojiImg(node: Node | null): node is HTMLImageElement {
+  return node instanceof HTMLImageElement && Boolean(node.dataset.memoEmoji)
+}
+
+function previousMeaningfulSibling(node: Node | null): Node | null {
+  let prev = node
+  while (prev && isIgnorableEditorText(prev)) {
+    prev = prev.previousSibling
+  }
+  return prev
+}
+
+/** 커서가 퀵 이모티콘 바로 뒤에 있을 때만 그 이미지를 찾는다 */
+function memoEmojiImmediatelyBeforeCaret(
+  root: HTMLElement,
+  range: Range,
+): HTMLImageElement | null {
+  if (!range.collapsed) return null
+
+  const node = range.startContainer
+  const offset = range.startOffset
+
+  if (node.nodeType === Node.TEXT_NODE) {
+    const before = (node.textContent ?? '').slice(0, offset).replace(/\u200B/g, '')
+    if (before.length > 0) return null
+    const prev = previousMeaningfulSibling(node.previousSibling)
+    return isMemoEmojiImg(prev) ? prev : null
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) return null
+  const el = node as HTMLElement
+  if (!root.contains(el)) return null
+
+  if (offset > 0) {
+    const prev = previousMeaningfulSibling(el.childNodes[offset - 1] ?? null)
+    return isMemoEmojiImg(prev) ? prev : null
+  }
+
+  if (el === root) return null
+  const prev = previousMeaningfulSibling(el.previousSibling)
+  return isMemoEmojiImg(prev) ? prev : null
+}
+
+/** 백스페이스가 브라우저에서 img를 못 지울 때 — 바로 앞 퀵 이모티콘만 제거 */
+export function deleteMemoEmojiBeforeCaret(root: HTMLElement): boolean {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return false
+  const range = sel.getRangeAt(0)
+  if (!isRangeInsideMemoEditor(root, range)) return false
+
+  const img = memoEmojiImmediatelyBeforeCaret(root, range)
+  if (!img || !root.contains(img)) return false
+
+  const parent = img.parentNode
+  if (!parent) return false
+
+  const index = Array.prototype.indexOf.call(parent.childNodes, img)
+  img.remove()
+
+  const caret = document.createRange()
+  const at = Math.max(0, Math.min(index, parent.childNodes.length))
+  caret.setStart(parent, at)
+  caret.collapse(true)
+  sel.removeAllRanges()
+  sel.addRange(caret)
   return true
 }
 
@@ -437,23 +511,10 @@ export function insertMemoEmojiInEditor(root: HTMLElement, id: string): boolean 
 
   const range = restoreEditorRange(root, sel)
   range.collapse(false)
-  sel.removeAllRanges()
-  sel.addRange(range)
-
-  if (
-    typeof document.execCommand === 'function' &&
-    document.execCommand('insertHTML', false, memoEmojiInsertHtml(emoji))
-  ) {
-    return true
-  }
-
+  range.deleteContents()
   const img = createMemoEmojiImg(emoji)
   range.insertNode(img)
-  const caret = document.createRange()
-  caret.setStartAfter(img)
-  caret.collapse(true)
-  sel.removeAllRanges()
-  sel.addRange(caret)
+  placeCaretAfterNode(sel, img)
   return true
 }
 

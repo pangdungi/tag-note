@@ -423,7 +423,7 @@ function fitVerticalTitleFontSize(
 ): number {
   let size = Math.min(22, Math.max(11, Math.round(maxWidth * 0.42)))
   while (size >= 10) {
-    ctx.font = `600 ${size}px ${fontFamily}`
+    ctx.font = `700 ${size}px ${fontFamily}`
     const metrics = ctx.measureText(title)
     if (metrics.width <= maxHeight) return size
     size -= 1
@@ -522,7 +522,7 @@ export async function synthesizeSpineFromCover(
     textAreaHeight,
     fontFamily,
   )
-  ctx.font = `600 ${fontSize}px ${fontFamily}`
+  ctx.font = `700 ${fontSize}px ${fontFamily}`
   ctx.fillStyle = rgbLuminance(center) > 168 ? '#1f2937' : '#f8fafc'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
