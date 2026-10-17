@@ -6557,10 +6557,7 @@ button.note-board-tag-pill--link:focus-visible {
 }
 
 .note-board-sheet-tags-cell {
-  padding: calc(
-    0.7rem +
-      (var(--memo-body-line-height) - 1) * var(--memo-body-font-size) / 2
-  ) 0 0;
+  padding: 0;
   background: var(--paper-fill);
   width: 1%;
   min-width: max-content;
@@ -6590,7 +6587,8 @@ button.note-board-tag-pill--link:focus-visible {
 }
 
 .note-board-sheet-tag-item {
-  display: block;
+  display: flex;
+  align-items: flex-start;
   width: max-content;
   min-width: 100%;
   max-width: none;
@@ -6606,7 +6604,7 @@ button.note-board-tag-pill--link:focus-visible {
   width: max-content;
   min-width: 100%;
   max-width: none;
-  padding: 0 0.55rem 0.45rem;
+  padding: 0.45rem 0.55rem;
   font-family: var(--app-font-family);
   font-size: var(--tag-label-font-size);
   font-weight: 700;
@@ -6617,6 +6615,15 @@ button.note-board-tag-pill--link:focus-visible {
   white-space: nowrap;
   word-break: normal;
   overflow-wrap: normal;
+}
+
+.note-board-sheet-tag-item:first-child .note-board-sheet-tag,
+.note-board-sheet-tags-cell > .note-board-sheet-tag {
+  padding-top: calc(
+    0.7rem +
+      (var(--memo-body-line-height) - 1) * var(--memo-body-font-size) / 2
+  );
+  padding-bottom: 0.45rem;
 }
 
 @media (max-width: 640px) {
