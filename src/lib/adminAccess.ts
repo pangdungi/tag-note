@@ -5,21 +5,16 @@ export const DEFAULT_APP_ADMIN_EMAIL = 'dbsgpwls416@gmail.com'
 
 const ADMIN_UNLOCK_STORAGE_KEY = 'tag_note_admin_unlock'
 
-function adminEmailConfig() {
-  const fromEnv = String(import.meta.env.VITE_APP_ADMIN_EMAIL || '')
-    .trim()
-    .toLowerCase()
-  return fromEnv || DEFAULT_APP_ADMIN_EMAIL
-}
-
 export function adminUnlockKey() {
-  return String(import.meta.env.VITE_ADMIN_UNLOCK_KEY || 'tagnote-admin').trim()
+  return String(import.meta.env.VITE_ADMIN_UNLOCK_KEY || 'tagnote-admin')
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
 }
 
 export function isAppAdminUser(user: User | null | undefined) {
-  const want = adminEmailConfig()
-  if (!want) return false
-  return (user?.email || '').trim().toLowerCase() === want
+  return (
+    (user?.email || '').trim().toLowerCase() === DEFAULT_APP_ADMIN_EMAIL
+  )
 }
 
 export function isAdminUnlocked() {

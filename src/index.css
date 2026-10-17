@@ -10068,16 +10068,32 @@ button.folder-memos-page-tag:hover {
   gap: 0.7rem;
 }
 
+.admin-unlock-input-wrap {
+  width: 100%;
+}
+
 .admin-unlock-input {
   box-sizing: border-box;
   width: 100%;
-  padding: 0.55rem 0.7rem;
+  padding: 0.55rem 2.75rem 0.55rem 0.7rem;
   font: inherit;
   font-size: 0.92rem;
   color: #111111;
   background: #fafafa;
   border: 1px solid rgba(26, 45, 69, 0.16);
   border-radius: 8px;
+}
+
+.admin-unlock-input::placeholder {
+  color: #b3b3b3;
+}
+
+input.admin-unlock-input[type='password'] {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+    'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  color: #111111;
+  -webkit-text-fill-color: #111111;
+  caret-color: #111111;
 }
 
 .admin-unlock-error {

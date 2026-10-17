@@ -128,8 +128,6 @@ const SOURCE_LIST_SELECT_WITH_LIFE = `${SOURCE_LIST_SELECT_CORE}, is_life_book`
 
 const SOURCE_LIST_SELECT_WITH_REVIEW = `${SOURCE_LIST_SELECT_WITH_LIFE}, rating, review`
 
-const SOURCE_SELECT_CORE = SOURCE_LIST_SELECT_WITH_REVIEW
-
 const SOURCE_SELECT = `${SOURCE_LIST_SELECT_WITH_REVIEW}, bookshelf_id`
 
 const SOURCE_SELECT_LEGACY_CORE =
@@ -2231,28 +2229,6 @@ async function lookupTagRowByName(
   return (data as TagRow | null) ?? null
 }
 
-async function resolveTagIdsForNames(
-  names: string[],
-  userId: string,
-  cache: TagRow[],
-): Promise<
-  { tag_id: string; name: string; color_index: number; parent_id?: string | null }[]
-> {
-  const uniqueNames = [...new Set(names)]
-  const resolved = await Promise.all(
-    uniqueNames.map(async (nm) => {
-      const label = normalizeTagInput(nm)
-      const { id, color_index, parent_id } = await ensureTagId(
-        label,
-        userId,
-        cache,
-      )
-      return { tag_id: id, name: label, color_index, parent_id }
-    }),
-  )
-  return resolved
-}
-
 export type NoteSaveLinkRefs = {
   sourceId?: string | null
   tags?: { id?: string | null; name: string }[]
@@ -2309,46 +2285,6 @@ async function resolveTagLinksForSave(
     })
   }
   return links
-}
-
-/** 캐시에 있는 태그만 즉시 해석 (DB insert 없음) */
-function resolveCachedTagIdsForNames(
-  names: string[],
-  cache: TagRow[],
-): {
-  resolved: {
-    tag_id: string
-    name: string
-    color_index: number
-    parent_id?: string | null
-  }[]
-  pendingNames: string[]
-} {
-  const uniqueNames = [...new Set(names.map((nm) => normalizeTagInput(nm)).filter(Boolean))]
-  const resolved: {
-    tag_id: string
-    name: string
-    color_index: number
-    parent_id?: string | null
-  }[] = []
-  const pendingNames: string[] = []
-
-  for (const label of uniqueNames) {
-    const hit = cache.find(
-      (t) => t.name.toLowerCase() === label.toLowerCase() || t.name === label,
-    )
-    if (hit) {
-      resolved.push({
-        tag_id: hit.id,
-        name: label,
-        color_index: hit.color_index,
-        parent_id: hit.parent_id ?? null,
-      })
-    } else {
-      pendingNames.push(label)
-    }
-  }
-  return { resolved, pendingNames }
 }
 
 async function ensureTagId(

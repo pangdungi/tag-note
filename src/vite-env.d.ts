@@ -12,9 +12,7 @@ interface ImportMetaEnv {
   readonly VITE_ENFORCE_SUBSCRIPTION_IN_DEV?: string
   /** `true`/`1` 이면 구독 게이트 완전 비활성(디버그용). */
   readonly VITE_SKIP_SUBSCRIPTION_GATE?: string
-  /** 관리자 메뉴·페이지를 볼 수 있는 이메일. 기본 dbsgpwls416@gmail.com */
-  readonly VITE_APP_ADMIN_EMAIL?: string
-  /** 관리자 페이지 시크릿 키. 기본 tagnote-admin */
+  /** 관리자 페이지 시크릿 키. 기본 tagnote-admin. 이메일은 dbsgpwls416@gmail.com 고정 */
   readonly VITE_ADMIN_UNLOCK_KEY?: string
 }
 

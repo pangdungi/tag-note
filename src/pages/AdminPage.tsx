@@ -139,6 +139,7 @@ export function AdminPage() {
   const [unlocked, setUnlocked] = useState(() => isAdminUnlocked())
   const [secretInput, setSecretInput] = useState('')
   const [secretError, setSecretError] = useState<string | null>(null)
+  const [showSecret, setShowSecret] = useState(true)
   const [section, setSection] = useState<AdminSectionId>('all')
   const [subs, setSubs] = useState<AdminSubscriptionRow[]>([])
   const [withdrawn, setWithdrawn] = useState<AdminDeletionRow[]>([])
@@ -399,18 +400,63 @@ export function AdminPage() {
         <form className="admin-unlock-form" onSubmit={handleUnlock}>
           <h1 className="admin-view-title">관리자전용</h1>
           <p className="admin-view-hint">시크릿 키를 입력해야 들어갈 수 있습니다.</p>
-          <input
-            type="password"
-            className="admin-unlock-input"
-            value={secretInput}
-            onChange={(e) => {
-              setSecretInput(e.target.value)
-              setSecretError(null)
-            }}
-            autoComplete="off"
-            autoFocus
-            aria-label="시크릿 키"
-          />
+          <div className="password-input-wrap admin-unlock-input-wrap">
+            <input
+              type={showSecret ? 'text' : 'password'}
+              className="admin-unlock-input password-input"
+              value={secretInput}
+              onChange={(e) => {
+                setSecretInput(e.target.value)
+                setSecretError(null)
+              }}
+              placeholder="시크릿 키"
+              autoComplete="off"
+              autoFocus
+              aria-label="시크릿 키"
+            />
+            <button
+              type="button"
+              className="password-input-toggle"
+              onClick={() => setShowSecret((open) => !open)}
+              aria-label={showSecret ? '시크릿 키 숨기기' : '시크릿 키 보기'}
+              aria-pressed={showSecret}
+            >
+              {showSecret ? (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
+              ) : (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              )}
+            </button>
+          </div>
           {secretError ? <p className="admin-unlock-error">{secretError}</p> : null}
           <div className="admin-unlock-actions">
             <button type="submit" className="admin-subs-btn admin-subs-btn--save">
