@@ -16,6 +16,10 @@ import { HomeHubScreen } from '../components/HomeHubScreen'
 import { PinnedNotesBoard } from '../components/PinnedNotesBoard'
 import { HomeFolderFileView } from '../components/HomeFolderFileView'
 import { FolderMemosView, FolderPageTabHead } from '../components/FolderMemosView'
+import {
+  FolderScrollWithTagJump,
+  jumpTagsAttr,
+} from '../components/MemoTagJumpBar'
 import { HomeTagSpiralRail } from '../components/HomeTagSpiralRail'
 import { HomeSearchResultsRail } from '../components/HomeSearchResultsRail'
 import { EditNoteModal } from '../components/EditNoteModal'
@@ -743,6 +747,8 @@ function NoteBoardSheetMemoCell({
 
 function NoteBoardSheetGroup({
   group,
+  tagCatalog,
+  hideTagIds,
   sourceCatalog,
   onView,
   onTagFilter,
@@ -751,6 +757,8 @@ function NoteBoardSheetGroup({
   hideDateInMeta,
 }: {
   group: { key: string; tags: SheetTagChip[]; notes: NoteWithTags[] }
+  tagCatalog: Map<string, TagRow>
+  hideTagIds?: string[]
   sourceCatalog: Map<string, SourceRow>
   onView: (note: NoteWithTags) => void
   onTagFilter?: (tagId: string) => void
@@ -763,7 +771,7 @@ function NoteBoardSheetGroup({
 
   if (!hasTags) {
     return (
-      <li>
+      <li data-jump-tags={jumpTagsAttr(tags.map((tg) => tg.id))}>
         <article className="note-board-card note-board-card--parent-sheet note-board-card--parent-sheet-memo-only note-board-card--parent-sheet-group">
           <table className="note-board-sheet-table note-board-sheet-table--memo-only">
             <tbody>
@@ -790,37 +798,41 @@ function NoteBoardSheetGroup({
   }
 
   return (
-    <li>
+    <li data-jump-tags={jumpTagsAttr(tags.map((tg) => tg.id))}>
       <article className="note-board-card note-board-card--parent-sheet note-board-card--parent-sheet-group">
         <table className="note-board-sheet-table">
           <tbody>
-            {notes.map((note, index) => (
-              <tr key={note.id} className="note-board-sheet-body-row">
-                {index === 0 ? (
+            {notes.map((note) => {
+              const rowTags = getVisibleSheetTags(
+                note,
+                tagCatalog,
+                hideTagIds,
+              )
+              return (
+                <tr key={note.id} className="note-board-sheet-body-row">
                   <td
-                    className="note-board-sheet-tags-cell note-board-sheet-tags-cell--grouped"
-                    rowSpan={notes.length}
+                    className="note-board-sheet-tags-cell"
                     valign="top"
                   >
                     <NoteBoardSheetTagLine
-                      tags={tags}
+                      tags={rowTags}
                       onTagFilter={onTagFilter}
                     />
                   </td>
-                ) : null}
-                <td className="note-board-sheet-memo-cell" valign="top">
-                  <NoteBoardSheetMemoCell
-                    note={note}
-                    sourceCatalog={sourceCatalog}
-                    onView={onView}
-                    onSourceFilter={onSourceFilter}
-                    hideSourceInMeta={hideSourceInMeta}
-                    hideDateInMeta={hideDateInMeta}
-                    sourceLink={false}
-                  />
-                </td>
-              </tr>
-            ))}
+                  <td className="note-board-sheet-memo-cell" valign="top">
+                    <NoteBoardSheetMemoCell
+                      note={note}
+                      sourceCatalog={sourceCatalog}
+                      onView={onView}
+                      onSourceFilter={onSourceFilter}
+                      hideSourceInMeta={hideSourceInMeta}
+                      hideDateInMeta={hideDateInMeta}
+                      sourceLink={false}
+                    />
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </article>
@@ -1005,7 +1017,15 @@ function InlineRailNotesPanel({
       ) : !loading && notes.length > 0 ? (
         <ul className="note-board-list parent-tag-child-note-list">
           {pinnedNotes.map((note) => (
-            <li key={note.id} className="note-board-list-item--pinned">
+            <li
+              key={note.id}
+              className="note-board-list-item--pinned"
+              data-jump-tags={jumpTagsAttr(
+                getVisibleSheetTags(note, tagCatalog, sheetHiddenTagIds).map(
+                  (tg) => tg.id,
+                ),
+              )}
+            >
               {noteCard(note)}
             </li>
           ))}
@@ -1014,6 +1034,8 @@ function InlineRailNotesPanel({
                 <NoteBoardSheetGroup
                   key={group.key}
                   group={group}
+                  tagCatalog={tagCatalog}
+                  hideTagIds={sheetHiddenTagIds}
                   sourceCatalog={sourceCatalog}
                   onView={onView}
                   onTagFilter={sheetOnTagFilter}
@@ -1022,7 +1044,18 @@ function InlineRailNotesPanel({
                 />
               ))
             : restNotes.map((note) => (
-                <li key={note.id}>{noteCard(note)}</li>
+                <li
+                  key={note.id}
+                  data-jump-tags={jumpTagsAttr(
+                    getVisibleSheetTags(
+                      note,
+                      tagCatalog,
+                      sheetHiddenTagIds,
+                    ).map((tg) => tg.id),
+                  )}
+                >
+                  {noteCard(note)}
+                </li>
               ))}
         </ul>
       ) : null}
@@ -5720,8 +5753,11 @@ export function HomePage() {
                 />
               ) : homeBrowseNav === 'links' && selectedSourceId ? (
                 booksMemoViewMode === 'scroll' ? (
-                  <div className="folder-memos-view folder-memos-view--scroll">
-                    <div className="folder-memos-scroll folder-memos-scroll--sheet">
+                  <FolderScrollWithTagJump
+                    notes={notesForSelectedSource}
+                    tagCatalog={tagCatalogMap}
+                    resetKey={selectedSourceId}
+                  >
                       <InlineRailNotesPanel
                         tagLabel={
                           selectedSource
@@ -5744,8 +5780,7 @@ export function HomePage() {
                             : '이 책의 메모가 아직 없습니다.'
                         }
                       />
-                    </div>
-                  </div>
+                  </FolderScrollWithTagJump>
                 ) : (
                   <FolderMemosView
                     notes={notesForSelectedSource}
@@ -5959,22 +5994,28 @@ export function HomePage() {
                   </>
               ) : booksRailExpandedParentId &&
                 booksMemoViewMode === 'scroll' ? (
-                <div className="folder-memos-view folder-memos-view--scroll">
-                  <FolderPageTabHead
-                    title={
-                      selectedTag ? displayTagName(selectedTag.name) : '폴더'
-                    }
-                    onEditFolder={
-                      canUseCompose && selectedTag
-                        ? () => {
-                            setRailEditingSource(null)
-                            setRailEditingTag(null)
-                            setRailEditingParentTag(selectedTag)
-                          }
-                        : undefined
-                    }
-                  />
-                  <div className="folder-memos-scroll folder-memos-scroll--sheet">
+                <FolderScrollWithTagJump
+                  notes={notesForSelectedTag}
+                  tagCatalog={tagCatalogMap}
+                  hideTagIds={[booksRailExpandedParentId]}
+                  resetKey={booksRailExpandedParentId}
+                  header={
+                    <FolderPageTabHead
+                      title={
+                        selectedTag ? displayTagName(selectedTag.name) : '폴더'
+                      }
+                      onEditFolder={
+                        canUseCompose && selectedTag
+                          ? () => {
+                              setRailEditingSource(null)
+                              setRailEditingTag(null)
+                              setRailEditingParentTag(selectedTag)
+                            }
+                          : undefined
+                      }
+                    />
+                  }
+                >
                     <InlineRailNotesPanel
                       tagLabel={
                         selectedTag
@@ -5996,8 +6037,7 @@ export function HomePage() {
                       pinnedNoteIds={contextPinnedIds}
                       emptyHint="이 폴더의 메모가 아직 없습니다."
                     />
-                  </div>
-                </div>
+                </FolderScrollWithTagJump>
               ) : booksRailExpandedParentId ? (
                 <FolderMemosView
                   notes={notesForSelectedTag}

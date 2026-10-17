@@ -10,6 +10,11 @@ import { displaySourceTitle } from '../lib/sourceUtils'
 import { formatHashtagLabel } from '../lib/tagUtils'
 import { MemoBodyContent } from './MemoBodyContent'
 import { useOpenOnTap } from '../hooks/useOpenOnTap'
+import {
+  MemoTagJumpBar,
+  collectContextJumpTags,
+  firstNoteIndexWithTag,
+} from './MemoTagJumpBar'
 
 function formatNoteWhen(iso: string) {
   try {
@@ -349,6 +354,19 @@ export function FolderMemosView({
       .filter((t) => t.id !== folderTagId)
       .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   }, [note, folderTagId, tagCatalog])
+  const jumpTags = useMemo(
+    () =>
+      collectContextJumpTags(
+        notes,
+        tagCatalog,
+        folderTagId ? [folderTagId] : undefined,
+      ),
+    [notes, tagCatalog, folderTagId],
+  )
+  const jumpActiveIds = useMemo(
+    () => new Set(extraTags.map((tg) => tg.id)),
+    [extraTags],
+  )
   const count = notes.length
   const hasPrev = index > 0
   const hasNext = index < count - 1 || hasMore
@@ -442,6 +460,15 @@ export function FolderMemosView({
             ) : null}
           </div>
         ) : null}
+        <MemoTagJumpBar
+          tags={jumpTags}
+          activeTagIds={jumpActiveIds}
+          onJump={(tagId) => {
+            setIndex((cur) =>
+              firstNoteIndexWithTag(notes, tagCatalog, tagId, cur),
+            )
+          }}
+        />
         <div className="tag-memos-flip-stage">
           <div className="tag-memos-flip-page tag-memos-flip-page--front">
             <PaperSheet

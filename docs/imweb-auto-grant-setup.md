@@ -66,146 +66,69 @@ timeisprice와 같은 방식입니다. 다른 앱·다른 상품에도 복제할
 
 ---
 
-## 4. 아임웹 개발자센터 설정
+## 4. 아임웹은 새로 안 만든다
 
-### 4.0 다른 앱에 적용할 때 — 앱을 새로 추가
+쇼핑몰·타임이프라이스 앱·웹훅 URL·연동완료는 **그대로** 둡니다.  
+앱 하나당 주문 웹훅은 하나라서, 타임이프라이스 웹훅 목록에 주소를 더 넣거나 바꾸면 안 됩니다.
 
-쇼핑몰(doodledoodle)은 그대로 써도 됩니다.  
-**이미 있는 앱(timeisprice 등)의 웹훅 목록에 주문을 하나 더 넣으면 안 됩니다.** 앱 하나당 주문 웹훅은 하나라서, 그다음이 만들어지지 않습니다. 기존 URL을 바꾸면 그 앱이 끊깁니다.
+실제 주문은 타임이프라이스 `imweb-order-webhook`이 받습니다.
 
-다음에 또 다른 서비스를 붙일 때도 같습니다.
+- 66·67번 → 지금처럼 타임이프라이스만 처리
+- **69번** → 타임이프라이스는 손대지 않고, 태그노트 웹훅으로만 넘김
 
-1. 아임웹 개발자센터에서 **앱을 새로 추가**한다.
-2. 그 새 앱에서 클라이언트 ID, 클라이언트 Secret, 웹훅, 리다이렉트 URI를 **전부 새로** 받는다.
-3. 그 값을 **그 서비스** Supabase Secrets에 넣는다. 다른 앱 Secret을 복사하지 않는다.
-
-### 4.1 앱 정보 (태그노트)
-
-| 항목 | 태그노트 값 |
-|------|-------------|
-| **서비스 URL** | `https://www.tagtagnote.com` |
-| **리다이렉트 URI** | `https://psataiqlkxwjhnunaezc.supabase.co/functions/v1/imweb-oauth-callback` |
-| **클라이언트 ID / Secret** | 이 앱 정보에서 복사 → 태그노트 Supabase Secrets |
-
-**리다이렉트 URI 주의:** 아임웹에 등록한 문자열과 Supabase `IMWEB_REDIRECT_URI` Secret이 **한 글자까지 같아야** 합니다.  
-(`?apikey=...` 는 **넣지 않음** — `verify_jwt = false`)
-
-### 4.2 API 설정
-
-- **Order(주문)** 읽기 — 승인·ON
-- **site-info** — 연동완료 API용 **`site-info:write`** 권한 필요 (scope에 포함)
-
-### 4.3 웹훅
-
-**태그노트 앱**의 웹훅 목록(처음엔 비어 있음)에 하나만 등록합니다.
-
-- URL: `https://psataiqlkxwjhnunaezc.supabase.co/functions/v1/imweb-order-webhook`
-- 이벤트: **주문이 생성된 경우**
-- **인증 정보(보기)** → `IMWEB_WEBHOOK_SECRET`
-
-### 4.4 연동 (OAuth)
-
-- 왼쪽 **「연동 사이트 관리」** — 테스트 사이트 목록·상태
-- **「동의」 버튼이 없을 때:** 이미 **테스트연동** 된 상태일 수 있음
-- **연동완료** 로 바꾸려면 OAuth URL을 직접 열거나, 서비스 URL로 `?siteCode=` 리다이렉트
-
-```
-https://psataiqlkxwjhnunaezc.supabase.co/functions/v1/imweb-connect?siteCode=<사이트코드>
-```
-
-성공 시 `https://www.tagtagnote.com/?imweb=connected` 로 돌아옵니다.
+태그노트 쪽에 필요한 건 수파베이스뿐입니다. 아임웹 앱 추가·OAuth·클라이언트 ID는 하지 않습니다.
 
 ---
 
-## 5. Supabase Secrets (Edge Functions)
+## 5. 단계 (이 순서)
 
-화면: 태그노트 프로젝트 → Edge Functions → Secrets
+공유 비밀번호를 하나 만듭니다. 아임웹 웹훅 Secret이 아닙니다. 두 수파베이스가 서로 알아볼 값입니다.
+
+### 5.1 태그노트 수파베이스
+
+화면: 태그노트 프로젝트 (`psataiqlkxwjhnunaezc`)
+
+1. SQL Editor에서 `supabase/migrations/035_imweb_order_grants.sql` Run
+2. Edge Functions → Secrets
+   - `IMWEB_WEBHOOK_SECRET` = 방금 만든 공유 비밀번호
+3. 함수 배포
+
+```bash
+supabase functions deploy imweb-order-webhook --project-ref psataiqlkxwjhnunaezc
+```
+
+`supabase/config.toml` 에 이 함수는 `verify_jwt = false`.
+
+### 5.2 타임이프라이스 수파베이스
+
+아임웹 웹훅 URL·`IMWEB_WEBHOOK_SECRET`은 **바꾸지 않습니다.**
+
+Edge Functions → Secrets에만 추가:
 
 | 이름 | 값 |
 |------|-----|
-| `IMWEB_CLIENT_ID` | 태그노트 앱의 클라이언트 ID |
-| `IMWEB_CLIENT_SECRET` | 태그노트 앱의 클라이언트 Secret |
-| `IMWEB_REDIRECT_URI` | `https://psataiqlkxwjhnunaezc.supabase.co/functions/v1/imweb-oauth-callback` |
-| `IMWEB_OAUTH_SCOPE` | `order:read site-info:read site-info:write` |
-| `IMWEB_CONNECT_SUCCESS_URL` | `https://www.tagtagnote.com/` |
-| `IMWEB_WEBHOOK_SECRET` | 태그노트 앱 웹훅 인증 정보 |
+| `TAGNOTE_IMWEB_WEBHOOK_URL` | `https://psataiqlkxwjhnunaezc.supabase.co/functions/v1/imweb-order-webhook` |
+| `TAGNOTE_IMWEB_WEBHOOK_SECRET` | 태그노트와 **같은** 공유 비밀번호 |
+| `TAGNOTE_IMWEB_PROD_NO` | `69` (없어도 기본 69) |
 
-배포:
+그다음 **이 함수만** 다시 배포:
 
 ```bash
-supabase functions deploy imweb-order-webhook imweb-connect imweb-oauth-callback --project-ref psataiqlkxwjhnunaezc
+supabase functions deploy imweb-order-webhook --project-ref <타임이프라이스-ref>
 ```
 
-SQL은 `supabase/migrations/035_imweb_order_grants.sql` 을 SQL Editor에서 Run.  
-`supabase/config.toml` 에 OAuth·웹훅 함수는 `verify_jwt = false`.
+66·67 처리 코드는 그대로입니다. 69일 때만 태그노트로 POST 한 번 더 합니다. 전달이 실패해도 타임이프라이스 응답은 200 그대로입니다.
 
 ---
 
-## 6. 시행착오 (timeisprice에서 확인한 것)
+## 6. 확인
 
-### 6.1 「테스트연동」 vs 「연동완료」
-
-| 상태 | 실제 구매 웹훅 |
-|------|----------------|
-| **테스트연동** | ❌ 안 옴 (개발자센터 「테스트 보내기」만 됨) |
-| **연동완료** | ✅ 옴 |
-
-**해결:** OAuth → **연동완료 API** 호출까지 끝내기.
-
-### 6.2 `Invalid redirect uri` (오류 30098)
-
-아임웹에 저장한 리다이렉트 URI와 Secret이 한 글자라도 다르면 실패. `?apikey=` 붙이지 말 것.
-
-### 6.3 scope — `site-info:write` 필수
-
-`IMWEB_OAUTH_SCOPE`에 포함 + API 설정에서 해당 권한 승인.
-
-### 6.4 토큰 교환 — `no_access_token`
-
-`/oauth2/token` 은 쿼리스트링 POST, form body 폴백. `accessToken` / `access_token` 둘 다 처리. (코드에 반영됨)
-
-### 6.5 연동완료 API
-
-`PATCH /site-info/integration-complete` 는 빈 body가 통과하는 경우가 있음. 코드에서 여러 번 시도.
-
-### 6.6 웹훅 payload
-
-필드명이 제각각 → `_shared/imwebPayload.ts` 로 정규화.
-
-### 6.7 상품 번호
-
-테스트 보내기 샘플(prodNo 1001 등) → `grant_status: ignored` 가 정상.  
-태그노트는 **69번**만 `applied` / `pending`.
-
----
-
-## 7. 다른 앱에 적용할 때 체크리스트
-
-### A. 아임웹
-
-- [ ] **개발자센터에서 앱을 새로 추가** (기존 앱 웹훅 목록에 주문 추가하지 않기)
-- [ ] 클라이언트 ID / Secret **새로** 받기
-- [ ] 서비스 URL = **그 앱** 도메인
-- [ ] 리다이렉트 URI = **그 프로젝트** `imweb-oauth-callback` (apikey 없이)
-- [ ] Order API + site-info write 승인
-- [ ] **그 새 앱** 웹훅 목록에 URL 1개 + 웹훅 Secret
-- [ ] 테스트 사이트 연동 → **연동완료**까지
-
-### B. Supabase
-
-- [ ] 마이그레이션 Run (`imweb_target_prod_no` = 그 상품 번호, 부여 기간)
-- [ ] Secrets: 새 앱의 CLIENT_ID, SECRET, REDIRECT_URI, WEBHOOK_SECRET, SCOPE
-- [ ] Edge Functions 배포
-- [ ] `user_subscriptions` 컬럼명 맞추기 (태그노트는 `period_end`)
-
-### C. 검증
-
-1. 개발자센터 **테스트 보내기** → `imweb_order_grants` 1줄 (ignored여도 OK)
-2. **연동완료** 확인
-3. **실제 테스트 결제** (대상 상품 번호)
-4. **가입 전 결제** → pending → **같은 이메일 가입** → applied
-5. **가입 후 결제** → 즉시 applied
-6. `user_subscriptions`: `active`, `period_end` 약 1년
+1. 69번 **실제 테스트 결제** (또는 연동완료된 앱의 테스트 보내기에 prodNo 69)
+2. 태그노트 `imweb_order_grants` 1줄
+3. **가입 전 결제** → pending → **같은 이메일 가입** → applied
+4. **가입 후 결제** → 즉시 applied
+5. `user_subscriptions`: `active`, `period_end` 약 1년
+6. 66·67번은 타임이프라이스만 변하고 태그노트에는 줄이 안 생김
 
 ```sql
 select order_no, orderer_email, prod_no, grant_status, grant_applied_at, created_at
@@ -220,23 +143,16 @@ where lower(email) = lower('고객@email.com');
 
 ---
 
-## 8. 운영 시 참고
+## 7. 운영 시 참고
 
-- **고객에게:** 결제 이메일 = 앱 가입 이메일 (다르면 자동 매칭 안 됨)
+- **고객에게:** 결제 이메일 = 태그노트 가입 이메일 (다르면 자동 매칭 안 됨)
 - **연장 구매:** 같은 이메일로 또 69번 주문 → 만료일 +1년
-- **민감 정보:** Client Secret·Webhook Secret은 Supabase Secrets만. git·채팅에 넣지 않기
+- **민감 정보:** 공유 비밀번호는 Secrets만. git·채팅에 넣지 않기
+- 아임웹 앱을 태그노트로 새로 만들지 말 것. 웹훅 URL을 바꾸지 말 것.
 
 ---
 
-## 9. 관련 링크
+## 8. 요약
 
-- [앱 연동하기](https://developers-docs.imweb.me/guide/%EC%95%B1-%EC%97%B0%EB%8F%99%ED%95%98%EA%B8%B0)
-- [OAuth 2.0](https://developers-docs.imweb.me/guide/%EA%B0%9C%EB%B0%9C-%EA%B0%80%EC%9D%B4%EB%93%9C-%ED%99%95%EC%9D%B8%ED%95%98%EA%B8%B0/oauth-2.0)
-- [웹훅 연동 가이드](https://developers-docs.imweb.me/guide/%EA%B0%9C%EB%B0%9C-%EA%B0%80%EC%9D%B4%EB%93%9C-%ED%99%95%EC%9D%B8%ED%95%98%EA%B8%B0/%EC%9B%B9%ED%9B%85-%EC%97%B0%EB%8F%99-%EA%B0%80%EC%9D%B4%EB%93%9C)
-
----
-
-## 10. 요약
-
-**웹훅으로 “누가 샀는지” 받고, DB가 “1년 줬는지” 기록하고, OAuth 연동완료로 “실제 주문 알림”을 켠다.**  
-**서비스를 하나 더 붙일 때는 아임웹 개발자센터에 앱을 새로 추가한다.**
+**이미 붙어 있는 타임이프라이스 웹훅이 주문을 받고, 69번만 태그노트 수파베이스로 넘긴다.**  
+타임이프라이스 부여·아임웹 연동은 그대로 둔다.

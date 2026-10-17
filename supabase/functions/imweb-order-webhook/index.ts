@@ -1,5 +1,6 @@
 /**
  * 아임웹 주문 웹훅 — 69번 상품이면 1년 이용권 부여/연장
+ * 아임웹이 직접 부르지 않고, timeisprice imweb-order-webhook이 69번만 넘긴다.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { normalizeImwebOrderPayload } from "../_shared/imwebPayload.ts";

@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import hubBookIconUrl from '../assets/home-hub-icon-book.png'
 import hubFolderIconUrl from '../assets/home-hub-icon-folder.png'
 import hubTagIconUrl from '../assets/home-hub-icon-tag.png'
@@ -5,6 +6,8 @@ import hubLogoUrl from '../assets/home-hub-logo.png'
 import hubWordmarkUrl from '../assets/home-hub-wordmark.png'
 import searchDoodleIconUrl from '../assets/home-search-doodle.png'
 import hubPinClipUrl from '../assets/home-hub-pin-clip.png'
+import { useAuth } from '../contexts/useAuth'
+import { isAppAdminUser } from '../lib/adminAccess'
 import type { HomeBrowseNavId } from './HomeBrowseNav'
 
 type Props = {
@@ -30,6 +33,10 @@ export function HomeHubScreen({
   onOpenSearch,
   onOpenPins,
 }: Props) {
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  const showAdminEntry = isAppAdminUser(user)
+
   return (
     <div className="home-hub">
       <div className="home-hub-brand">
@@ -113,6 +120,15 @@ export function HomeHubScreen({
           </div>
         </div>
       </nav>
+      {showAdminEntry ? (
+        <button
+          type="button"
+          className="home-hub-admin-link"
+          onClick={() => navigate('/admin')}
+        >
+          관리자페이지
+        </button>
+      ) : null}
     </div>
   )
 }

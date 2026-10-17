@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthProvider'
 import { useAuth } from './contexts/useAuth'
 import { AppSplashScreen } from './components/AppSplashScreen'
+import { AdminPage } from './pages/AdminPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { RecoveryPage } from './pages/RecoveryPage'
@@ -55,6 +56,14 @@ export default function App() {
             element={
               <PrivateRoute>
                 <HomePage />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <PrivateRoute>
+                <AdminPage />
               </PrivateRoute>
             }
           />
