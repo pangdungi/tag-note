@@ -5066,6 +5066,44 @@ button.parent-tag-card {
 
 .tag-manage-dialog--edit-source .composer-field-hint {
   margin-top: 0.15rem;
+  color: var(--muted, #78716c);
+}
+
+.tag-manage-dialog--edit-source .source-book-meta-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.15rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.65rem;
+  background: rgb(248 250 252 / 92%);
+  border: 1px solid rgb(226 232 240 / 85%);
+}
+
+.tag-manage-dialog--edit-source .source-book-meta-section .composer-field {
+  gap: 0.28rem;
+}
+
+.tag-manage-dialog--edit-source .source-life-book-field {
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid rgb(226 232 240 / 70%);
+}
+
+.composer-field-meta {
+  margin: 0;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  color: var(--muted, #78716c);
+  flex-shrink: 0;
+}
+
+.tag-manage-dialog--edit-source .source-review-field .composer-label-row {
+  align-items: baseline;
+}
+
+.tag-manage-dialog--edit-source .source-review-input {
+  margin-top: 0.15rem;
 }
 
 .tag-manage-dialog--edit-source .source-review-input {
@@ -6604,7 +6642,11 @@ button.note-board-tag-pill--link:focus-visible {
   width: max-content;
   min-width: 100%;
   max-width: none;
-  padding: 0.45rem 0.55rem;
+  padding: calc(
+      0.7rem +
+        (var(--memo-body-line-height) - 1) * var(--memo-body-font-size) / 2
+    )
+    0.55rem 0.45rem;
   font-family: var(--app-font-family);
   font-size: var(--tag-label-font-size);
   font-weight: 700;
@@ -6615,15 +6657,6 @@ button.note-board-tag-pill--link:focus-visible {
   white-space: nowrap;
   word-break: normal;
   overflow-wrap: normal;
-}
-
-.note-board-sheet-tag-item:first-child .note-board-sheet-tag,
-.note-board-sheet-tags-cell > .note-board-sheet-tag {
-  padding-top: calc(
-    0.7rem +
-      (var(--memo-body-line-height) - 1) * var(--memo-body-font-size) / 2
-  );
-  padding-bottom: 0.45rem;
 }
 
 @media (max-width: 640px) {

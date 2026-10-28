@@ -21,9 +21,10 @@ export function SourceRatingReviewFields({
   onReviewChange,
 }: Props) {
   const reviewId = useId()
+  const reviewLen = normalizeSourceReview(review).length
   return (
     <>
-      <div className="composer-field">
+      <div className="composer-field source-rating-field">
         <span className="composer-label">별점</span>
         <SourceStars
           value={rating}
@@ -31,14 +32,16 @@ export function SourceRatingReviewFields({
           disabled={disabled}
           onChange={onRatingChange}
         />
-        <p className="composer-field-hint">
-          같은 별을 다시 누르면 지워집니다.
-        </p>
       </div>
-      <div className="composer-field">
-        <label className="composer-label" htmlFor={reviewId}>
-          도서평
-        </label>
+      <div className="composer-field source-review-field">
+        <div className="composer-label-row">
+          <label className="composer-label" htmlFor={reviewId}>
+            도서평
+          </label>
+          <span className="composer-field-meta" aria-live="polite">
+            {reviewLen}/{SOURCE_REVIEW_MAX}
+          </span>
+        </div>
         <textarea
           id={reviewId}
           className="composer-source source-review-input"
@@ -49,9 +52,6 @@ export function SourceRatingReviewFields({
           placeholder="이 책에 대한 짧은 평가"
           onChange={(e) => onReviewChange(e.target.value)}
         />
-        <p className="composer-field-hint">
-          {normalizeSourceReview(review).length}/{SOURCE_REVIEW_MAX}
-        </p>
       </div>
     </>
   )

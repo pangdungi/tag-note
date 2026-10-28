@@ -125,6 +125,7 @@ import {
   displaySourceTitle,
   groupSourcesByBookshelf,
   groupSourcesByCategory,
+  isLifeBookShelfKey,
   isSourceViewNoneId,
   sortSourcesForAllLinksView,
   SOURCE_CATEGORY_UNCategorized,
@@ -5917,8 +5918,8 @@ export function HomePage() {
                                 ? ' links-category-shelf--uncategorized'
                                 : ''
                             }${
-                              isSourceViewNoneId(shelf.categoryKey)
-                                ? ' links-category-shelf--source-none'
+                              isLifeBookShelfKey(shelf.categoryKey)
+                                ? ' links-category-shelf--life-book'
                                 : ''
                             }`}
                             aria-label={

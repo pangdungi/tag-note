@@ -10,7 +10,7 @@ export function SourceLifeBookField({
   onChange,
 }: Props) {
   return (
-    <div className="composer-field">
+    <div className="composer-field source-life-book-field">
       <label className="source-life-book-check">
         <input
           type="checkbox"
@@ -20,9 +20,6 @@ export function SourceLifeBookField({
         />
         <span>인생책</span>
       </label>
-      <p className="composer-field-hint">
-        북스파인 위에 인생 표시가 붙습니다.
-      </p>
     </div>
   )
 }

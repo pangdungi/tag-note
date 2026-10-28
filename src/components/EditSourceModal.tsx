@@ -580,18 +580,23 @@ export function EditSourceModal({
                 )}
               </div>
 
-              <SourceLifeBookField
-                checked={lifeBook}
-                disabled={saving || pasteBusy}
-                onChange={setLifeBook}
-              />
-              <SourceRatingReviewFields
-                rating={rating}
-                review={review}
-                disabled={saving || pasteBusy}
-                onRatingChange={setRating}
-                onReviewChange={setReview}
-              />
+              <section
+                className="source-book-meta-section"
+                aria-label="인생책·별점·도서평"
+              >
+                <SourceLifeBookField
+                  checked={lifeBook}
+                  disabled={saving || pasteBusy}
+                  onChange={setLifeBook}
+                />
+                <SourceRatingReviewFields
+                  rating={rating}
+                  review={review}
+                  disabled={saving || pasteBusy}
+                  onRatingChange={setRating}
+                  onReviewChange={setReview}
+                />
+              </section>
 
               {canEditColor ? (
                 <SourceBookColorField

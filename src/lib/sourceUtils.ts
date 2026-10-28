@@ -96,6 +96,25 @@ export function isSourceViewNoneId(id: string | null | undefined): boolean {
   return id === SOURCE_VIEW_NONE_ID
 }
 
+/** 분류·개인 뷰 맨 앞 — 인생책으로 표시한 출처 */
+export const SOURCE_LIFE_BOOK_SHELF_KEY = '__life_book__'
+export const SOURCE_LIFE_BOOK_SHELF_TITLE = '인생책'
+
+export function isLifeBookShelfKey(key: string | null | undefined): boolean {
+  return key === SOURCE_LIFE_BOOK_SHELF_KEY
+}
+
+function isLifeBookSource(source: SourceRow): boolean {
+  return Boolean(source.is_life_book) && !isSourceViewNoneId(source.id)
+}
+
+function sortSourcesForShelfRail(a: SourceRow, b: SourceRow): number {
+  const aNone = isSourceViewNoneId(a.id)
+  const bNone = isSourceViewNoneId(b.id)
+  if (aNone !== bNone) return aNone ? -1 : 1
+  return a.title.localeCompare(b.title, 'ko')
+}
+
 export function createSourceViewNoneRow(): SourceRow {
   return {
     id: SOURCE_VIEW_NONE_ID,
@@ -181,9 +200,14 @@ export function sortSourcesForAllLinksView(sources: SourceRow[]): SourceRow[] {
 /** 출처 목록을 예스24 분야(category)별 책장으로 묶는다 */
 export function groupSourcesByCategory(sources: SourceRow[]): SourceCategoryShelf[] {
   const none = sources.filter((source) => isSourceViewNoneId(source.id))
+  const lifeBooks: SourceRow[] = []
   const map = new Map<string, SourceCategoryShelf['sources']>()
   for (const source of sources) {
     if (isSourceViewNoneId(source.id)) continue
+    if (isLifeBookSource(source)) {
+      lifeBooks.push(source)
+      continue
+    }
     const category = source.category?.trim() || SOURCE_CATEGORY_UNCategorized
     const list = map.get(category) ?? []
     list.push(source)
@@ -205,10 +229,36 @@ export function groupSourcesByCategory(sources: SourceRow[]): SourceCategoryShel
   })
 
   if (none.length > 0) {
+    const uncIdx = shelves.findIndex(
+      (s) => s.category === SOURCE_CATEGORY_UNCategorized,
+    )
+    if (uncIdx >= 0) {
+      const shelf = shelves[uncIdx]
+      shelves[uncIdx] = {
+        ...shelf,
+        sources: [...none, ...shelf.sources].sort(sortSourcesForShelfRail),
+      }
+    } else {
+      shelves.push({
+        categoryKey: SOURCE_CATEGORY_UNCategorized,
+        category: SOURCE_CATEGORY_UNCategorized,
+        sources: [...none],
+      })
+      shelves.sort((a, b) => {
+        if (a.category === SOURCE_CATEGORY_UNCategorized) return 1
+        if (b.category === SOURCE_CATEGORY_UNCategorized) return -1
+        return a.category.localeCompare(b.category, 'ko')
+      })
+    }
+  }
+
+  if (lifeBooks.length > 0) {
     shelves.unshift({
-      categoryKey: SOURCE_VIEW_NONE_ID,
-      category: SOURCE_VIEW_NONE_TITLE,
-      sources: none,
+      categoryKey: SOURCE_LIFE_BOOK_SHELF_KEY,
+      category: SOURCE_LIFE_BOOK_SHELF_TITLE,
+      sources: [...lifeBooks].sort((a, b) =>
+        a.title.localeCompare(b.title, 'ko'),
+      ),
     })
   }
 
@@ -221,12 +271,17 @@ export function groupSourcesByBookshelf(
   shelves: BookshelfRow[],
 ): SourceCategoryShelf[] {
   const none = sources.filter((source) => isSourceViewNoneId(source.id))
+  const lifeBooks: SourceRow[] = []
   const known = new Map(shelves.map((shelf) => [shelf.id, shelf]))
   const assigned = new Map<string, SourceRow[]>()
   const unassigned: SourceRow[] = []
 
   for (const source of sources) {
     if (isSourceViewNoneId(source.id)) continue
+    if (isLifeBookSource(source)) {
+      lifeBooks.push(source)
+      continue
+    }
     const shelfId = source.bookshelf_id?.trim() ?? ''
     if (shelfId && known.has(shelfId)) {
       const list = assigned.get(shelfId) ?? []
@@ -238,11 +293,14 @@ export function groupSourcesByBookshelf(
   }
 
   const result: SourceCategoryShelf[] = []
-  if (none.length > 0) {
+
+  if (lifeBooks.length > 0) {
     result.push({
-      categoryKey: SOURCE_VIEW_NONE_ID,
-      category: SOURCE_VIEW_NONE_TITLE,
-      sources: none,
+      categoryKey: SOURCE_LIFE_BOOK_SHELF_KEY,
+      category: SOURCE_LIFE_BOOK_SHELF_TITLE,
+      sources: [...lifeBooks].sort((a, b) =>
+        a.title.localeCompare(b.title, 'ko'),
+      ),
     })
   }
 
@@ -260,13 +318,11 @@ export function groupSourcesByBookshelf(
     })
   }
 
-  if (unassigned.length > 0) {
+  if (none.length > 0 || unassigned.length > 0) {
     result.push({
       categoryKey: SOURCE_SHELF_NONE_KEY,
       category: SOURCE_SHELF_NONE,
-      sources: [...unassigned].sort((a, b) =>
-        a.title.localeCompare(b.title, 'ko'),
-      ),
+      sources: [...none, ...unassigned].sort(sortSourcesForShelfRail),
     })
   }
 
